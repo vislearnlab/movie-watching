@@ -11,6 +11,7 @@ import tobii_research as tr
 import time
 from gooey import Gooey
 
+DIR = Path("../")
 #@Gooey(program_name="Movie watching")
 def main():
     parser = ArgumentParser(description="Movie Watching Experiment")
@@ -32,7 +33,7 @@ def run_experiment(Sub):
     
 
     # Create data directory
-    data_dir = Path('data') / 'raw'
+    data_dir = Path("../data/raw")
     data_dir.mkdir(parents=True, exist_ok=True)
 
     ###############################################################################
@@ -74,33 +75,29 @@ def run_experiment(Sub):
     controller = TobiiInfantController(win, calibration_disc_size=200)
 
     ###############################################################################
-    # Show Status and Calibration
+    # Show Status and Calibrationj.
     grabber = visual.MovieStim(win, f"{STIM_DIR}/Sea.mp4", size=[600, 600], units='pix')
     grabber.setAutoDraw(True)
     grabber.play()
-    #controller.show_status()
+    controller.show_status()
     controller.eyetracker.set_gaze_output_frequency(250)
     print(controller.eyetracker.get_display_area()) 
-    #grabber.setAutoDraw(False)
-    #grabber.stop()
+    grabber.setAutoDraw(False)
+    grabber.stop()
 
     # Run validation loop
     i = 0
-    #controller.run_calibration(CALIPOINTS, CALISTIMS)
-    '''
-    while (i <= 3):
+    while (i <= 2):
+        controller.run_calibration(CALIPOINTS, CALISTIMS)
         result = controller.run_validation(validation_points=CALIPOINTS, 
                                         infant_stims=CALISTIMS, 
-                                        show_results=True)
-        if result['Mean_accuracy_degrees_left'] > 15.0 or result['Mean_accuracy_degrees_right'] > 15.0:
+                                        show_results=True, event=f"pre_validation_{i}")
+        if result['Mean_accuracy_degrees_left'] > 25.0 or result['Mean_accuracy_degrees_right'] > 25.0:
             controller.display_text("Validation failed. Recalibrating...", duration=2)
         else:
             break
         i += 1
     print(result)
-    '''
-    ###############################################################################
-    # Prepare Stimulus List
     list_of_videos = [f"{STIM_DIR}/Sea.mp4", f"{STIM_DIR}/Sea.mp4"]  # Add more videos as needed
     random.shuffle(list_of_videos)
 

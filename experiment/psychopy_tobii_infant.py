@@ -163,6 +163,7 @@ class TobiiController:
         self.win = win
         print(self.win.size)
         self.filename = filename
+        self.validation_filename = filename.replace(".csv", "_validation.csv")
         # FIXME: self.numkey_dict is not updated accordingly
         self.numkey_dict = self._default_numkey_dict
         self.calibration_dot_size = self._default_calibration_dot_size[
@@ -189,6 +190,16 @@ class TobiiController:
         self.gaze_data = []
         atexit.register(self.close)
 
+    def _tobii_to_pixels(self, left_x, left_y, right_x, right_y):
+        """Convert Tobii normalized position to pixel position"""
+        left_x = left_x * self.win.size[0]
+        left_y = self.win.size[1] - (left_y * self.win.size[1])  # Flip y-axis
+        right_x = right_x * self.win.size[0]
+        right_y = self.win.size[1] - (right_y * self.win.size[1]) 
+        ave_x = left_x if np.isnan(right_x) else right_x if np.isnan(left_x) else (left_x + right_x) / 2.0
+        ave_y = left_y if np.isnan(right_y) else right_y if np.isnan(left_y) else (left_y + right_y) / 2.0
+        return { "left_x": left_x, "left_y": left_y, "right_x": right_x, "right_y": right_y, "ave_x": ave_x, "ave_y": ave_y }
+
     def _on_gaze_data(self, gaze_data):
         """Callback function used by Tobii SDK.
 
@@ -199,7 +210,6 @@ class TobiiController:
             None
         """
                 # Split coordinate tuples into separate columns
-        print(gaze_data)
         self.gaze_data.append(gaze_data)
 
     def _get_psychopy_pos(self, p, units=None):
@@ -783,68 +793,6 @@ class TobiiController:
 
         return retval
 
-    def run_validation(self,
-                       validation_points=None,
-                       sample_count=30,
-                       timeout=1,
-                       focus_time=0.5,
-                       decision_key="space",
-                       show_results=False,
-                       save_to_file=True,
-                       result_msg_color="white"):
-        """Run validation.
-
-        tobii_research_addons is required for running validation. Validation
-        procedure is only available after a successful calibration or an error
-        will be raised.
-        Args:
-            validation_points: list of position of the validation points. If
-                None, the calibration points are used. Default is None.
-            sample_count: The number of samples to collect. Default is 30,
-                minimum 10, maximum 3000.
-            timeout: Timeout in seconds. Default is 1, minimum 0.1, maximum 3.
-            focus_time: the duration allowing the subject to focus in seconds.
-                        Default is 0.5.
-            decision_key: key to leave the procedure. Default is space.
-            show_results: Whether to show the validation result. Default is
-                False.
-            save_to_file: Whether to save the validation result to the data
-                file. Default is True.
-            result_msg_color: Color to be used for calibration result text.
-                Accepts any PsychoPy color specification. Default is white.
-
-        Returns:
-            tobii_research_addons.ScreenBasedCalibrationValidation.CalibrationValidationResult
-        """
-        if self.update_validation is None:
-            raise ModuleNotFoundError("tobii_research_addons is not found.")
-
-        # setup the procedure
-        self.validation = ScreenBasedCalibrationValidation(
-            self.eyetracker, sample_count, int(1000 * timeout))
-
-        if validation_points is None:
-            validation_points = self.original_calibration_points
-
-        # clear the display
-        self.win.flip()
-
-        self.validation.enter_validation_mode()
-        self.update_validation(validation_points=validation_points,
-                               _focus_time=focus_time)
-        validation_result = self.validation.compute()
-        self.validation.leave_validation_mode()
-        self.win.flip()
-
-        if not (save_to_file or show_results):
-            return validation_result
-
-        result_buffer = self._process_validation_result(validation_result)
-        self._show_validation_result(result_buffer, show_results, save_to_file,
-                                     decision_key, result_msg_color)
-
-        return result_buffer
-
     def _process_validation_result(self, validation_result):
         """Process validation result"""
         result_buffer = {
@@ -852,14 +800,121 @@ class TobiiController:
             "Mean_accuracy_degrees_left": round(validation_result.average_accuracy_left, 4),
             "Mean_accuracy_degrees_right": round(validation_result.average_accuracy_right, 4),
             "Mean_accuracy_pixels_left": round(deg2pix(validation_result.average_accuracy_left, self.win.monitor), 4),
-            "Mean_accuracy_pixels_right": round(deg2pix(validation_result.average_accuracy_right, self.win.monitor), 4),
-            "Mean_precision_rms_degrees_left": round(validation_result.average_precision_rms_left, 4),
-            "Mean_precision_rms_degrees_right": round(validation_result.average_precision_rms_right, 4),
-            "Mean_precision_rms_pixels_left": round(deg2pix(validation_result.average_precision_rms_left, self.win.monitor), 4),
-            "Mean_precision_rms_pixels_right": round(deg2pix(validation_result.average_precision_rms_right, self.win.monitor), 4)
+            "Mean_accuracy_pixels_right": round(deg2pix(validation_result.average_accuracy_right, self.win.monitor), 4)
         }
+        
+        for idx, (key, value) in enumerate(validation_result.points.items()):
+            print(key)
+            value = value[-1]
+            result_buffer.update({
+                f"Point_{idx+1}_accuracy_degrees_left": round(
+                    value.accuracy_left_eye, 4),
+                f"Point_{idx+1}_accuracy_degrees_right": round(
+                    value.accuracy_right_eye, 4),
+                f"Point_{idx+1}_accuracy_pixels_left": round(
+                    deg2pix(value.accuracy_left_eye, self.win.monitor), 4),
+                f"Point_{idx+1}_accuracy_pixels_right": round(
+                    deg2pix(value.accuracy_right_eye, self.win.monitor), 4)
+            })
         return result_buffer      
 
+    def _show_validation_result_full(self, result_buffer, show_results,
+                                save_to_file, decision_key, result_msg_color, validation_event):
+        if save_to_file:
+            if self.validation_result_buffers is None:
+                self.validation_result_buffers = list()
+
+        if show_results:
+            # Create calibration visualization image
+            img = Image.new("RGBA", tuple(self.win.size))
+            img_draw = ImageDraw.Draw(img)
+            result_img = visual.SimpleImageStim(self.win, img, autoLog=False)
+            img_draw.rectangle(((0, 0), tuple(self.win.size)), fill=(0, 0, 0, 0))
+            # Draw calibration points if available
+            for (key, value) in self.validation_result.points.items():
+                this_point = value[-1]
+                p = this_point.screen_point
+                print(f"Calibration point at {p}")
+                print(f"Calibration point in window size: {(p.x * self.win.size[0], p.y * self.win.size[1])}")
+                
+                for this_sample in this_point.gaze_data:
+                    lp = this_sample.left_eye.gaze_point.position_on_display_area
+                    rp = this_sample.right_eye.gaze_point.position_on_display_area
+                    pixel_positions = self._tobii_to_pixels(
+                        lp[0], lp[1], rp[0], rp[1])
+                    this_sample_record = {
+                        "system_time_stamp": this_sample.system_time_stamp,
+                        "left_x": pixel_positions["left_x"],
+                        "right_x": pixel_positions["right_x"],
+                        "left_y": pixel_positions["left_y"],
+                        "left_valid": pixel_positions["left_x"] != np.nan,
+                        "right_valid": pixel_positions["right_x"] != np.nan,
+                        "right_y": pixel_positions["right_y"],
+                        "gaze_x": pixel_positions["ave_x"],
+                        "gaze_y": pixel_positions["ave_y"],
+                    }
+                    self.validation_result_buffers.append({
+                        "stimulus_index": key,
+                        "validation_step": validation_event,
+                        **this_sample_record
+                    })
+                    img_draw.line(
+                        (
+                            (p.x * self.win.size[0],
+                            p.y * self.win.size[1]),
+                            (
+                                lp[0] * self.win.size[0],
+                                lp[1] * self.win.size[1],
+                            ),
+                        ),
+                        fill=(0, 255, 0, 255),
+                    )
+                    
+                    img_draw.line(
+                        (
+                            (p.x * self.win.size[0],
+                            p.y * self.win.size[1]),
+                            (
+                                rp[0] * self.win.size[0],
+                                rp[1] * self.win.size[1],
+                            ),
+                        ),
+                        fill=(255, 0, 0, 255),
+                    )
+                
+                img_draw.ellipse(
+                    (
+                        (p.x * self.win.size[0] - 3,
+                        p.y * self.win.size[1] - 3),
+                        (p.x * self.win.size[0] + 3,
+                        p.y * self.win.size[1] + 3),
+                    ),
+                    outline=(0, 0, 0, 255),
+                )
+            
+            # Update image and draw it
+            result_img.setImage(img)
+            result_img.draw()
+            
+            # Create and draw text message
+            result_msg = visual.TextStim(self.win,
+                                        pos=(0, -self.win.size[1] / 4),
+                                        color=result_msg_color,
+                                        units="pix",
+                                        alignText="left",
+                                        wrapWidth=self.win.size[0] * 0.6,
+                                        autoLog=False)
+            result_msg.setText(str(result_buffer))
+            result_msg.draw()
+            self.win.flip()
+
+            waitkey = True
+            while waitkey:
+                for key in event.getKeys():
+                    if key == decision_key:
+                        waitkey = False
+                        break
+    
     def _show_validation_result(self, result_buffer, show_results,
                                 save_to_file, decision_key, result_msg_color):
         if save_to_file:
@@ -1170,19 +1225,8 @@ class TobiiInfantController(TobiiController):
         #rp = self._get_psychopy_pos(record["right_gaze_point_on_display_area"])
         left_x, left_y = record['left_gaze_point_on_display_area']
         right_x, right_y = record['right_gaze_point_on_display_area']
-        left_x = left_x * self.win.size[0]
-        left_y = self.win.size[1] - (left_y * self.win.size[1])  # Flip y-axis
-        right_x = right_x * self.win.size[0]
-        right_y = self.win.size[1] - (right_y * self.win.size[1]) 
-        # Calculate average gaze
-        if not (record["left_gaze_point_validity"] or record["right_gaze_point_validity"]):
-            ave = (np.nan, np.nan)
-        elif not record["left_gaze_point_validity"]:
-            ave = (right_x, right_y)
-        elif not record["right_gaze_point_validity"]:
-            ave = (left_x, left_y)
-        else:
-            ave = ((left_x + right_x) / 2.0, (left_y + right_y) / 2.0)
+        pixel_positions = self._tobii_to_pixels(
+            left_x, left_y, right_x, right_y)
         # Calculate average pupil
         if not (record["left_pupil_validity"] or record["right_pupil_validity"]):
             pup = np.nan
@@ -1196,18 +1240,18 @@ class TobiiInfantController(TobiiController):
         return {
             'system_time_stamp': record["system_time_stamp"],
             'time': round((record["system_time_stamp"] - self.t0) / 1000.0, 1),
-            'left_x': round(left_x, 4),
-            'left_y': round(left_y, 4),
+            'left_x': round(pixel_positions["left_x"], 4),
+            'left_y': round(pixel_positions["left_y"], 4),
             'left_valid': int(record["left_gaze_point_validity"]),
             'left_pupil': round(record["left_pupil_diameter"], 4),
             'left_pupil_valid': int(record["left_pupil_validity"]),
-            'right_x': round(right_x, 4),
-            'right_y': round(right_y, 4),
+            'right_x': round(pixel_positions["right_x"], 4),
+            'right_y': round(pixel_positions["right_y"], 4),
             'right_valid': int(record["right_gaze_point_validity"]),
             'right_pupil': round(record["right_pupil_diameter"], 4),
             'right_pupil_valid': int(record["right_pupil_validity"]),
-            'gaze_x': round(ave[0], 4),
-            'gaze_y': round(ave[1], 4),
+            'gaze_x': round(pixel_positions["ave_x"], 4),
+            'gaze_y': round(pixel_positions["ave_y"], 4),
             'pupil_size': round(pup, 4)
         }
     
@@ -1276,6 +1320,19 @@ class TobiiInfantController(TobiiController):
         # Write to CSV
         file_exists = os.path.isfile(self.filename)
         data_df.to_csv(self.filename, mode='a', index=False, header=not file_exists)
+
+        validation_columns_order = ['stimulus_index', 'validation_step', 'system_time_stamp', 'time',
+                                    'left_x', 'left_y', 'left_valid',
+                                    'right_x', 'right_y', 'right_valid',
+                                    'gaze_x', 'gaze_y']
+        if self.validation_result_buffers is not None:
+            for val_buffer in self.validation_result_buffers:
+                # Add time column
+                val_buffer['time'] = round((val_buffer['system_time_stamp'] - self.t0) / 1000.0, 1)
+            val_df = pd.DataFrame(self.validation_result_buffers)
+            val_df = val_df[validation_columns_order]
+            val_file_exists = os.path.isfile(self.validation_filename)
+            val_df.to_csv(self.validation_filename, mode='a', index=False, header=not val_file_exists)
     
     def start_recording(self, filename=None, newfile=True):
         """Start recording with CSV support"""
@@ -1585,6 +1642,7 @@ class TobiiInfantController(TobiiController):
                        show_results=False,
                        save_to_file=True,
                        result_msg_color="white",
+                       event="default",
                        *kwargs):
         """Run validation.
         Press space to start collect valdiation samples.
@@ -1609,6 +1667,8 @@ class TobiiInfantController(TobiiController):
                 file. Default is True.
             result_msg_color: Color to be used for calibration result text.
                 Accepts any PsychoPy color specification. Default is white.
+            event: the event label to mark the validation in the data file.
+                Default is "default".
             *kwargs: other arguments to pass into psychopy.visual.ImageStim.
                 Has no effects if infant_stims is set to None.
         Returns:
@@ -1636,21 +1696,20 @@ class TobiiInfantController(TobiiController):
         self.validation.enter_validation_mode()
         self.update_validation(validation_points=validation_points,
                                _focus_time=focus_time)
-        validation_result = self.validation.compute()
+        self.validation_result = self.validation.compute()
         self.validation.leave_validation_mode()
         self.win.flip()
 
         if not (save_to_file or show_results):
-            return validation_result
-        #ID = "test"
-        #self.write_buffer_to_file(validation_result, f"validation_results_{ID}.csv")
-        result_buffer = self._process_validation_result(validation_result)
-        self._show_validation_result(result_buffer, show_results, save_to_file,
-                                     decision_key, result_msg_color)
+            return self.validation_result
+        result_buffer = self._process_validation_result(self.validation_result)
+        self._show_validation_result_full(result_buffer, show_results, save_to_file,
+                                     decision_key, result_msg_color, event)
 
         return result_buffer
 
     def write_buffer_to_file(self, gaze_data_buffer, filename):
+        print("here?")
         global Events
 
         # Swap buffers - get current data and start fresh
