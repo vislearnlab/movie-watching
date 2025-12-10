@@ -1367,7 +1367,6 @@ class TobiiInfantController(TobiiController):
         # Choose appropriate flush method based on file extension
         if self.filename.endswith('.csv'):
             self._flush_data_csv()
-            self.write_buffer_to_file(self.gaze_data, "test.csv")
         else:
             self._flush_data()
     
