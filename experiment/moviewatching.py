@@ -3,7 +3,7 @@ import os
 import numpy as np
 import random
 from pathlib import Path
-from psychopy import core, visual, event, monitors
+from psychopy import core, visual, event, monitors, sound
 from psychopy_tobii_infant import TobiiInfantController
 from psychopy import logging
 logging.console.setLevel(logging.ERROR)
@@ -12,20 +12,46 @@ import time
 from gooey import Gooey
 
 DIR = Path("../")
+trial_types = ["sesame", "slow", "frank", "pixar"]
 #@Gooey(program_name="Movie watching")
 def main():
+    DIR = Path("../")
     parser = ArgumentParser(description="Movie Watching Experiment")
     parser.add_argument('--subject', type=str, required=True, help='Subject ID (e.g., S001)')
     args = parser.parse_args()
     run_experiment(args.subject)
 
+def trial_order(dir):
+    blocks = {}
+    for file in os.listdir(dir):
+        if file.endswith('.mp4'):
+            block_num = file.split('_')[0]
+            block_num = block_num.replace('india', '').replace('us', '')
+            if block_num not in blocks:
+                blocks[block_num] = []
+            blocks[block_num].append(file.removesuffix('.mp4'))
+    for block in blocks:
+        random.shuffle(blocks[block])
+    trial_order = []
+    random.shuffle(list(blocks.keys()))
+    for iblock, block in enumerate(blocks):
+        if block == 'pixar':
+            continue
+        trial_order.extend(blocks[block])
+        trial_order.append(f'validation_{iblock+1}')
+    trial_order.extend(blocks['pixar'])
+    return trial_order
+
 def run_experiment(Sub):
     # Constants
+    global DIR
+    print(trial_order( f"{DIR}/stimuli/main_blocks"))
     DIR = os.path.dirname(__file__)
     DISPSIZE = (1920, 1200)
     CALINORMP = [(-0.4, 0.4 ), (-0.4, -0.4), (0.0, 0.0), (0.4, 0.4), (0.4, -0.4)]
     CALIPOINTS = [(x * DISPSIZE[0], y * DISPSIZE[1]) for x, y in CALINORMP]
     STIM_DIR = os.path.join(DIR, 'exp', 'stimuli', 'infant')
+    SOUNDSTIM = "/Users/visuallearninglab/Documents/moviewatching/stimuli/calibration/hothothot3.wav"
     CALISTIMS = [
         'exp/stimuli/infant/{}'.format(x) for x in os.listdir(os.path.join(STIM_DIR))
         if x.endswith('.png') and not x.startswith('.')
@@ -88,7 +114,8 @@ def run_experiment(Sub):
     # Run validation loop
     i = 0
     while (i <= 2):
-        controller.run_calibration(CALIPOINTS, CALISTIMS)
+        calibration_sound = sound.Sound(SOUNDSTIM)
+        controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
         result = controller.run_validation(validation_points=CALIPOINTS, 
                                         infant_stims=CALISTIMS, 
                                         show_results=True, event=f"pre_validation_{i}")
