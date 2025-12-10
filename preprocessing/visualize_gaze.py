@@ -34,8 +34,13 @@ current_color = (0,0,255)
 for video_file in args.videos:
     print(f"Processing {video_file}...")
 
-    # Find start/stop events
-    video_events = df[df['events'].str.contains(os.path.basename(video_file), na=False)]
+    # Safe exact match for video names after '|'
+    if 'events' not in df.columns:
+        raise ValueError("CSV must contain an 'events' column.")
+
+    event_videos = df['events'].astype(str).str.split('|').str[-1]
+    video_events = df[event_videos == os.path.basename(video_file)]
+
     if len(video_events) < 2:
         print(f"Warning: Could not find start/stop for {video_file}. Skipping.")
         continue
@@ -46,15 +51,16 @@ for video_file in args.videos:
 
     # Filter out-of-bounds gaze points
     valid_mask = (
-        (gaze_df['gazeX'] >= 0) & (gaze_df['gazeX'] <= args.display_width) &
-        (gaze_df['gazeY'] >= 0) & (gaze_df['gazeY'] <= args.display_height)
+        (gaze_df['gaze_x'] >= 0) & (gaze_df['gaze_x'] <= args.display_width) &
+        (gaze_df['gaze_y'] >= 0) & (gaze_df['gaze_y'] <= args.display_height)
     )
     gaze_df = gaze_df[valid_mask]
 
     # Extract and rescale gaze
-    trial_times = gaze_df['trial_time'].to_numpy()
-    gazeX = gaze_df['gazeX'].to_numpy() * (args.output_width / args.display_width)
-    gazeY = gaze_df['gazeY'].to_numpy() * (args.output_height / args.display_height)
+    trial_times = gaze_df['time'].to_numpy()
+    #trial_times = gaze_df['trial_time'].to_numpy()
+    gazeX = gaze_df['gaze_x'].to_numpy() * (args.output_width / args.display_width)
+    gazeY = gaze_df['gaze_y'].to_numpy() * (args.output_height / args.display_height)
 
     # Open video
     cap = cv2.VideoCapture(video_file)
@@ -82,18 +88,25 @@ for video_file in args.videos:
         mask = (trial_times >= t_start) & (trial_times < t_end)
 
         if np.any(mask):
-            avg_x = int(np.mean(gazeX[mask]))
-            avg_y = int(np.mean(gazeY[mask]))
-            current_point = (avg_x, avg_y)
-            trail_history.append(current_point)
+            # Compute NaN-safe means
+            avg_x = np.nanmean(gazeX[mask])
+            avg_y = np.nanmean(gazeY[mask])
+
+            # If ALL values were NaN, nanmean returns NaN → skip this frame
+            if np.isnan(avg_x) or np.isnan(avg_y):
+                current_point = None
+            else:
+                current_point = (int(avg_x), int(avg_y))
+                trail_history.append(current_point)
         else:
             current_point = None
 
+        # Trim trail history
         trail_history = trail_history[-args.trail_length:]
 
-        # Draw trail
+        # Draw trail (older = lighter)
         for i, point in enumerate(trail_history[:-1]):
-            color_idx = min(i, len(trail_colors)-1)
+            color_idx = min(len(trail_history) - i - 2, len(trail_colors) - 1)
             cv2.circle(frame, point, 8, trail_colors[color_idx], -1)
 
         # Draw current gaze point
@@ -108,13 +121,3 @@ for video_file in args.videos:
     print(f"Saved annotated video to {output_file}")
 
 print("All videos processed.")
-
-
-# python visualize_gaze.py \
-    #--csv gaze_data.csv \
-    #--videos video1.mp4 video2.mp4 \
-    #--display_width 1920 \
-    #--display_height 1080 \
-    #--output_width 1280 \
-    #--output_height 720 \
-    #--trail_length 5
