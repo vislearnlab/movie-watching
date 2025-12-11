@@ -9,54 +9,90 @@ from psychopy import logging
 logging.console.setLevel(logging.ERROR)
 import tobii_research as tr
 import time
+import pandas as pd
 from gooey import Gooey
 
 DIR = Path("../")
 trial_types = ["sesame", "slow", "frank", "pixar"]
+
 #@Gooey(program_name="Movie watching")
 def main():
     DIR = Path("../")
     parser = ArgumentParser(description="Movie Watching Experiment")
     parser.add_argument('--subject', type=str, required=True, help='Subject ID (e.g., S001)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     args = parser.parse_args()
-    run_experiment(args.subject)
+    run_experiment(args.subject, args.debug)
 
-def trial_order(dir):
+def trial_order(dir, debug=False):
     blocks = {}
     for file in os.listdir(dir):
-        if file.endswith('.mp4'):
+        if file.endswith('.mp4') and not file.startswith("intertrial_calibration"):
             block_num = file.split('_')[0]
             block_num = block_num.replace('india', '').replace('us', '')
             if block_num not in blocks:
                 blocks[block_num] = []
             blocks[block_num].append(file.removesuffix('.mp4'))
+    
     for block in blocks:
         random.shuffle(blocks[block])
-    trial_order = []
-    random.shuffle(list(blocks.keys()))
-    for iblock, block in enumerate(blocks):
+
+    Trials = []
+    block_keys = list(blocks.keys())
+    random.shuffle(block_keys)
+    if debug:
+        for block in blocks:
+            blocks[block] = blocks[block][:2]
+        block_keys = block_keys[:2]
+
+    trial_idx = 0
+    
+    for iblock, block in enumerate(block_keys):
         if block == 'pixar':
             continue
-        trial_order.extend(blocks[block])
-        trial_order.append(f'validation_{iblock+1}')
-    trial_order.extend(blocks['pixar'])
-    return trial_order
+        # Add trials from this block
+        for within_trial_idx, video_name in enumerate(blocks[block]):
+            Trials.append({
+                'total_trial_index': trial_idx,
+                'video_path': os.path.join(dir, video_name + '.mp4'),
+                'video_name': video_name,
+                'block_id': block,
+                'block_index': iblock,
+                'within_block_trial_index': within_trial_idx
+            })
+            trial_idx += 1
+    
+    # Add pixar trials at the end
+    if 'pixar' in blocks and not debug:
+        for within_trial_idx, video_name in enumerate(blocks['pixar']):
+            Trials.append({
+                'total_trial_index': trial_idx,
+                'video_path': os.path.join(dir, video_name + '.mp4'),
+                'video_name': video_name,
+                'block_id': 'pixar',
+                'block_index': len(block_keys) - 1,
+                'within_block_trial_index': within_trial_idx
+            })
+            trial_idx += 1
+    
+    return Trials
 
-def run_experiment(Sub):
+def run_experiment(Sub, debug=False):
     # Constants
     global DIR
-    print(trial_order( f"{DIR}/stimuli/main_blocks"))
-    DIR = os.path.dirname(__file__)
     DISPSIZE = (1920, 1200)
     CALINORMP = [(-0.4, 0.4 ), (-0.4, -0.4), (0.0, 0.0), (0.4, 0.4), (0.4, -0.4)]
     CALIPOINTS = [(x * DISPSIZE[0], y * DISPSIZE[1]) for x, y in CALINORMP]
-    STIM_DIR = os.path.join(DIR, 'exp', 'stimuli', 'infant')
-    SOUNDSTIM = "/Users/visuallearninglab/Documents/moviewatching/stimuli/calibration/hothothot3.wav"
+    STIM_DIR = DIR / os.path.join('stimuli')
+    CALIB_DIR = STIM_DIR / 'calibration'
+    CALIB_SOUND = os.path.join(CALIB_DIR, 'hothothot3.wav')
+    calibration_sound = sound.Sound(CALIB_SOUND)
+    VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
+    validation_sound = sound.Sound(VALID_SOUND)
     CALISTIMS = [
-        'exp/stimuli/infant/{}'.format(x) for x in os.listdir(os.path.join(STIM_DIR))
+        f"{CALIB_DIR}/{x}" for x in os.listdir(CALIB_DIR)
         if x.endswith('.png') and not x.startswith('.')
     ]
-    
 
     # Create data directory
     data_dir = Path("../data/raw")
@@ -98,53 +134,43 @@ def run_experiment(Sub):
                         allowGUI=False)
 
     # Initialize TobiiController
-    controller = TobiiInfantController(win, calibration_disc_size=200)
+    filename = data_dir / f'{Sub}.csv'
+    controller = TobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
 
     ###############################################################################
     # Show Status and Calibrationj.
-    grabber = visual.MovieStim(win, f"{STIM_DIR}/Sea.mp4", size=[600, 600], units='pix')
+    grabber = visual.MovieStim(win, f"{STIM_DIR}/ag/Attentiongrabber.mp4", size=[600, 600], units='pix')
     grabber.setAutoDraw(True)
     grabber.play()
     controller.show_status()
     controller.eyetracker.set_gaze_output_frequency(250)
-    print(controller.eyetracker.get_display_area()) 
     grabber.setAutoDraw(False)
     grabber.stop()
 
     # Run validation loop
     i = 0
     while (i <= 2):
-        calibration_sound = sound.Sound(SOUNDSTIM)
         controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
         result = controller.run_validation(validation_points=CALIPOINTS, 
                                         infant_stims=CALISTIMS, 
-                                        show_results=True, event=f"pre_validation_{i}")
+                                        show_results=True, event=f"pre_validation_{i+1}", audio=validation_sound)
         if result['Mean_accuracy_degrees_left'] > 25.0 or result['Mean_accuracy_degrees_right'] > 25.0:
             controller.display_text("Validation failed. Recalibrating...", duration=2)
         else:
             break
         i += 1
-    print(result)
-    list_of_videos = [f"{STIM_DIR}/Sea.mp4", f"{STIM_DIR}/Sea.mp4"]  # Add more videos as needed
-    random.shuffle(list_of_videos)
-
-    # Create trial list with video information
-    Trials = []
-    for trial_idx, video_path in enumerate(list_of_videos):
-        Trials.append({
-            'trial_id': trial_idx,
-            'video_path': video_path,
-            'video_name': os.path.basename(video_path)
-        })
-
-    ###############################################################################
+    Trials = trial_order(f"{DIR}/stimuli/main_blocks", debug=debug)
+    pd.DataFrame(Trials).to_csv(data_dir / f"{Sub}_trial_order.csv", index=False)
     # Start Recording
-    filename = data_dir / f'{Sub}.csv'
-    controller.start_recording(str(filename))
+    controller.start_recording()
 
     for trial in Trials:
+        if trial['within_block_trial_index'] == 0 and trial['block_index'] != 0:
+            controller.run_validation(validation_points=CALIPOINTS, 
+                                infant_stims=CALISTIMS, 
+                                show_results=True, event=f"validation_{trial['block_index']}", audio=validation_sound)
         t1 = time.time()
-        trial_id = trial['trial_id']
+        trial_id = trial['total_trial_index']
         video_path = trial['video_path']
         video_name = trial['video_name']
         
@@ -157,7 +183,7 @@ def run_experiment(Sub):
         movie = visual.MovieStim(
             win,
             video_path,
-            size=[600, 600],
+            size=[1920, 1080],
             units='pix',
             loop=False,
             name=video_name
@@ -166,16 +192,15 @@ def run_experiment(Sub):
         # Present fixation / attention getter?
         win.flip()
         core.wait(0.5)
-        t1_5 = time.time()
         # Start movie
         movie.setAutoDraw(True)
         win.flip()  # Ensure movie is on screen
         t2 = time.time()
-        print(f"Render video took {t2 - t1:.2f} seconds")
         controller.record_event(f"Trial_{trial_id}_Video_Start")
         
-        # Collect looking time (10 seconds max, 2 seconds away minimum)
-        lt = controller.collect_lt(10, 2)
+        # Collect looking time (60 seconds max, 20 seconds away minimum)
+        # todo: if keeping habituation maybe need a seperate mp3 stream?
+        lt = controller.collect_lt(60, 20)
         print(f'Trial {trial_id} Looking time: %.3fs' % lt)
         
         # Stop movie
@@ -192,7 +217,7 @@ def run_experiment(Sub):
         keys = event.getKeys()
         if 'escape' in keys:
             break
-        print(f"Trial {trial_id} duration: {t4 - t1:.2f} seconds, First frame delay (0.5s): {t2 - t1:.2f} seconds, Movie duration (10s): {t3 - t2:.2f} seconds, ISI (1s): {t4 - t3:.2f} seconds")
+        print(f"Trial {trial_id} duration: {t4 - t1:.2f} seconds, First frame delay (0.5s): {t2 - t1:.2f} seconds, Movie duration (120s): {t3 - t2:.2f} seconds, ISI (1s): {t4 - t3:.2f} seconds")
 
     ###############################################################################
     # Stop recording and cleanup

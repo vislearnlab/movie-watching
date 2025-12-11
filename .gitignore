@@ -1,0 +1,19 @@
+# macOS
+*.DS_Store
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+
+# Raw per-participant data
+data/raw
+
+# Large stim files
+stimuli/**/*.mp4
+stimuli/**/*.mp3
+stimuli/**/*.wav

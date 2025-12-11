@@ -198,7 +198,7 @@ class TobiiController:
         right_y = self.win.size[1] - (right_y * self.win.size[1]) 
         ave_x = left_x if np.isnan(right_x) else right_x if np.isnan(left_x) else (left_x + right_x) / 2.0
         ave_y = left_y if np.isnan(right_y) else right_y if np.isnan(left_y) else (left_y + right_y) / 2.0
-        return { "left_x": left_x, "left_y": left_y, "right_x": right_x, "right_y": right_y, "ave_x": ave_x, "ave_y": ave_y }
+        return { "left_x": round(left_x, 4), "left_y": round(left_y, 4), "right_x": round(right_x, 4), "right_y": round(right_y, 4), "ave_x": round(ave_x, 4), "ave_y": round(ave_y, 4) }
 
     def _on_gaze_data(self, gaze_data):
         """Callback function used by Tobii SDK.
@@ -362,106 +362,6 @@ class TobiiController:
         """
         self.datafile.flush()  # internal buffer to RAM
         os.fsync(self.datafile.fileno())  # RAM file cache to disk
-
-    def _convert_tobii_record(self, record):
-        """Convert tobii coordinates to output style.
-
-        Args:
-            record: raw gaze data
-
-        Returns:
-            reformed gaze data
-        """
-        lp = self._get_psychopy_pos(record["left_gaze_point_on_display_area"])
-        rp = self._get_psychopy_pos(record["right_gaze_point_on_display_area"])
-
-        # gaze
-        if not (record["left_gaze_point_validity"]
-                or record["right_gaze_point_validity"]):  # not detected
-            ave = (np.nan, np.nan)
-        elif not record["left_gaze_point_validity"]:
-            ave = rp  # use right eye
-        elif not record["right_gaze_point_validity"]:
-            ave = lp  # use left eye
-        else:
-            ave = ((lp[0] + rp[0]) / 2.0, (lp[1] + rp[1]) / 2.0)
-
-        # pupil
-        if not (record["left_pupil_validity"]
-                or record["right_pupil_validity"]):  # not detected
-            pup = np.nan
-        elif not record["left_pupil_validity"]:
-            pup = record["right_pupil_diameter"]  # use right pupil
-        elif not record["right_pupil_validity"]:
-            pup = record["left_pupil_diameter"]  # use left pupil
-        else:
-            pup = (record["left_pupil_diameter"] +
-                   record["right_pupil_diameter"]) / 2.0
-        out = (
-            round((record["system_time_stamp"] - self.t0) / 1000.0, 1),
-            round(lp[0], 4),
-            round(lp[1], 4),
-            int(record["left_gaze_point_validity"]),
-            round(rp[0], 4),
-            round(rp[1], 4),
-            int(record["right_gaze_point_validity"]),
-            round(ave[0], 4),
-            round(ave[1], 4),
-            round(record["left_pupil_diameter"], 4),
-            int(record["left_pupil_validity"]),
-            round(record["right_pupil_diameter"], 4),
-            int(record["right_pupil_validity"]),
-            round(pup, 4))  # yapf: disable
-        out = (str(x) for x in out)
-        return out
-
-    def _flush_data(self):
-        """Wrapper for writing the header and data to the data file.
-
-        Args:
-            None
-
-        Returns:
-            None
-        """
-        if not self.gaze_data:
-            raise RuntimeWarning("No data were collected.")
-
-        if self.recording:
-            raise RuntimeWarning(
-                "Still recording. Data are only saved to the disk after "
-                "stop_recording() is called to prevent large latency in the "
-                "eye-tracking data.")
-
-        self.datafile.write("Session Start\n")
-        # write header
-        self.datafile.write("\t".join([
-            "TimeStamp",
-            "GazePointXLeft",
-            "GazePointYLeft",
-            "ValidityLeft",
-            "GazePointXRight",
-            "GazePointYRight",
-            "ValidityRight",
-            "GazePointX",
-            "GazePointY",
-            "PupilSizeLeft",
-            "PupilValidityLeft",
-            "PupilSizeRight",
-            "PupilValidityRight",
-            "PupilSize"]) + "\n")  # yapf: disable
-        self._flush_to_file()
-
-        for gaze_data in self.gaze_data:
-            output = self._convert_tobii_record(gaze_data)
-            self.datafile.write("\t".join(output))
-            self.datafile.write("\n")
-        else:
-            # write the events in the end of data
-            for this_event in self.event_data:
-                self.datafile.write("{}\t{}\n".format(*this_event))
-        self.datafile.write("Session End\n")
-        self._flush_to_file()
 
     def _collect_calibration_data(self, p):
         """Callback function used by Tobii calibration in run_calibration.
@@ -646,11 +546,9 @@ class TobiiController:
         if self.recording:
             self.stop_recording()
         if self.datafile is None:
-            raise RuntimeWarning(
-                "Data file is not found. Use start_recording() to record and "
-                "save the data.")
-
-        self.datafile.close()
+            print("Data file is not found. Make sure this is right!")
+        else:
+            self.datafile.close()
 
     def run_calibration(self,
                         calibration_points,
@@ -842,6 +740,9 @@ class TobiiController:
                     rp = this_sample.right_eye.gaze_point.position_on_display_area
                     pixel_positions = self._tobii_to_pixels(
                         lp[0], lp[1], rp[0], rp[1])
+                    stimulus_positions = self._tobii_to_pixels(
+                        p.x, p.y, p.x, p.y
+                    )
                     this_sample_record = {
                         "system_time_stamp": this_sample.system_time_stamp,
                         "left_x": pixel_positions["left_x"],
@@ -852,9 +753,10 @@ class TobiiController:
                         "right_y": pixel_positions["right_y"],
                         "gaze_x": pixel_positions["ave_x"],
                         "gaze_y": pixel_positions["ave_y"],
+                        "stimulus_x": stimulus_positions["ave_x"],
+                        "stimulus_y": stimulus_positions["ave_y"],
                     }
                     self.validation_result_buffers.append({
-                        "stimulus_index": key,
                         "validation_step": validation_event,
                         **this_sample_record
                     })
@@ -1212,7 +1114,7 @@ class TobiiInfantController(TobiiController):
     """
     def __init__(self, win, id=0, filename="gaze_TOBII_output.tsv", calibration_disc_size=15):
         super().__init__(win, id, filename)
-        self.update_calibration = self._update_calibration_infant
+        self.update_calibration = self._update_calibration_infant_auto
         self.shrink_speed = 1
         self.Events = []
         self.calibration_disc_size = calibration_disc_size
@@ -1321,7 +1223,7 @@ class TobiiInfantController(TobiiController):
         file_exists = os.path.isfile(self.filename)
         data_df.to_csv(self.filename, mode='a', index=False, header=not file_exists)
 
-        validation_columns_order = ['stimulus_index', 'validation_step', 'system_time_stamp', 'time',
+        validation_columns_order = ['stimulus_x', 'stimulus_y', 'validation_step', 'system_time_stamp', 'time',
                                     'left_x', 'left_y', 'left_valid',
                                     'right_x', 'right_y', 'right_valid',
                                     'gaze_x', 'gaze_y']
@@ -1332,6 +1234,7 @@ class TobiiInfantController(TobiiController):
             val_df = pd.DataFrame(self.validation_result_buffers)
             val_df = val_df[validation_columns_order]
             val_file_exists = os.path.isfile(self.validation_filename)
+            print(self.validation_filename)
             val_df.to_csv(self.validation_filename, mode='a', index=False, header=not val_file_exists)
     
     def start_recording(self, filename=None, newfile=True):
@@ -1411,6 +1314,7 @@ class TobiiInfantController(TobiiController):
                     point_idx = self.numkey_dict[key]
 
                     # play the sound if it exists
+                    # only start playing sound once
                     if self._audio is not None:
                         if point_idx in self.retry_points:
                             self._audio.play()
@@ -1422,12 +1326,11 @@ class TobiiInfantController(TobiiController):
                         self._collect_calibration_data(
                             self.original_calibration_points[point_idx])
                         point_idx = -1
-                        # stop the sound
-                        if self._audio is not None:
-                            self._audio.pause()
                 elif key == exit_key:
                     # exit calibration when return is pressed
                     in_calibration = False
+                    if self._audio is not None:
+                        self._audio.pause()
                     break
 
             # draw calibration target
@@ -1451,6 +1354,8 @@ class TobiiInfantController(TobiiController):
         """Semi-automatic validation procedure for infants."""
         for idx, current_validation_point in enumerate(validation_points):
             event.clearEvents()
+            if self._audio is not None:
+                self._audio.play()
             deg = 0
             this_target = self.targets.get_stim(idx)
             orig_size = self.targets.get_stim_original_size(idx)
@@ -1468,10 +1373,138 @@ class TobiiInfantController(TobiiController):
                 keys = event.getKeys()
                 for key in keys:
                     if key == collect_key:
+                        if self._audio is not None:
+                            self._audio.pause()
                         core.wait(_focus_time, 0.0)
                         self._collect_validation_data(current_validation_point)
                         in_validation = False
                         break
+
+    def _update_calibration_infant_auto(self, _focus_time=0.5, collect_key="space"):
+        """Semi-automatic calibration procedure.
+        
+        Shows each calibration point with animation, waits for space bar press
+        to collect data and move to next point.
+        
+        Args:
+            _focus_time: duration allowing the subject to focus in seconds.
+                        Default is 0.5.
+            collect_key: key to start collecting samples and move to next point.
+                        Default is space.
+        
+        Returns:
+            None
+        """
+        # start calibration and play sound once for entire calibration
+        event.clearEvents()
+        clock = core.Clock()
+        
+        # Play sound once at the beginning
+        if self._audio is not None:
+            self._audio.play()
+        
+        for point_idx in self.retry_points:
+            # Set position for this calibration point
+            this_pos = self.original_calibration_points[point_idx]
+            this_target = self.targets.get_stim(point_idx)
+            this_target.setPos(this_pos)
+            
+            # Reset clock for animation
+            clock.reset()
+            in_calibration = True
+            
+            # Show animated target until space is pressed
+            while in_calibration:
+                # Animate target
+                t = clock.getTime() * self.shrink_speed
+                newsize = [
+                    (np.sin(t)**2 + self.calibration_target_min) * e
+                    for e in self.targets.get_stim_original_size(point_idx)
+                ]
+                this_target.setSize(newsize)
+                this_target.draw()
+                self.win.flip()
+                
+                # Check for key press
+                keys = event.getKeys()
+                for key in keys:
+                    if key == collect_key:
+                        # Collect data immediately
+                        self._collect_calibration_data(this_pos)
+                        # Move to next point immediately
+                        in_calibration = False
+                        break
+        
+        # Stop audio after all points are done
+        if self._audio is not None:
+            self._audio.pause()
+
+    def _update_calibration_infant_auto_old(self,
+                                _focus_time=0.5,
+                                collect_key="space",
+                                exit_key="return",
+                                auto_duration=2.0):
+        """The calibration procedure designed for infants.
+
+            An implementation of run_calibration().
+
+        Args:
+            focus_time: the duration allowing the subject to focus in seconds.
+                            Default is 0.5.
+            collect_key: key to start collecting samples. Default is space.
+            exit_key: key to finish and leave the current calibration
+                procedure. It should not be confused with `decision_key`, which
+                is used to leave the whole calibration process. `exit_key` is
+                used to leave the current calibration, the user may recalibrate
+                or accept the result afterwards. Default is return (Enter)
+            auto_duration: duration in seconds to show each point before
+                auto-collecting in auto_mode. Default is 2.0.
+
+        Returns:
+            None
+        """
+        # start calibration
+        event.clearEvents()
+        # Automatic mode - iterate through retry points
+        clock = core.Clock()
+        for point_idx in self.retry_points:
+            # Play sound if it exists
+            if self._audio is not None:
+                self._audio.play()
+            
+            # Get calibration point
+            this_target = self.targets.get_stim(point_idx)
+            this_pos = self.original_calibration_points[point_idx]
+            this_target.setPos(this_pos)
+            
+            # Show animated target for auto_duration
+            clock.reset()
+            while clock.getTime() < auto_duration:
+                # Check for manual exit
+                keys = event.getKeys()
+                if exit_key in keys:
+                    if self._audio is not None:
+                        self._audio.pause()
+                    return
+                
+                # Animate target
+                t = clock.getTime() * self.shrink_speed
+                newsize = [
+                    (np.sin(t)**2 + self.calibration_target_min) * e
+                    for e in self.targets.get_stim_original_size(point_idx)
+                ]
+                this_target.setSize(newsize)
+                this_target.draw()
+                self.win.flip()
+            
+            # Stop sound
+            if self._audio is not None:
+                self._audio.pause()
+            
+            # Allow focus time then collect
+            core.wait(_focus_time, 0.0)
+            self._collect_calibration_data(
+                self.original_calibration_points[point_idx])
 
     def run_calibration(self,
                         calibration_points,
@@ -1642,6 +1675,7 @@ class TobiiInfantController(TobiiController):
                        save_to_file=True,
                        result_msg_color="white",
                        event="default",
+                       audio=None,
                        *kwargs):
         """Run validation.
         Press space to start collect valdiation samples.
@@ -1675,6 +1709,9 @@ class TobiiInfantController(TobiiController):
         """
         if self.update_validation is None:
             raise ModuleNotFoundError("tobii_research_addons is not found.")
+        
+        if audio is not None:
+            self._audio = audio
 
         # setup the procedure
         self.validation = ScreenBasedCalibrationValidation(
