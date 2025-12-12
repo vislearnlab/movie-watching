@@ -10,10 +10,13 @@ logging.console.setLevel(logging.ERROR)
 import tobii_research as tr
 import time
 import pandas as pd
+import yaml
 from gooey import Gooey
 
 DIR = Path("../")
 trial_types = ["sesame", "slow", "frank", "pixar"]
+with open("config.yaml", 'r') as stream:
+    config_data = yaml.safe_load(stream)
 
 #@Gooey(program_name="Movie watching")
 def main():
@@ -77,9 +80,71 @@ def trial_order(dir, debug=False):
     
     return Trials
 
+def calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event, mode="initial", skip_first_calibration=False):
+    # Run validation loop
+    max_retries = config_data[f"{mode}_validation"]["max_retries"]
+    good_threshold = config_data[f"{mode}_validation"]["good_threshold"]
+    bad_threshold = config_data[f"{mode}_validation"]["bad_threshold"]
+    i = 0
+
+    while i < max_retries:
+
+        # Run calibration
+        if not skip_first_calibration or i > 0:
+            controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
+
+        # Run validation
+        result = controller.run_validation(
+            validation_points=CALIPOINTS,
+            infant_stims=CALISTIMS,
+            show_results=True,
+            event=f"{calib_event}_{i+1}",
+            audio=validation_sound
+        )
+
+        # Extract the 5 accuracy values for each eye 
+        left  = [result[f"Point_{idx}_accuracy_degrees_left"]
+                for idx in range(1, 6)]
+        right = [result[f"Point_{idx}_accuracy_degrees_right"]
+                for idx in range(1, 6)]
+
+        # Check: does a single eye individually pass these thresholds?
+        def eye_passes(targets):
+            good = sum(t < good_threshold for t in targets)   
+            bad  = sum(t > bad_threshold for t in targets)   
+            return (good >= 4) and (bad == 0)
+
+        # Average both eyes per target
+        avg = [(l + r) / 2 for l, r in zip(left, right)]
+
+        avg_good = sum(t < good_threshold for t in avg)
+        avg_bad  = sum(t > bad_threshold for t in avg)
+
+        avg_ok = (avg_good >= 4) and (avg_bad == 0)
+
+        # If average fails, check each eye individually
+        if avg_ok:
+            break
+        else:
+            left_ok  = eye_passes(left)
+            right_ok = eye_passes(right)
+
+            if left_ok or right_ok:
+                break
+
+        # If nothing passed then recalibrate
+        i += 1
+        if i < max_retries:
+            controller.display_text(
+                "Validation failed. Recalibrating...",
+                duration=2
+            )
+
+
 def run_experiment(Sub, debug=False):
     # Constants
     global DIR
+    TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
     DISPSIZE = (1920, 1200)
     CALINORMP = [(-0.4, 0.4 ), (-0.4, -0.4), (0.0, 0.0), (0.4, 0.4), (0.4, -0.4)]
     CALIPOINTS = [(x * DISPSIZE[0], y * DISPSIZE[1]) for x, y in CALINORMP]
@@ -134,7 +199,9 @@ def run_experiment(Sub, debug=False):
                         allowGUI=False)
 
     # Initialize TobiiController
-    filename = data_dir / f'{Sub}.csv'
+    subject_dir = data_dir / f"{Sub}"
+    os.makedirs(subject_dir, exist_ok=True)
+    filename = subject_dir / f'{Sub}_{TIMESTAMP}.csv'
     controller = TobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
 
     ###############################################################################
@@ -146,76 +213,18 @@ def run_experiment(Sub, debug=False):
     controller.eyetracker.set_gaze_output_frequency(250)
     grabber.setAutoDraw(False)
     grabber.stop()
-
-    # Run validation loop
-    max_retries = 2
-    good_threshold = 1.5
-    bad_threshold = 4
-    i = 0
-
-    while i <= max_retries:
-
-        # Run calibration
-        controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
-
-        # Run validation
-        result = controller.run_validation(
-            validation_points=CALIPOINTS,
-            infant_stims=CALISTIMS,
-            show_results=True,
-            event=f"pre_validation_{i+1}",
-            audio=validation_sound
-        )
-
-        # Extract the 5 accuracy values for each eye 
-        left  = [result[f"Point_{idx}_accuracy_degrees_left"]
-                for idx in range(1, 6)]
-        right = [result[f"Point_{idx}_accuracy_degrees_right"]
-                for idx in range(1, 6)]
-
-        # Check: does a single eye individually pass these thresholds?
-        def eye_passes(targets):
-            good = sum(t < good_threshold for t in targets)   
-            bad  = sum(t > bad_threshold for t in targets)   
-            return (good >= 4) and (bad == 0)
-
-        # Average both eyes per target
-        avg = [(l + r) / 2 for l, r in zip(left, right)]
-
-        avg_good = sum(t < good_threshold for t in avg)
-        avg_bad  = sum(t > bad_threshold for t in avg)
-
-        avg_ok = (avg_good >= 4) and (avg_bad == 0)
-
-        # If average fails, check each eye individually
-        if avg_ok:
-            break
-        else:
-            left_ok  = eye_passes(left)
-            right_ok = eye_passes(right)
-
-            if left_ok or right_ok:
-                break
-
-        # If nothing passed then recalibrate
-        controller.display_text(
-            "Validation failed. Recalibrating...",
-            duration=2
-        )
-
-        i += 1
-
+    calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event="pre_validation", mode="initial")
     
     Trials = trial_order(f"{DIR}/stimuli/main_blocks", debug=debug)
-    pd.DataFrame(Trials).to_csv(data_dir / f"{Sub}_trial_order.csv", index=False)
+    print(Trials)
+    pd.DataFrame(Trials).to_csv(subject_dir / f"{Sub}_{TIMESTAMP}_trial_order.csv", index=False)
     # Start Recording
     controller.start_recording()
 
     for trial in Trials:
+        recalibrate = 1
         if trial['within_block_trial_index'] == 0 and trial['block_index'] != 0:
-            controller.run_validation(validation_points=CALIPOINTS, 
-                                infant_stims=CALISTIMS, 
-                                show_results=True, event=f"validation_{trial['block_index']}", audio=validation_sound)
+            calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True)
         t1 = time.time()
         trial_id = trial['total_trial_index']
         video_path = trial['video_path']
@@ -224,7 +233,7 @@ def run_experiment(Sub, debug=False):
         print(f"Starting Trial {trial_id}: {video_name}")
         
         # Record trial start event
-        controller.record_event(f"Trial_{trial_id}_Start|Video_{video_name}")
+        controller.record_event(f"Loop_Start_{trial_id}")
         
         # Create movie stimulus
         movie = visual.MovieStim(
@@ -236,29 +245,51 @@ def run_experiment(Sub, debug=False):
             name=video_name
         )
         
-        # Present fixation / attention getter?
         win.flip()
-        core.wait(0.5)
         # Start movie
         movie.setAutoDraw(True)
         win.flip()  # Ensure movie is on screen
         t2 = time.time()
-        controller.record_event(f"Trial_{trial_id}_Video_Start")
-        
-        # Collect looking time (60 seconds max, 20 seconds away minimum)
-        # todo: if keeping habituation maybe need a seperate mp3 stream?
-        lt = controller.collect_lt(60, 20)
+        controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")   
+        lt, event_type = controller.collect_lt_with_calibration(10, 20)
+        if event_type == "escape":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Ended_Trial")
+            break
         print(f'Trial {trial_id} Looking time: %.3fs' % lt)
-        
-        # Stop movie
+        controller.record_event(f"Trial_End_{trial_id}")
+        if event_type == "calibration":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Forced_Recalibration")
+        elif event_type == "looking_away":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Looked_Away")
+        else:
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Normal")
+        controller._flush_data_csv()
         movie.setAutoDraw(False)
-        controller.record_event(f"Trial_{trial_id}_Video_End")
-        controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}")
+        movie.stop()
         t3 = time.time()
-        # ISI
+        if event_type != "normal":
+            if event_type == "looking_away":
+                controller.record_event(f"Trial_{trial_id}_Ended_Looking_Away")
+                controller.display_text("Press 'c' to recalibrate, or press space (or wait 5s) to continue.")
+                start_wait = time.time()
+                key = None
+                
+                while time.time() - start_wait < 5:
+                    keys = event.getKeys(keyList=['c', 'space'])
+                    if keys:
+                        key = keys[0]
+                        break
+                    core.wait(0.01)
+                # TODO: any point key press to trigger this
+                if key == 'c':
+                    controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looking_Away")
+                    calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")
+                    recalibrate += 1
+            else:
+                controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Key_Press")
+                calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")
         win.flip()
-        core.wait(1)
-        controller.record_event(f"Trial_{trial_id}_End")
+        controller.record_event(f"Loop_End_{trial_id}")
         t4 = time.time()
         # Check for escape key
         keys = event.getKeys()

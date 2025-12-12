@@ -157,6 +157,7 @@ class TobiiController:
     recording = False
     datafile = None
     validation_result_buffers = None
+    validation_summary_buffers = list()
 
     def __init__(self, win, id=0, filename="gaze_TOBII_output.txt"):
         self.eyetracker_id = id
@@ -164,13 +165,14 @@ class TobiiController:
         print(self.win.size)
         self.filename = filename
         self.validation_filename = filename.replace(".csv", "_validation.csv")
+        self.validation_summary_filename = filename.replace(".csv", "_validation_summary.csv")
         # FIXME: self.numkey_dict is not updated accordingly
         self.numkey_dict = self._default_numkey_dict
         self.calibration_dot_size = self._default_calibration_dot_size[
             self.win.units]
         self.calibration_disc_size = self._default_calibration_disc_size[
             self.win.units]
-
+        self.trial_start_time = None
         eyetrackers = tr.find_all_eyetrackers()
 
         if len(eyetrackers) == 0:
@@ -454,7 +456,7 @@ class TobiiController:
                                          self._on_gaze_data)
         self.recording = False
         # time correction for event data
-        self.event_data = [(round((x[0] - self.t0) / 1000.0, 1), x[1])
+        self.event_data = [(round((x[0] - self.t0) / 1000.0, 2), x[1])
                            for x in self.event_data]
         self._flush_data()
 
@@ -691,30 +693,70 @@ class TobiiController:
 
         return retval
 
-    def _process_validation_result(self, validation_result):
+    def _validation_metrics(self,prefix, left, right, monitor):
+        """Generate degrees + pixels metrics for either mean or point values."""
+        return {
+            f"{prefix}_degrees_left":  round(left, 4),
+            f"{prefix}_degrees_right": round(right, 4),
+            f"{prefix}_pixels_left":   round(deg2pix(left, monitor), 4),
+            f"{prefix}_pixels_right":  round(deg2pix(right, monitor), 4),
+        }
+
+    def _process_validation_result(self, validation_result, validation_event):
         """Process validation result"""
+        mon = self.win.monitor
+        mean_metrics = self._validation_metrics(
+            prefix="Mean_accuracy",
+            left=validation_result.average_accuracy_left,
+            right=validation_result.average_accuracy_right,
+            monitor=mon,
+        )
         result_buffer = {
             "Validation_time": datetime.now().strftime("%H:%M:%S"),
-            "Mean_accuracy_degrees_left": round(validation_result.average_accuracy_left, 4),
-            "Mean_accuracy_degrees_right": round(validation_result.average_accuracy_right, 4),
-            "Mean_accuracy_pixels_left": round(deg2pix(validation_result.average_accuracy_left, self.win.monitor), 4),
-            "Mean_accuracy_pixels_right": round(deg2pix(validation_result.average_accuracy_right, self.win.monitor), 4)
+            **mean_metrics,
         }
-        
-        for idx, (key, value) in enumerate(validation_result.points.items()):
-            print(key)
-            value = value[-1]
-            result_buffer.update({
-                f"Point_{idx+1}_accuracy_degrees_left": round(
-                    value.accuracy_left_eye, 4),
-                f"Point_{idx+1}_accuracy_degrees_right": round(
-                    value.accuracy_right_eye, 4),
-                f"Point_{idx+1}_accuracy_pixels_left": round(
-                    deg2pix(value.accuracy_left_eye, self.win.monitor), 4),
-                f"Point_{idx+1}_accuracy_pixels_right": round(
-                    deg2pix(value.accuracy_right_eye, self.win.monitor), 4)
+
+        self.validation_summary_buffers.append({
+            "validation_step": validation_event,
+            "point": "mean",
+            "stimulus_x": None,
+            "stimulus_y": None,
+            **mean_metrics,
+        })
+
+        # -------------------------
+        # Per-point metrics
+        # -------------------------
+        for idx, (_, values) in enumerate(validation_result.points.items(), start=1):
+            last = values[-1]
+
+            point_metrics = self._validation_metrics(
+                prefix=f"Point_{idx}_accuracy",
+                left=last.accuracy_left_eye,
+                right=last.accuracy_right_eye,
+                monitor=mon,
+            )
+            result_buffer.update(point_metrics)
+
+            point_mean_metrics = self._validation_metrics(
+                prefix="Mean_accuracy",
+                left=last.accuracy_left_eye,
+                right=last.accuracy_right_eye,
+                monitor=mon,
+            )
+            p = last.screen_point
+            stimulus_positions = self._tobii_to_pixels(
+                        p.x, p.y, p.x, p.y)
+            self.validation_summary_buffers.append({
+                "validation_step": validation_event,
+                "point": f"Point {idx}",
+                "stimulus_x": stimulus_positions["ave_x"],
+                "stimulus_y": stimulus_positions["ave_y"],
+                **point_mean_metrics,  
             })
-        return result_buffer      
+
+        return result_buffer
+  
 
     def _show_validation_result_full(self, result_buffer, show_results,
                                 save_to_file, decision_key, result_msg_color, validation_event):
@@ -1138,10 +1180,10 @@ class TobiiInfantController(TobiiController):
             pup = record["left_pupil_diameter"]
         else:
             pup = (record["left_pupil_diameter"] + record["right_pupil_diameter"]) / 2.0
-
         return {
             'system_time_stamp': record["system_time_stamp"],
-            'time': round((record["system_time_stamp"] - self.t0) / 1000.0, 1),
+            'study_time': round((record["system_time_stamp"] - self.t0) / 1000.0, 2),
+            'trial_time': np.nan,
             'left_x': round(pixel_positions["left_x"], 4),
             'left_y': round(pixel_positions["left_y"], 4),
             'left_valid': int(record["left_gaze_point_validity"]),
@@ -1158,42 +1200,30 @@ class TobiiInfantController(TobiiController):
         }
     
     def _flush_data_csv(self):
-        """Write data to CSV file with proper formatting"""
+        """Write data to CSV file, only appending new rows."""
+
         if not self.gaze_data:
             raise RuntimeWarning("No data were collected.")
 
-        if self.recording:
-            raise RuntimeWarning(
-                "Still recording. Data are only saved to the disk after "
-                "stop_recording() is called.")
-
         import pandas as pd
+        import os
 
-        # Convert gaze data to list of dictionaries
+        # ---------------------------
+        # Gaze Data
+        # ---------------------------
         data_records = [self._convert_tobii_record_csv(gd) for gd in self.gaze_data]
         data_df = pd.DataFrame(data_records)
         data_df['events'] = ''
-        
-        # Process events - create rows for events that happen between samples
+
+        # Process events
+        start_trial_events, end_trial_events = [], []
         if len(self.event_data) > 0:
             event_rows = []
             for evt_timestamp, evt_label in self.event_data:
-                # Find closest gaze sample
-                time_diff = np.abs(data_df['system_time_stamp'].values - evt_timestamp)
-                closest_idx = np.argmin(time_diff)
-                
-                '''
-                if time_diff[closest_idx] < 5000:  # 5ms in microseconds
-                    if data_df.loc[closest_idx, 'events'] == '':
-                        data_df.loc[closest_idx, 'events'] = evt_label
-                    else:
-                        data_df.loc[closest_idx, 'events'] += f"; {evt_label}"
-                else:
-                    # Create a new row for this event
-                '''
                 event_row = {
                     'system_time_stamp': evt_timestamp,
-                    'time': round((evt_timestamp - self.t0) / 1000.0, 1),
+                    'study_time': round((evt_timestamp - self.t0) / 1000.0, 2),
+                    'trial_time': np.nan,
                     'left_x': np.nan, 'left_y': np.nan, 'left_valid': 0,
                     'left_pupil': np.nan, 'left_pupil_valid': 0,
                     'right_x': np.nan, 'right_y': np.nan, 'right_valid': 0,
@@ -1201,41 +1231,89 @@ class TobiiInfantController(TobiiController):
                     'gaze_x': np.nan, 'gaze_y': np.nan, 'pupil_size': np.nan,
                     'events': evt_label
                 }
+                if evt_label.startswith("Trial_Start_"):
+                    start_trial_events.append(evt_timestamp)
+                if evt_label.startswith("Trial_End_"):
+                    end_trial_events.append(evt_timestamp)
                 event_rows.append(event_row)
-            
-            # Add event rows and sort by timestamp
             if event_rows:
                 event_df = pd.DataFrame(event_rows)
                 data_df = pd.concat([data_df, event_df], ignore_index=True)
                 data_df = data_df.sort_values('system_time_stamp').reset_index(drop=True)
-        
-        # Initialize events column if not present
-        if 'events' not in data_df.columns:
-            data_df['events'] = ''
-        
-        # Select and order columns
-        columns_order = ['system_time_stamp', 'time', 'left_x', 'left_y', 'left_valid', 'left_pupil', 'left_pupil_valid',
+
+        # Compute trial_time
+        for start, end in zip(start_trial_events, end_trial_events):
+            print(len(start_trial_events))
+            print(start, end)
+            mask = (data_df['system_time_stamp'] >= start) & (data_df['system_time_stamp'] <= end)
+            data_df.loc[mask, 'trial_time'] = round((data_df.loc[mask, 'system_time_stamp'] - start) / 1000.0, 2)
+
+        # Select columns
+        columns_order = ['system_time_stamp', 'study_time', 'trial_time', 
+                        'left_x', 'left_y', 'left_valid', 'left_pupil', 'left_pupil_valid',
                         'right_x', 'right_y', 'right_valid', 'right_pupil', 'right_pupil_valid',
                         'gaze_x', 'gaze_y', 'pupil_size', 'events']
         data_df = data_df[columns_order]
-        
-        # Write to CSV
-        file_exists = os.path.isfile(self.filename)
-        data_df.to_csv(self.filename, mode='a', index=False, header=not file_exists)
 
-        validation_columns_order = ['stimulus_x', 'stimulus_y', 'validation_step', 'system_time_stamp', 'time',
+        # Append only new gaze data
+        if os.path.isfile(self.filename):
+            existing_df = pd.read_csv(self.filename)
+            new_df = data_df[~data_df['system_time_stamp'].isin(existing_df['system_time_stamp'])]
+        else:
+            new_df = data_df
+
+        if not new_df.empty:
+            new_df.to_csv(self.filename, mode='a', index=False, header=not os.path.isfile(self.filename))
+
+        # ---------------------------
+        # Validation Results
+        # ---------------------------
+        validation_columns_order = ['stimulus_x', 'stimulus_y', 'validation_step', 'system_time_stamp', 'study_time',
                                     'left_x', 'left_y', 'left_valid',
                                     'right_x', 'right_y', 'right_valid',
                                     'gaze_x', 'gaze_y']
         if self.validation_result_buffers is not None:
+            val_records = []
+            prev_validation_step = None
+            validation_start_time = 0
             for val_buffer in self.validation_result_buffers:
-                # Add time column
-                val_buffer['time'] = round((val_buffer['system_time_stamp'] - self.t0) / 1000.0, 1)
-            val_df = pd.DataFrame(self.validation_result_buffers)
+                if val_buffer['validation_step'] != prev_validation_step:
+                    validation_start_time = val_buffer['system_time_stamp']
+                val_buffer['study_time'] = round((val_buffer['system_time_stamp'] - self.t0) / 1000.0, 2)
+                val_buffer['validation_time'] = round((val_buffer['system_time_stamp'] - validation_start_time) / 1000.0, 2)
+                val_records.append(val_buffer)
+                prev_validation_step = val_buffer['validation_step']
+            val_df = pd.DataFrame(val_records)
             val_df = val_df[validation_columns_order]
-            val_file_exists = os.path.isfile(self.validation_filename)
-            print(self.validation_filename)
-            val_df.to_csv(self.validation_filename, mode='a', index=False, header=not val_file_exists)
+
+            # Append only new validation steps
+            if os.path.isfile(self.validation_filename):
+                existing_val_df = pd.read_csv(self.validation_filename)
+                new_val_df = val_df[~val_df['validation_step'].isin(existing_val_df['validation_step'])]
+            else:
+                new_val_df = val_df
+
+            if not new_val_df.empty:
+                new_val_df.to_csv(self.validation_filename, mode='a', index=False, header=not os.path.isfile(self.validation_filename))
+
+        # ---------------------------
+        # Validation Summary
+        # ---------------------------
+        validation_summary_columns_order = ['point', 'stimulus_x', 'stimulus_y', 'validation_step', 'Mean_accuracy_degrees_left', 'Mean_accuracy_degrees_right',
+                                            'Mean_accuracy_pixels_left', 'Mean_accuracy_pixels_right']
+        if self.validation_summary_buffers is not None:
+            val_summary_df = pd.DataFrame(self.validation_summary_buffers)
+            val_summary_df = val_summary_df[validation_summary_columns_order]
+
+            # Append only new validation steps
+            if os.path.isfile(self.validation_summary_filename):
+                existing_val_summary_df = pd.read_csv(self.validation_summary_filename)
+                new_val_summary_df = val_summary_df[~val_summary_df['validation_step'].isin(existing_val_summary_df['validation_step'])]
+            else:
+                new_val_summary_df = val_summary_df
+
+            if not new_val_summary_df.empty:
+                new_val_summary_df.to_csv(self.validation_summary_filename, mode='a', index=False, header=not os.path.isfile(self.validation_summary_filename))
     
     def start_recording(self, filename=None, newfile=True):
         """Start recording with CSV support"""
@@ -1738,7 +1816,7 @@ class TobiiInfantController(TobiiController):
 
         if not (save_to_file or show_results):
             return self.validation_result
-        result_buffer = self._process_validation_result(self.validation_result)
+        result_buffer = self._process_validation_result(self.validation_result, event)
         self._show_validation_result_full(result_buffer, show_results, save_to_file,
                                      decision_key, result_msg_color, event)
 
@@ -1855,6 +1933,67 @@ class TobiiInfantController(TobiiController):
         else:
             lt = max_time - np.sum(away_time)
             return round(lt, 3)
+    
+    def collect_lt_with_calibration(self, max_time, min_away, blink_dur=1, calibration_key='c', escape_key='esc'):
+        """
+        Collect looking time but ALSO allow operator-triggered calibration
+        by pressing the calibration_key at ANY time.
+
+        Returns:
+            (lt, status)
+            lt: float
+            status: "normal" or "calibration"
+        """
+        trial_timer = core.Clock()
+        absence_timer = core.Clock()
+        away_time = []
+
+        looking = True
+        trial_timer.reset()
+        absence_timer.reset()
+
+        while trial_timer.getTime() <= max_time:
+
+            # check calibration key ANY TIME during the trial
+            keys = event.getKeys()
+            if calibration_key in keys:
+                lt = trial_timer.getTime() - np.sum(away_time)
+                return round(lt, 3), "calibration"
+            elif escape_key in keys:
+                lt = trial_timer.getTime() - np.sum(away_time)
+                return round(lt, 3), "escape"
+
+            gaze_data = self.gaze_data[-1]
+            lv = gaze_data["left_gaze_point_validity"]
+            rv = gaze_data["right_gaze_point_validity"]
+
+            if any((lv, rv)):
+                # valid gaze sample
+                if not looking:
+                    away_dur = absence_timer.getTime()
+                    if away_dur >= min_away:
+                        away_time.append(away_dur)
+                        lt = trial_timer.getTime() - np.sum(away_time)
+                        return round(lt, 3), "looking_away"
+                    elif away_dur >= blink_dur:
+                        away_time.append(away_dur)
+                looking = True
+                absence_timer.reset()
+
+            else:
+                # missing gaze sample
+                if absence_timer.getTime() >= min_away:
+                    away_dur = absence_timer.getTime()
+                    away_time.append(away_dur)
+                    lt = trial_timer.getTime() - np.sum(away_time)
+                    return round(lt, 3), "looking_away"
+                looking = False
+
+            self.win.flip()
+
+        # Trial ended normally by time limit
+        lt = max_time - np.sum(away_time)
+        return round(lt, 3), "normal"
 
 
 # backward compatible

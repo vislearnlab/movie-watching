@@ -1,0 +1,11 @@
+initial_validation:
+  max_retries: 2
+  good_threshold: 1.5
+  bad_threshold: 4
+later_validation:
+  max_retries: 2
+  good_threshold: 3
+  bad_threshold: 6
+trial_config:
+  max_time: 60
+  away_time: 20
