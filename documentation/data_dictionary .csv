@@ -1,0 +1,29 @@
+﻿movie-watching data dictionary,,,,,
+last updated:,Dec 12 2025,,,,
+,,,,,
+Variable Name,Type,Units / Format,Example Values,Description,Source File(s)
+system_time_stamp,float / int,ms,123456,"Time since experiment started, recorded by system","eyetracking_output.csv, validation_results.csv"
+time,float / int,ms,123450,Timestamp aligned with gaze recording,"eyetracking_output.csv, validation_results.csv"
+left_x,float,pixels,512,Horizontal position of left eye gaze,"eyetracking_output.csv, validation_results.csv"
+left_y,float,pixels,384,Vertical position of left eye gaze,"eyetracking_output.csv, validation_results.csv"
+left_valid,int / bool,0/1,1,Whether left eye gaze position is valid,eyetracking_output.csv
+right_x,float,pixels,520,Horizontal position of right eye gaze,"eyetracking_output.csv, validation_results.csv"
+right_y,float,pixels,390,Vertical position of right eye gaze,"eyetracking_output.csv, validation_results.csv"
+right_valid,int / bool,0/1,1,Whether right eye gaze position is valid,eyetracking_output.csv
+gaze_x,float,pixels,516,Combined / averaged horizontal gaze position,"eyetracking_output.csv, validation_results.csv"
+gaze_y,float,pixels,387,Combined / averaged vertical gaze position,"eyetracking_output.csv, validation_results.csv"
+left_pupil,float,mm,3.2,Left eye pupil diameter,eyetracking_output.csv
+left_pupil_valid,int / bool,0/1,1,Whether left pupil measurement is valid,eyetracking_output.csv
+right_pupil,float,mm,3.3,Right eye pupil diameter,eyetracking_output.csv
+right_pupil_valid,int / bool,0/1,1,Whether right pupil measurement is valid,eyetracking_output.csv
+pupil_size,float,mm,3.25,Combined / averaged pupil size,eyetracking_output.csv
+events,string / categorical,n/a,trial_start,Event markers from experiment,eyetracking_output.csv
+stimulus_x,float,pixels,960,Horizontal position of stimulus on screen,validation_results.csv
+stimulus_y,float,pixels,540,Vertical position of stimulus on screen,validation_results.csv
+validation_step,int / categorical,n/a,2,Step of validation procedure during experiment,validation_results.csv
+total_trial_index,int,n/a,5,Overall trial index across entire experiment,stimulus_order.csv
+video_path,string,file path,stimuli/videos/video01.mp4,Full path to stimulus video for this trial,stimulus_order.csv
+video_name,string,file name,video01.mp4,Name of stimulus video for this trial,stimulus_order.csv
+block_id,int / string,n/a,1,Identifier for experimental block,stimulus_order.csv
+block_index,int,n/a,2,Position of block in session,stimulus_order.csv
+within_block_trial_index,int,n/a,3,Trial number within its block,stimulus_order.csv
