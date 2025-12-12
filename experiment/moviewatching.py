@@ -148,17 +148,64 @@ def run_experiment(Sub, debug=False):
     grabber.stop()
 
     # Run validation loop
+    max_retries = 2
+    good_threshold = 1.5
+    bad_threshold = 4
     i = 0
-    while (i <= 2):
+
+    while i <= max_retries:
+
+        # Run calibration
         controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
-        result = controller.run_validation(validation_points=CALIPOINTS, 
-                                        infant_stims=CALISTIMS, 
-                                        show_results=True, event=f"pre_validation_{i+1}", audio=validation_sound)
-        if result['Mean_accuracy_degrees_left'] > 25.0 or result['Mean_accuracy_degrees_right'] > 25.0:
-            controller.display_text("Validation failed. Recalibrating...", duration=2)
-        else:
+
+        # Run validation
+        result = controller.run_validation(
+            validation_points=CALIPOINTS,
+            infant_stims=CALISTIMS,
+            show_results=True,
+            event=f"pre_validation_{i+1}",
+            audio=validation_sound
+        )
+
+        # Extract the 5 accuracy values for each eye 
+        left  = [result[f"Point_{idx}_accuracy_degrees_left"]
+                for idx in range(1, 6)]
+        right = [result[f"Point_{idx}_accuracy_degrees_right"]
+                for idx in range(1, 6)]
+
+        # Check: does a single eye individually pass these thresholds?
+        def eye_passes(targets):
+            good = sum(t < good_threshold for t in targets)   
+            bad  = sum(t > bad_threshold for t in targets)   
+            return (good >= 4) and (bad == 0)
+
+        # Average both eyes per target
+        avg = [(l + r) / 2 for l, r in zip(left, right)]
+
+        avg_good = sum(t < good_threshold for t in avg)
+        avg_bad  = sum(t > bad_threshold for t in avg)
+
+        avg_ok = (avg_good >= 4) and (avg_bad == 0)
+
+        # If average fails, check each eye individually
+        if avg_ok:
             break
+        else:
+            left_ok  = eye_passes(left)
+            right_ok = eye_passes(right)
+
+            if left_ok or right_ok:
+                break
+
+        # If nothing passed then recalibrate
+        controller.display_text(
+            "Validation failed. Recalibrating...",
+            duration=2
+        )
+
         i += 1
+
+    
     Trials = trial_order(f"{DIR}/stimuli/main_blocks", debug=debug)
     pd.DataFrame(Trials).to_csv(data_dir / f"{Sub}_trial_order.csv", index=False)
     # Start Recording
