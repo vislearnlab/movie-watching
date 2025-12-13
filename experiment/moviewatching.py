@@ -168,7 +168,7 @@ def run_experiment(Sub, debug=False):
     # Constants
     global DIR
     TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
-    DISPSIZE = (1920, 1200)
+    DISPSIZE = (1920, 1080)
     CALINORMP = [(-0.4, 0.4 ), (-0.4, -0.4), (0.0, 0.0), (0.4, 0.4), (0.4, -0.4)]
     CALIPOINTS = [(x * DISPSIZE[0], y * DISPSIZE[1]) for x, y in CALINORMP]
     STIM_DIR = DIR / os.path.join('stimuli')
@@ -274,7 +274,7 @@ def run_experiment(Sub, debug=False):
         win.flip()  # Ensure movie is on screen
         t2 = time.time()
         controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")   
-        lt, event_type = controller.collect_lt_with_calibration(10, 2)
+        lt, event_type = controller.collect_lt_with_calibration(60, 20)
         print(f'Trial {trial_id} Looking time: %.3fs' % lt)
         if event_type == "pause":
             controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Paused")
@@ -282,9 +282,8 @@ def run_experiment(Sub, debug=False):
             
             # wait until space is pressed
             keys = []
-            while 'space' not in [k.name for k in keys]:
-                keys = event.getKeys(keyList=['space'], waitRelease=False)
-
+            while 'space' not in keys:
+                keys = event.getKeys(keyList=['space'])
             movie.play()  # resume playback
             controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Resumed")
         controller.record_event(f"Trial_End_{trial_id}")
@@ -305,12 +304,12 @@ def run_experiment(Sub, debug=False):
         if event_type != "normal":
             if event_type == "looking_away":
                 controller.record_event(f"Trial_{trial_id}_Ended_Looking_Away")
-                controller.display_text("Press 'c' to recalibrate, or press 'space' (or wait 5s) to continue.")
+                controller.display_text("Press 'c' to recalibrate, or press 'p' (or wait 5s) to proceed.")
                 start_wait = time.time()
                 key = None
                 
                 while time.time() - start_wait < 5:
-                    keys = event.getKeys(keyList=['c', 'space'])
+                    keys = event.getKeys(keyList=['c', 'p'])
                     if keys:
                         key = keys[0]
                         break
