@@ -12,13 +12,33 @@ import time
 import pandas as pd
 import yaml
 from gooey import Gooey
+from psychopy.hardware import keyboard
+from psychtoolbox import audio
+
+from psychopy import prefs
+
+devices = audio.get_devices()
+
+# find HDMI / monitor-like devices
+candidates = [d for d in devices
+              if any(keyword.lower() in d['DeviceName'].lower() 
+                     for keyword in ['hdmi', 'display', 'monitor', 'nvidia', 'amd', 'PA24'])]
+
+if len(candidates) > 0:
+    # choose the best candidate (e.g., last one)
+    best = candidates[-1]
+    prefs.hardware['audioLib'] = ['ptb']
+    prefs.hardware['audioDevice'] = best['DeviceName']
+    print("Using monitor audio device:", best['DeviceName'])
+else:
+    print("No monitor audio found, using default.")
 
 DIR = Path("../")
 trial_types = ["sesame", "slow", "frank", "pixar"]
 with open("config.yaml", 'r') as stream:
     config_data = yaml.safe_load(stream)
 
-#@Gooey(program_name="Movie watching")
+# @Gooey(program_name="Movie watching")
 def main():
     DIR = Path("../")
     parser = ArgumentParser(description="Movie Watching Experiment")
@@ -50,9 +70,8 @@ def trial_order(dir, debug=False):
 
     trial_idx = 0
     
-    for iblock, block in enumerate(block_keys):
-        if block == 'pixar':
-            continue
+    non_pixar_block_keys = [block for block in block_keys if block != 'pixar']
+    for iblock, block in enumerate(non_pixar_block_keys):
         # Add trials from this block
         for within_trial_idx, video_name in enumerate(blocks[block]):
             Trials.append({
@@ -103,10 +122,14 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, va
         )
 
         # Extract the 5 accuracy values for each eye 
-        left  = [result[f"Point_{idx}_accuracy_degrees_left"]
-                for idx in range(1, 6)]
-        right = [result[f"Point_{idx}_accuracy_degrees_right"]
-                for idx in range(1, 6)]
+        left = [
+            result.get(f"Point_{idx}_accuracy_degrees_left", bad_threshold+.01)
+            for idx in range(1, 6)
+        ]
+        right = [
+            result.get(f"Point_{idx}_accuracy_degrees_right", bad_threshold+.01)
+            for idx in range(1, 6)
+        ]
 
         # Check: does a single eye individually pass these thresholds?
         def eye_passes(targets):
@@ -251,11 +274,19 @@ def run_experiment(Sub, debug=False):
         win.flip()  # Ensure movie is on screen
         t2 = time.time()
         controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")   
-        lt, event_type = controller.collect_lt_with_calibration(10, 20)
-        if event_type == "escape":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Ended_Trial")
-            break
+        lt, event_type = controller.collect_lt_with_calibration(10, 2)
         print(f'Trial {trial_id} Looking time: %.3fs' % lt)
+        if event_type == "pause":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Paused")
+            movie.pause()
+            
+            # wait until space is pressed
+            keys = []
+            while 'space' not in [k.name for k in keys]:
+                keys = event.getKeys(keyList=['space'], waitRelease=False)
+
+            movie.play()  # resume playback
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Resumed")
         controller.record_event(f"Trial_End_{trial_id}")
         if event_type == "calibration":
             controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Forced_Recalibration")
@@ -264,13 +295,17 @@ def run_experiment(Sub, debug=False):
         else:
             controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Normal")
         controller._flush_data_csv()
+        core.wait(0.05)
         movie.setAutoDraw(False)
         movie.stop()
+        if event_type == "escape":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Ended_Trial")
+            break
         t3 = time.time()
         if event_type != "normal":
             if event_type == "looking_away":
                 controller.record_event(f"Trial_{trial_id}_Ended_Looking_Away")
-                controller.display_text("Press 'c' to recalibrate, or press space (or wait 5s) to continue.")
+                controller.display_text("Press 'c' to recalibrate, or press 'space' (or wait 5s) to continue.")
                 start_wait = time.time()
                 key = None
                 
@@ -280,7 +315,7 @@ def run_experiment(Sub, debug=False):
                         key = keys[0]
                         break
                     core.wait(0.01)
-                # TODO: any point key press to trigger this
+                print(f"we pressed a key here! it's {key}")
                 if key == 'c':
                     controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looking_Away")
                     calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")

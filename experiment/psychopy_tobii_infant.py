@@ -1934,7 +1934,7 @@ class TobiiInfantController(TobiiController):
             lt = max_time - np.sum(away_time)
             return round(lt, 3)
     
-    def collect_lt_with_calibration(self, max_time, min_away, blink_dur=1, calibration_key='c', escape_key='esc'):
+    def collect_lt_with_calibration(self, max_time, min_away, blink_dur=1, calibration_key='c', escape_key='escape', pause_key='space'):
         """
         Collect looking time but ALSO allow operator-triggered calibration
         by pressing the calibration_key at ANY time.
@@ -1962,6 +1962,9 @@ class TobiiInfantController(TobiiController):
             elif escape_key in keys:
                 lt = trial_timer.getTime() - np.sum(away_time)
                 return round(lt, 3), "escape"
+            elif pause_key in keys:
+                lt = trial_timer.getTime() - np.sum(away_time)
+                return round(lt, 3), "pause"
 
             gaze_data = self.gaze_data[-1]
             lv = gaze_data["left_gaze_point_validity"]
