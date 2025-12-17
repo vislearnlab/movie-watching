@@ -1934,15 +1934,15 @@ class TobiiInfantController(TobiiController):
             lt = max_time - np.sum(away_time)
             return round(lt, 3)
     
-    def collect_lt_with_calibration(self, max_time, min_away, blink_dur=1, calibration_key='c', escape_key='escape', pause_key='space'):
+    def collect_lt_with_calibration(self, max_time, min_away, blink_dur=1, calibration_key='c', escape_key='escape', next_key='n', pause_key='space'):
         """
         Collect looking time but ALSO allow operator-triggered calibration
-        by pressing the calibration_key at ANY time.
+        by pressing the calibration_key at ANY time for example.
 
         Returns:
             (lt, status)
             lt: float
-            status: "normal" or "calibration"
+            status: "normal", "calibration", "looking_away", "pause", "escape", "next_trial"
         """
         trial_timer = core.Clock()
         absence_timer = core.Clock()
@@ -1957,14 +1957,17 @@ class TobiiInfantController(TobiiController):
             # check calibration key ANY TIME during the trial
             keys = event.getKeys()
             if calibration_key in keys:
-                lt = trial_timer.getTime() - np.sum(away_time)
+                lt = trial_timer.getTime() 
                 return round(lt, 3), "calibration"
             elif escape_key in keys:
-                lt = trial_timer.getTime() - np.sum(away_time)
+                lt = trial_timer.getTime()
                 return round(lt, 3), "escape"
             elif pause_key in keys:
-                lt = trial_timer.getTime() - np.sum(away_time)
+                lt = trial_timer.getTime() 
                 return round(lt, 3), "pause"
+            elif next_key in keys:
+                lt = trial_timer.getTime() 
+                return round(lt, 3), "next_trial"
 
             gaze_data = self.gaze_data[-1]
             lv = gaze_data["left_gaze_point_validity"]
@@ -1976,7 +1979,7 @@ class TobiiInfantController(TobiiController):
                     away_dur = absence_timer.getTime()
                     if away_dur >= min_away:
                         away_time.append(away_dur)
-                        lt = trial_timer.getTime() - np.sum(away_time)
+                        lt = trial_timer.getTime() 
                         return round(lt, 3), "looking_away"
                     elif away_dur >= blink_dur:
                         away_time.append(away_dur)
@@ -1988,14 +1991,14 @@ class TobiiInfantController(TobiiController):
                 if absence_timer.getTime() >= min_away:
                     away_dur = absence_timer.getTime()
                     away_time.append(away_dur)
-                    lt = trial_timer.getTime() - np.sum(away_time)
+                    lt = trial_timer.getTime() 
                     return round(lt, 3), "looking_away"
                 looking = False
 
             self.win.flip()
 
         # Trial ended normally by time limit
-        lt = max_time - np.sum(away_time)
+        lt = max_time 
         return round(lt, 3), "normal"
 
 

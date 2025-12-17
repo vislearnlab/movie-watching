@@ -273,37 +273,52 @@ def run_experiment(Sub, debug=False):
         movie.setAutoDraw(True)
         win.flip()  # Ensure movie is on screen
         t2 = time.time()
-        controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")   
-        lt, event_type = controller.collect_lt_with_calibration(60, 20)
-        print(f'Trial {trial_id} Looking time: %.3fs' % lt)
-        if event_type == "pause":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Paused")
-            movie.pause()
-            
-            # wait until space is pressed
-            keys = []
-            while 'space' not in keys:
-                keys = event.getKeys(keyList=['space'])
-            movie.play()  # resume playback
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Resumed")
-        controller.record_event(f"Trial_End_{trial_id}")
+        controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")  
+        event_type == "play"
+
+        # Collect looking time with pause handling
+        remaining_time = 60
+        total_lt = 0
+        
+        while remaining_time > 1:
+            lt, event_type = controller.collect_lt_with_calibration(remaining_time, 20)
+            total_lt += lt
+            print(f'Trial {trial_id} Looking time: %.3fs (total: %.3fs)' % (lt, total_lt))
+            if event_type == "pause":
+                controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Paused")
+                movie.pause()         
+                event.waitKeys(keyList=['space'])
+                movie.play()  # resume playback
+                controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Resumed")
+                # Update remaining time and continue loop
+                remaining_time = 60 - total_lt
+                
+            else:
+                # Trial ended for another reason (looking_away, calibration, escape, or normal)
+                break
+        
+        # Record final event based on how trial ended
         if event_type == "calibration":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Forced_Recalibration")
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Forced_Recalibration")
         elif event_type == "looking_away":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Looked_Away")
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Looked_Away")
+        elif event_type == "next_trial":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Ended_Trial")
+        elif event_type == "escape":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Ended_Experiment")
         else:
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Normal")
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Normal")
+        controller.record_event(f"Trial_End_{trial_id}")
         controller._flush_data_csv()
         core.wait(0.05)
         movie.setAutoDraw(False)
         movie.stop()
+        core.wait(0.05)
         if event_type == "escape":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Ended_Trial")
             break
         t3 = time.time()
         if event_type != "normal":
             if event_type == "looking_away":
-                controller.record_event(f"Trial_{trial_id}_Ended_Looking_Away")
                 controller.display_text("Press 'c' to recalibrate, or press 'p' (or wait 5s) to proceed.")
                 start_wait = time.time()
                 key = None
@@ -314,12 +329,11 @@ def run_experiment(Sub, debug=False):
                         key = keys[0]
                         break
                     core.wait(0.01)
-                print(f"we pressed a key here! it's {key}")
                 if key == 'c':
-                    controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looking_Away")
+                    controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looked_Away")
                     calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")
                     recalibrate += 1
-            else:
+            elif event_type == "calibration":
                 controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Key_Press")
                 calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")
         win.flip()
