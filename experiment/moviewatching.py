@@ -11,6 +11,8 @@ import time
 import pandas as pd
 import yaml
 import sounddevice as sd
+import datetime
+from glob import glob
 # known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
 from psychopy_sounddevice import SoundDeviceSound
 
@@ -164,6 +166,73 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, va
                 duration=2
             )
 
+def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
+    """
+    Check for existing records within the last hour and prompt user to resume.
+    
+    Returns:
+        tuple: (filename, should_calibrate, start_trial_index, timestamp_to_use, existing_trial_order)
+    """
+    existing_files = glob(str(subject_dir / f'{Sub}_*.csv'))
+    recent_file = None
+    last_timestamp = None
+
+    if existing_files:
+        current_time = datetime.now()
+        for file in existing_files:
+            try:
+                # Extract timestamp from filename (assumes format: Sub_YYYYMMDD_HHMMSS.csv)
+                file_timestamp_str = file.split('_')[-2] + '_' + file.split('_')[-1].replace('.csv', '')
+                file_timestamp = datetime.strptime(file_timestamp_str, '%Y%m%d_%H%M%S')
+                
+                if current_time - file_timestamp < datetime.timedelta(hours=1):
+                    recent_file = file
+                    last_timestamp = file_timestamp_str
+                    break
+            except (ValueError, IndexError):
+                continue
+
+    # No recent file found - start fresh
+    if not recent_file:
+        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+
+    # Recent file found - ask user
+    response = input(f"Found existing record from {last_timestamp}. Use existing records? (y/n): ").strip().lower()
+    
+    if response != 'y':
+        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+    
+    # User wants to resume - load existing trial order and find last trial
+    print(f"Resuming from existing file: {recent_file}")
+    
+    # Load the existing trial order
+    trial_order_file = subject_dir / f"{Sub}_{last_timestamp}_trial_order.csv"
+    existing_trial_order = None
+    
+    try:
+        if trial_order_file.exists():
+            existing_trial_order = pd.read_csv(trial_order_file).to_dict('records')
+            print(f"Loaded existing trial order from {trial_order_file}")
+        else:
+            print(f"Warning: Trial order file not found at {trial_order_file}")
+            return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+    except Exception as e:
+        print(f"Error reading trial order: {e}. Starting fresh session.")
+        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+    
+    # Find last completed trial
+    try:
+        existing_data = pd.read_csv(recent_file)
+        if not existing_data.empty and 'trial' in existing_data.columns:
+            last_trial_idx = existing_data['trial'].max()
+            # Skip to the trial after the last completed one, plus one more as specified
+            start_trial_idx = last_trial_idx + 2
+            print(f"Resuming from trial {start_trial_idx} (skipping trial {last_trial_idx + 1})")
+            return recent_file, False, start_trial_idx, last_timestamp, existing_trial_order
+    except Exception as e:
+        print(f"Error reading existing data: {e}. Starting from the beginning of existing trial order.")
+    
+    return recent_file, False, 0, last_timestamp, existing_trial_order
 
 def run_experiment(Sub, debug=False):
     # Constants
@@ -225,7 +294,12 @@ def run_experiment(Sub, debug=False):
     # Initialize TobiiController
     subject_dir = data_dir / f"{Sub}"
     os.makedirs(subject_dir, exist_ok=True)
-    filename = subject_dir / f'{Sub}_{TIMESTAMP}.csv'
+
+    # Check for existing session and get parameters
+    filename, should_calibrate, start_trial_idx, timestamp_to_use, existing_trial_order = check_and_resume_session(
+        subject_dir, Sub, TIMESTAMP
+    )
+
     controller = TobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
 
     ###############################################################################
@@ -237,10 +311,20 @@ def run_experiment(Sub, debug=False):
     controller.eyetracker.set_gaze_output_frequency(250)
     grabber.setAutoDraw(False)
     grabber.stop()
-    calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event="pre_validation", mode="initial")
+    if should_calibrate:
+        calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event="pre_validation", mode="initial")
     
-    Trials = trial_order(f"{DIR}/stimuli/main_blocks", debug=debug)
+    if existing_trial_order is not None:
+        Trials = existing_trial_order
+        print("Using existing trial order")
+    else:
+        Trials = trial_order(f"{DIR}/stimuli/main_blocks", debug=debug)
+        pd.DataFrame(Trials).to_csv(subject_dir / f"{Sub}_{timestamp_to_use}_trial_order.csv", index=False)
+    # Skip to the appropriate trial if resuming
+    if start_trial_idx > 0:
+        Trials = Trials[start_trial_idx:]
     print(Trials)
+    
     pd.DataFrame(Trials).to_csv(subject_dir / f"{Sub}_{TIMESTAMP}_trial_order.csv", index=False)
     # Start Recording
     controller.start_recording()
