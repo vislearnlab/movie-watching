@@ -251,6 +251,7 @@ def run_experiment(Sub, debug=False):
     os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
     import gc
     gc.collect()
+    
     global DIR, config_data
     TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
     DISPSIZE = (1920, 1080)
@@ -321,7 +322,7 @@ def run_experiment(Sub, debug=False):
     # Show Status and Calibration.
     win.flip()
     core.wait(0.1)
-    grabber = visual.MovieStim(win, f"{STIM_DIR}/ag/Attentiongrabber.mp4", size=[600, 600], units='pix')
+    grabber = MovieStim(win, f"{STIM_DIR}/ag/Attentiongrabber.mp4", size=[600, 600], units='pix')
     grabber.setAutoDraw(True)
     grabber.play()
     controller.show_status()
@@ -363,17 +364,17 @@ def run_experiment(Sub, debug=False):
         controller.record_event(f"Loop_Start_{trial_id}")
         
         # Create movie stimulus
-        movie = visual.MovieStim(
+        movie = MovieStim(
             win,
             video_path,
             size=[1920, 1080],
             units='pix',
             loop=False,
-            name=video_name
+            name=video_name,
+            movieLib="ffpyplayer"
         )
         
-        win.flip()
-        # Start movie
+        movie.play()
         movie.setAutoDraw(True)
         win.flip()  # Ensure movie is on screen
         t2 = time.time()
@@ -417,6 +418,9 @@ def run_experiment(Sub, debug=False):
         core.wait(0.05)
         movie.setAutoDraw(False)
         movie.stop()
+        # delete the movie object
+        del movie
+        import gc; gc.collect()
         core.wait(0.05)
         if event_type == "escape":
             break
