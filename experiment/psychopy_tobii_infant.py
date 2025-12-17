@@ -547,8 +547,6 @@ class TobiiController:
         # stop recording if not already
         if self.recording:
             self.stop_recording()
-        if self.datafile is None:
-            print("Data file is not found. Make sure this is right!")
         else:
             self.datafile.close()
 

@@ -16,6 +16,9 @@ from glob import glob
 # known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
 from psychopy_sounddevice import SoundDeviceSound
 
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
+os.environ["FFREPORT"] = "file=/dev/null"  
+os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
 # Get list of all audio devices
 devices = sd.query_devices()
 candidates = []
@@ -238,6 +241,9 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
 
 def run_experiment(Sub, debug=False):
     # Constants
+    os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
+    os.environ["FFREPORT"] = "file=/dev/null"  
+    os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
     global DIR, config_data
     TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
     DISPSIZE = (1920, 1080)
@@ -291,7 +297,8 @@ def run_experiment(Sub, debug=False):
                         monitor=mon,
                         screen=1,
                         fullscr=True,
-                        allowGUI=False)
+                        allowGUI=False,
+                        checkTiming=False)
 
     # Initialize TobiiController
     subject_dir = data_dir / f"{Sub}"
@@ -361,12 +368,12 @@ def run_experiment(Sub, debug=False):
         win.flip()  # Ensure movie is on screen
         t2 = time.time()
         controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")  
-        event_type == "play"
+        event_type = "play"
 
         # Collect looking time with pause handling
         remaining_time = config_data['trial_config']['max_time']
         total_lt = 0
-        
+        print(config_data)
         while remaining_time > 1:
             lt, event_type = controller.collect_lt_with_calibration(remaining_time, config_data['trial_config']['away_time'])
             total_lt += lt
