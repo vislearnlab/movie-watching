@@ -104,6 +104,7 @@ def trial_order(dir, debug=False):
 
 def calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event, mode="initial", skip_first_calibration=False):
     # Run validation loop
+    global config_data
     max_retries = config_data[f"{mode}_validation"]["max_retries"]
     good_threshold = config_data[f"{mode}_validation"]["good_threshold"]
     bad_threshold = config_data[f"{mode}_validation"]["bad_threshold"]
@@ -173,6 +174,7 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
     Returns:
         tuple: (filename, should_calibrate, start_trial_index, timestamp_to_use, existing_trial_order)
     """
+    global config_data
     existing_files = glob(str(subject_dir / f'{Sub}_*.csv'))
     recent_file = None
     last_timestamp = None
@@ -185,7 +187,7 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
                 file_timestamp_str = file.split('_')[-2] + '_' + file.split('_')[-1].replace('.csv', '')
                 file_timestamp = datetime.strptime(file_timestamp_str, '%Y%m%d_%H%M%S')
                 
-                if current_time - file_timestamp < datetime.timedelta(hours=1):
+                if current_time - file_timestamp < datetime.timedelta(hours=config_data['reuse_session']['time_delta_hours']):
                     recent_file = file
                     last_timestamp = file_timestamp_str
                     break
@@ -236,7 +238,7 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
 
 def run_experiment(Sub, debug=False):
     # Constants
-    global DIR
+    global DIR, config_data
     TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
     DISPSIZE = (1920, 1080)
     CALINORMP = [(-0.4, 0.4 ), (-0.4, -0.4), (0.0, 0.0), (0.4, 0.4), (0.4, -0.4)]
@@ -362,11 +364,11 @@ def run_experiment(Sub, debug=False):
         event_type == "play"
 
         # Collect looking time with pause handling
-        remaining_time = 60
+        remaining_time = config_data['trial_config']['max_time']
         total_lt = 0
         
         while remaining_time > 1:
-            lt, event_type = controller.collect_lt_with_calibration(remaining_time, 20)
+            lt, event_type = controller.collect_lt_with_calibration(remaining_time, config_data['trial_config']['away_time'])
             total_lt += lt
             print(f'Trial {trial_id} Looking time: %.3fs (total: %.3fs)' % (lt, total_lt))
             if event_type == "pause":
