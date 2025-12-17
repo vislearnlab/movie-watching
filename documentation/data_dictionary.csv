@@ -1,9 +1,10 @@
 ﻿movie-watching data dictionary,,,,,
-last updated:,Dec 12 2025,,,,
+last updated:,Dec 17 2025,,,,
 ,,,,,
 Variable Name,Type,Units / Format,Example Values,Description,Source File(s)
 system_time_stamp,float / int,ms,123456,"Time since experiment started, recorded by system","eyetracking_output.csv, validation_results.csv"
-time,float / int,ms,123450,Timestamp aligned with gaze recording,"eyetracking_output.csv, validation_results.csv"
+study_time,float / int,ms,65.8,Timestamp aligned with gaze recording,"eyetracking_output.csv, validation_results.csv"
+trial_time,float / int,ms,15.4,Timestamp aligned with the current trial,"eyetracking_output.csv, validation_results.csv"
 left_x,float,pixels,512,Horizontal position of left eye gaze,"eyetracking_output.csv, validation_results.csv"
 left_y,float,pixels,384,Vertical position of left eye gaze,"eyetracking_output.csv, validation_results.csv"
 left_valid,int / bool,0/1,1,Whether left eye gaze position is valid,eyetracking_output.csv

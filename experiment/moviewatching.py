@@ -300,7 +300,7 @@ def run_experiment(Sub, debug=False):
         
         # Record final event based on how trial ended
         if event_type == "calibration":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Forced_Recalibration")
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Forced_Recalibration_Key_Press")
         elif event_type == "looking_away":
             controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Looked_Away")
         elif event_type == "next_trial":
@@ -335,7 +335,6 @@ def run_experiment(Sub, debug=False):
                     calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")
                     recalibrate += 1
             elif event_type == "calibration":
-                controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Key_Press")
                 calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")
         win.flip()
         controller.record_event(f"Loop_End_{trial_id}")
