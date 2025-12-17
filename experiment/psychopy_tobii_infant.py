@@ -547,7 +547,7 @@ class TobiiController:
         # stop recording if not already
         if self.recording:
             self.stop_recording()
-        else:
+        elif self.datafile is not None:
             self.datafile.close()
 
     def run_calibration(self,
@@ -1299,7 +1299,7 @@ class TobiiInfantController(TobiiController):
         # ---------------------------
         validation_summary_columns_order = ['point', 'stimulus_x', 'stimulus_y', 'validation_step', 'Mean_accuracy_degrees_left', 'Mean_accuracy_degrees_right',
                                             'Mean_accuracy_pixels_left', 'Mean_accuracy_pixels_right']
-        if self.validation_summary_buffers is not None:
+        if self.validation_summary_buffers is not None and len(self.validation_summary_buffers) != 0:
             val_summary_df = pd.DataFrame(self.validation_summary_buffers)
             val_summary_df = val_summary_df[validation_summary_columns_order]
 

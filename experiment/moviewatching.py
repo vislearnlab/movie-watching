@@ -4,6 +4,7 @@ import numpy as np
 import random
 from pathlib import Path
 from psychopy import core, visual, event, monitors, prefs, logging
+from psychopy.visual.movies import MovieStim
 from psychopy_tobii_infant import TobiiInfantController
 logging.console.setLevel(logging.ERROR)
 import tobii_research as tr
@@ -13,6 +14,7 @@ import yaml
 import sounddevice as sd
 import datetime
 from glob import glob
+
 # known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
 from psychopy_sounddevice import SoundDeviceSound
 
@@ -35,7 +37,7 @@ if len(candidates) > 0:
     # Set the default output device for sounddevice
     sd.default.device = best_idx
     prefs.hardware['audioLib'] = ['sounddevice']
-    prefs.hardware['audioDevice'] = [best_device['name']]
+    prefs.hardware['audioDevice'] = best_device['name']
     print("Using monitor audio device:", best_device['name'])
 else:
     print("No monitor audio found, using default.")
@@ -105,21 +107,23 @@ def trial_order(dir, debug=False):
     
     return Trials
 
-def calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event, mode="initial", skip_first_calibration=False):
+def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False):
     # Run validation loop
     global config_data
     max_retries = config_data[f"{mode}_validation"]["max_retries"]
     good_threshold = config_data[f"{mode}_validation"]["good_threshold"]
     bad_threshold = config_data[f"{mode}_validation"]["bad_threshold"]
     i = 0
-
     while i < max_retries:
 
         # Run calibration
         if not skip_first_calibration or i > 0:
+            calibration_sound = SoundDeviceSound(CALIB_SOUND)
             controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
+            calibration_sound.stop()
 
         # Run validation
+        validation_sound = SoundDeviceSound(VALID_SOUND)
         result = controller.run_validation(
             validation_points=CALIPOINTS,
             infant_stims=CALISTIMS,
@@ -127,6 +131,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, va
             event=f"{calib_event}_{i+1}",
             audio=validation_sound
         )
+        validation_sound.stop()
 
         # Extract the 5 accuracy values for each eye 
         left = [
@@ -183,12 +188,12 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
     last_timestamp = None
 
     if existing_files:
-        current_time = datetime.now()
+        current_time = datetime.datetime.now()
         for file in existing_files:
             try:
                 # Extract timestamp from filename (assumes format: Sub_YYYYMMDD_HHMMSS.csv)
                 file_timestamp_str = file.split('_')[-2] + '_' + file.split('_')[-1].replace('.csv', '')
-                file_timestamp = datetime.strptime(file_timestamp_str, '%Y%m%d_%H%M%S')
+                file_timestamp = datetime.datetime.strptime(file_timestamp_str, '%Y%m%d_%H%M%S')
                 
                 if current_time - file_timestamp < datetime.timedelta(hours=config_data['reuse_session']['time_delta_hours']):
                     recent_file = file
@@ -244,6 +249,8 @@ def run_experiment(Sub, debug=False):
     os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
     os.environ["FFREPORT"] = "file=/dev/null"  
     os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
+    import gc
+    gc.collect()
     global DIR, config_data
     TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
     DISPSIZE = (1920, 1080)
@@ -252,9 +259,9 @@ def run_experiment(Sub, debug=False):
     STIM_DIR = DIR / os.path.join('stimuli')
     CALIB_DIR = STIM_DIR / 'calibration'
     CALIB_SOUND = os.path.join(CALIB_DIR, 'hothothot3.wav')
-    calibration_sound = SoundDeviceSound(CALIB_SOUND)
+    #calibration_sound = SoundDeviceSound(CALIB_SOUND)
     VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
-    validation_sound = SoundDeviceSound(VALID_SOUND)
+    #validation_sound = SoundDeviceSound(VALID_SOUND)
     CALISTIMS = [
         f"{CALIB_DIR}/{x}" for x in os.listdir(CALIB_DIR)
         if x.endswith('.png') and not x.startswith('.')
@@ -299,7 +306,6 @@ def run_experiment(Sub, debug=False):
                         fullscr=True,
                         allowGUI=False,
                         checkTiming=False)
-
     # Initialize TobiiController
     subject_dir = data_dir / f"{Sub}"
     os.makedirs(subject_dir, exist_ok=True)
@@ -312,7 +318,9 @@ def run_experiment(Sub, debug=False):
     controller = TobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
 
     ###############################################################################
-    # Show Status and Calibrationj.
+    # Show Status and Calibration.
+    win.flip()
+    core.wait(0.1)
     grabber = visual.MovieStim(win, f"{STIM_DIR}/ag/Attentiongrabber.mp4", size=[600, 600], units='pix')
     grabber.setAutoDraw(True)
     grabber.play()
@@ -320,12 +328,14 @@ def run_experiment(Sub, debug=False):
     controller.eyetracker.set_gaze_output_frequency(250)
     grabber.setAutoDraw(False)
     grabber.stop()
+    calibration_sound = SoundDeviceSound(CALIB_SOUND)
+    VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
+    validation_sound = SoundDeviceSound(VALID_SOUND)
     if should_calibrate:
-        calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event="pre_validation", mode="initial")
-    
+        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial")
     if existing_trial_order is not None:
         Trials = existing_trial_order
-        print("Using existing trial order")
+        print("Using existing trial order") 
     else:
         Trials = trial_order(f"{DIR}/stimuli/main_blocks", debug=debug)
         pd.DataFrame(Trials).to_csv(subject_dir / f"{Sub}_{timestamp_to_use}_trial_order.csv", index=False)
@@ -341,7 +351,7 @@ def run_experiment(Sub, debug=False):
     for trial in Trials:
         recalibrate = 1
         if trial['within_block_trial_index'] == 0 and trial['block_index'] != 0:
-            calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True)
+            calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True)
         t1 = time.time()
         trial_id = trial['total_trial_index']
         video_path = trial['video_path']
@@ -425,10 +435,10 @@ def run_experiment(Sub, debug=False):
                     core.wait(0.01)
                 if key == 'c':
                     controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looked_Away")
-                    calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")
+                    calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")
                     recalibrate += 1
             elif event_type == "calibration":
-                calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")
+                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")
         win.flip()
         controller.record_event(f"Loop_End_{trial_id}")
         t4 = time.time()
@@ -446,5 +456,5 @@ def run_experiment(Sub, debug=False):
     core.quit()
 
 if __name__ == '__main__':
-    args = main()
-    run_experiment(args.subject)
+    main()
+
