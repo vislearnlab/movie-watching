@@ -16,6 +16,7 @@ The experiment folder contains the PsychoPy experiment, integrated with a Tobii 
 
 ```
 conda create -n moviewatching python=3.10
+conda activate moviewatching
 pip install -r requirements.txt
 cd experiment
 python moviewatching.py --subject <SUBJECT_ID>
