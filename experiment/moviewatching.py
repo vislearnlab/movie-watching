@@ -3,33 +3,35 @@ import os
 import numpy as np
 import random
 from pathlib import Path
-from psychopy import core, visual, event, monitors, sound
+from psychopy import core, visual, event, monitors, prefs, logging
 from psychopy_tobii_infant import TobiiInfantController
-from psychopy import logging
 logging.console.setLevel(logging.ERROR)
 import tobii_research as tr
 import time
 import pandas as pd
 import yaml
-from gooey import Gooey
-from psychopy.hardware import keyboard
-from psychtoolbox import audio
+import sounddevice as sd
+# known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
+from psychopy_sounddevice import SoundDeviceSound
 
-from psychopy import prefs
-
-devices = audio.get_devices()
-
-# find HDMI / monitor-like devices
-candidates = [d for d in devices
-              if any(keyword.lower() in d['DeviceName'].lower() 
-                     for keyword in ['hdmi', 'display', 'monitor', 'nvidia', 'amd', 'PA24'])]
-
+# Get list of all audio devices
+devices = sd.query_devices()
+candidates = []
+for idx, device in enumerate(devices):
+    device_name = device['name']
+    # Check if it's an output device and matches monitor keywords
+    if device['max_output_channels'] > 0:
+        if any(keyword.lower() in device_name.lower() 
+                for keyword in ['hdmi', 'display', 'monitor', 'nvidia', 'amd', 'PA24']):
+            candidates.append((idx, device))
+print(candidates)
 if len(candidates) > 0:
-    # choose the best candidate (e.g., last one)
-    best = candidates[-1]
-    prefs.hardware['audioLib'] = ['ptb']
-    prefs.hardware['audioDevice'] = best['DeviceName']
-    print("Using monitor audio device:", best['DeviceName'])
+    best_idx, best_device = candidates[-1]
+    # Set the default output device for sounddevice
+    sd.default.device = best_idx
+    prefs.hardware['audioLib'] = ['sounddevice']
+    prefs.hardware['audioDevice'] = [best_device['name']]
+    print("Using monitor audio device:", best_device['name'])
 else:
     print("No monitor audio found, using default.")
 
@@ -38,7 +40,6 @@ trial_types = ["sesame", "slow", "frank", "pixar"]
 with open("config.yaml", 'r') as stream:
     config_data = yaml.safe_load(stream)
 
-# @Gooey(program_name="Movie watching")
 def main():
     DIR = Path("../")
     parser = ArgumentParser(description="Movie Watching Experiment")
@@ -174,9 +175,9 @@ def run_experiment(Sub, debug=False):
     STIM_DIR = DIR / os.path.join('stimuli')
     CALIB_DIR = STIM_DIR / 'calibration'
     CALIB_SOUND = os.path.join(CALIB_DIR, 'hothothot3.wav')
-    calibration_sound = sound.Sound(CALIB_SOUND)
+    calibration_sound = SoundDeviceSound(CALIB_SOUND)
     VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
-    validation_sound = sound.Sound(VALID_SOUND)
+    validation_sound = SoundDeviceSound(VALID_SOUND)
     CALISTIMS = [
         f"{CALIB_DIR}/{x}" for x in os.listdir(CALIB_DIR)
         if x.endswith('.png') and not x.startswith('.')
