@@ -22,3 +22,18 @@ python moviewatching.py --subject <SUBJECT_ID>
 ```
 
 Output data is saved to `data/raw` and more information about the data variables is in `documentation/data_dictionary.csv`
+
+## Switching from Rosetta to ARM in MacOS
+Here are instructions to switch your Conda environment from Rosetta to ARM in MacOS. First right-click on the Terminal icon in Applications > Utilities. Select Get Info > Uncheck the tick box that says 'Open using Rosetta'
+```
+rm -rf ~/miniconda3
+curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh
+bash ~/Miniconda3-latest-MacOSX-arm64.sh
+```
+
+1. Press Return to review Miniconda’s End User License Agreement (EULA). You can view Anaconda’s Terms of Service (TOS) at https://www.anaconda.com/legal.
+2. Enter yes to agree to the EULA.
+3. Return to accept the default install location (PREFIX=/Users/<USER>/miniconda3), or enter another file path to specify an alternate installation directory. The installation might take a few minutes to complete. 
+4. Choose an initialization options: Yes (Recommended) - conda modifies your shell configuration to initialize conda whenever you open a new shell and to recognize conda commands automatically.
+
+Run `source ~/miniconda3/bin/activate` to apply the changes automatically in the current Terminal window.
