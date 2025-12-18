@@ -19,6 +19,7 @@ import threading
 from collections import defaultdict
 
 import tobii_research
+from mock_tobii_research import MockTobiiResearch
 from . import vectormath
 
 
@@ -211,7 +212,8 @@ class ScreenBasedCalibrationValidation(object):
     def __init__(self,
                  eyetracker,
                  sample_count=30,
-                 timeout_ms=1000):
+                 timeout_ms=1000,
+                 mock = False):
         '''Create a calibration validation object for screen based eye trackers.
 
         Args:
@@ -222,8 +224,14 @@ class ScreenBasedCalibrationValidation(object):
         Raises:
         ValueError
         '''
-        if not isinstance(eyetracker, tobii_research.EyeTracker):
-            raise ValueError("Not a valid EyeTracker object")
+        if not mock:
+            self.tr = tobii_research
+            if not isinstance(eyetracker, self.tr.EyeTracker):
+                raise ValueError("Not a valid EyeTracker object")
+        else:
+            self.tr = MockTobiiResearch
+            if not isinstance(eyetracker, self.tr.MockEyeTracker):
+                raise ValueError("Not a valid EyeTracker object")
         self.__eyetracker = eyetracker
 
         if not self.SAMPLE_COUNT_MIN <= sample_count <= self.SAMPLE_COUNT_MAX:
@@ -292,7 +300,7 @@ class ScreenBasedCalibrationValidation(object):
             raise RuntimeWarning("Validation mode already entered")
 
         self.__collected_points = defaultdict(list)
-        self.__eyetracker.subscribe_to(tobii_research.EYETRACKER_GAZE_DATA, self._gaze_data_received)
+        self.__eyetracker.subscribe_to(self.tr.EYETRACKER_GAZE_DATA, self._gaze_data_received)
         self.__validation_mode = True
 
     def leave_validation_mode(self):
@@ -308,7 +316,7 @@ class ScreenBasedCalibrationValidation(object):
 
         self.__current_point = None
         self.__current_gaze_data = []
-        self.__eyetracker.unsubscribe_from(tobii_research.EYETRACKER_GAZE_DATA, self._gaze_data_received)
+        self.__eyetracker.unsubscribe_from(self.tr.EYETRACKER_GAZE_DATA, self._gaze_data_received)
         self.__validation_mode = False
 
     def start_collecting_data(self, screen_point):

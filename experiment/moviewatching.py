@@ -3,11 +3,13 @@ import os
 import numpy as np
 import random
 from pathlib import Path
-from psychopy import core, visual, event, monitors, prefs, logging
-from psychopy.visual.movies import MovieStim
-from psychopy_tobii_infant import TobiiInfantController
+from psychopy import logging
 logging.console.setLevel(logging.ERROR)
+from psychopy import core, visual, event, monitors, prefs
+from psychopy.visual.movies import MovieStim
+from psychopy_tobii_infant import TobiiInfantController, MockTobiiInfantController
 import tobii_research as tr
+from mock_tobii_research import MockTobiiResearch
 import time
 import pandas as pd
 import yaml
@@ -52,8 +54,9 @@ def main():
     parser = ArgumentParser(description="Movie Watching Experiment")
     parser.add_argument('--subject', type=str, required=True, help='Subject ID (e.g., S001)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--mock', action='store_true', help='Enable mock eye tracker mode')
     args = parser.parse_args()
-    run_experiment(args.subject, args.debug)
+    run_experiment(args.subject, args.debug, args.mock)
 
 def trial_order(dir, debug=False):
     blocks = {}
@@ -108,72 +111,100 @@ def trial_order(dir, debug=False):
     return Trials
 
 def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False):
-    # Run validation loop
+    import gc
+    
     global config_data
     max_retries = config_data[f"{mode}_validation"]["max_retries"]
     good_threshold = config_data[f"{mode}_validation"]["good_threshold"]
     bad_threshold = config_data[f"{mode}_validation"]["bad_threshold"]
+    
     i = 0
     while i < max_retries:
-
+        # RESET STIMULI BEFORE EACH VALIDATION
+        if i > 0:
+            print("Resetting stimuli for retry...", flush=True)
+            controller.targets.reset_stims()
+            controller.win.flip()
+            core.wait(0.3)
+            event.clearEvents()
+        
         # Run calibration
         if not skip_first_calibration or i > 0:
+            # Cleanup before creating audio
+            sd.stop()
+            gc.collect()
+            core.wait(0.2)
+            
+            print(f"Creating calibration sound for iteration {i}", flush=True)
             calibration_sound = SoundDeviceSound(CALIB_SOUND)
-            controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
-            calibration_sound.stop()
+            try:
+                controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
+            finally:
+                try:
+                    calibration_sound.stop()
+                except:
+                    pass
+                del calibration_sound
+                sd.stop()
+                gc.collect()
+                core.wait(0.2)
 
-        # Run validation
+        # Cleanup before validation
+        sd.stop()
+        gc.collect()
+        core.wait(0.2)
+        
+        print(f"Creating validation sound for iteration {i}", flush=True)
         validation_sound = SoundDeviceSound(VALID_SOUND)
-        result = controller.run_validation(
-            validation_points=CALIPOINTS,
-            infant_stims=CALISTIMS,
-            show_results=True,
-            event=f"{calib_event}_{i+1}",
-            audio=validation_sound
-        )
-        validation_sound.stop()
+        try:
+            result = controller.run_validation(
+                validation_points=CALIPOINTS,
+                infant_stims=CALISTIMS,
+                show_results=True,
+                event=f"{calib_event}_{i+1}",
+                audio=validation_sound
+            )
+        finally:
+            try:
+                validation_sound.stop()
+            except:
+                pass
+            del validation_sound
+            sd.stop()
+            gc.collect()
+            core.wait(0.2)
 
-        # Extract the 5 accuracy values for each eye 
-        left = [
-            result.get(f"Point_{idx}_accuracy_degrees_left", bad_threshold+.01)
-            for idx in range(1, 6)
-        ]
-        right = [
-            result.get(f"Point_{idx}_accuracy_degrees_right", bad_threshold+.01)
-            for idx in range(1, 6)
-        ]
+        # Your validation checking logic...
+        left = [result.get(f"Point_{idx}_accuracy_degrees_left", bad_threshold+.01) for idx in range(1, 6)]
+        right = [result.get(f"Point_{idx}_accuracy_degrees_right", bad_threshold+.01) for idx in range(1, 6)]
 
-        # Check: does a single eye individually pass these thresholds?
         def eye_passes(targets):
             good = sum(t < good_threshold for t in targets)   
             bad  = sum(t > bad_threshold for t in targets)   
             return (good >= 4) and (bad == 0)
 
-        # Average both eyes per target
         avg = [(l + r) / 2 for l, r in zip(left, right)]
-
         avg_good = sum(t < good_threshold for t in avg)
         avg_bad  = sum(t > bad_threshold for t in avg)
-
         avg_ok = (avg_good >= 4) and (avg_bad == 0)
 
-        # If average fails, check each eye individually
         if avg_ok:
             break
         else:
             left_ok  = eye_passes(left)
             right_ok = eye_passes(right)
-
             if left_ok or right_ok:
                 break
 
-        # If nothing passed then recalibrate
         i += 1
         if i < max_retries:
-            controller.display_text(
-                "Validation failed. Recalibrating...",
-                duration=2
-            )
+            controller.display_text("Validation failed. Recalibrating...", duration=2)
+    
+    # Final cleanup
+    controller.targets.reset_stims()
+    sd.stop()
+    gc.collect()
+    core.wait(0.2)
 
 def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
     """
@@ -244,7 +275,7 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
     
     return recent_file, False, 0, last_timestamp, existing_trial_order
 
-def run_experiment(Sub, debug=False):
+def run_experiment(Sub, debug=False, mock=False):
     # Constants
     os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
     os.environ["FFREPORT"] = "file=/dev/null"  
@@ -274,7 +305,10 @@ def run_experiment(Sub, debug=False):
 
     ###############################################################################
     # Setup Eye Tracker and Monitor
-    eye_tracker = tr.find_all_eyetrackers()[0]
+    if not mock:
+        eye_tracker = tr.find_all_eyetrackers()[0]
+    else:
+        eye_tracker = MockTobiiResearch.find_all_eyetrackers()[0]
 
     # Get display area information
     display_area = eye_tracker.get_display_area()
@@ -298,15 +332,6 @@ def run_experiment(Sub, debug=False):
     mon.setDistance(viewing_distance_cm)
     mon.setSizePix([DISPSIZE[0], DISPSIZE[1]])
     mon.saveMon()
-
-    # Create window
-    win = visual.Window(size=[DISPSIZE[0], DISPSIZE[1]],
-                        units='pix',
-                        monitor=mon,
-                        screen=1,
-                        fullscr=True,
-                        allowGUI=False,
-                        checkTiming=False)
     # Initialize TobiiController
     subject_dir = data_dir / f"{Sub}"
     os.makedirs(subject_dir, exist_ok=True)
@@ -316,7 +341,19 @@ def run_experiment(Sub, debug=False):
         subject_dir, Sub, TIMESTAMP
     )
 
-    controller = TobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
+    # Create window
+    win = visual.Window(size=[DISPSIZE[0], DISPSIZE[1]],
+                        units='pix',
+                        monitor=mon,
+                        screen=1,
+                        fullscr=True,
+                        allowGUI=False,
+                        checkTiming=False)
+
+    if not mock:
+        controller = TobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
+    else:
+        controller = MockTobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
 
     ###############################################################################
     # Show Status and Calibration.
@@ -362,7 +399,6 @@ def run_experiment(Sub, debug=False):
         
         # Record trial start event
         controller.record_event(f"Loop_Start_{trial_id}")
-        
         # Create movie stimulus
         movie = MovieStim(
             win,
@@ -373,18 +409,21 @@ def run_experiment(Sub, debug=False):
             name=video_name,
             movieLib="ffpyplayer"
         )
-        
+        core.wait(0.5)
         movie.play()
         movie.setAutoDraw(True)
         win.flip()  # Ensure movie is on screen
         t2 = time.time()
         controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")  
         event_type = "play"
-
+ 
         # Collect looking time with pause handling
-        remaining_time = config_data['trial_config']['max_time']
+        if trial['block_id'] != "pixar":
+            total_time = config_data['trial_config']['max_time']
+        else:
+            total_time = 70
+        remaining_time = total_time
         total_lt = 0
-        print(config_data)
         while remaining_time > 1:
             lt, event_type = controller.collect_lt_with_calibration(remaining_time, config_data['trial_config']['away_time'])
             total_lt += lt
@@ -396,7 +435,7 @@ def run_experiment(Sub, debug=False):
                 movie.play()  # resume playback
                 controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Resumed")
                 # Update remaining time and continue loop
-                remaining_time = 60 - total_lt
+                remaining_time = total_time - total_lt
                 
             else:
                 # Trial ended for another reason (looking_away, calibration, escape, or normal)

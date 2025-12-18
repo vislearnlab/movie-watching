@@ -5,7 +5,10 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import tobii_research as tr
+from mock_tobii_research import MockTobiiResearch
 from PIL import Image, ImageDraw
+from psychopy import logging
+logging.console.setLevel(logging.ERROR)
 from psychopy import core, event, visual
 from psychopy.tools.monitorunittools import cm2pix, deg2pix, pix2cm, pix2deg
 
@@ -73,6 +76,21 @@ class InfantStimuli:
         """
         return self.stim_size[self.present_order[idx %
                                                  len(self.present_order)]]
+    
+    def reset_stims(self):
+        """Reset all stimuli to their original state"""
+        for stim_obj in self.stims.values():  # Use .values() to get ImageStim objects
+            try:
+                # Reset to original properties
+                stim_obj.setOri(0)
+                # Force texture reload
+                if hasattr(stim_obj, '_needTextureUpdate'):
+                    stim_obj._needTextureUpdate = True
+                # Reset status
+                if hasattr(stim_obj, 'status'):
+                    stim_obj.status = 0  # NOT_STARTED
+            except Exception as e:
+                print(f"Warning resetting stim: {e}")
 
 
 class TobiiController:
@@ -159,13 +177,19 @@ class TobiiController:
     validation_result_buffers = None
     validation_summary_buffers = list()
 
-    def __init__(self, win, id=0, filename="gaze_TOBII_output.txt"):
+    def __init__(self, win, id=0, filename="gaze_TOBII_output.txt", mock=False):
         self.eyetracker_id = id
         self.win = win
         print(self.win.size)
         self.filename = filename
         self.validation_filename = filename.replace(".csv", "_validation.csv")
         self.validation_summary_filename = filename.replace(".csv", "_validation_summary.csv")
+        if os.path.isfile(self.filename):
+            self.existing_gaze_df = pd.read_csv(self.filename)
+        if os.path.isfile(self.validation_filename):
+            self.existing_validation_df = pd.read_csv(self.validation_filename)
+        if os.path.isfile(self.validation_summary_filename):
+            self.existing_validation_summary_df = pd.read_csv(self.validation_summary_filename)
         # FIXME: self.numkey_dict is not updated accordingly
         self.numkey_dict = self._default_numkey_dict
         self.calibration_dot_size = self._default_calibration_dot_size[
@@ -173,7 +197,12 @@ class TobiiController:
         self.calibration_disc_size = self._default_calibration_disc_size[
             self.win.units]
         self.trial_start_time = None
-        eyetrackers = tr.find_all_eyetrackers()
+        if not mock:
+            self.tr = tr
+            eyetrackers = self.tr.find_all_eyetrackers()
+        else:
+            self.tr = MockTobiiResearch
+            eyetrackers = MockTobiiResearch.find_all_eyetrackers()
 
         if len(eyetrackers) == 0:
             raise RuntimeError("No Tobii eyetrackers detected.")
@@ -185,7 +214,8 @@ class TobiiController:
                 "Invalid eyetracker ID {}\n({} eyetrackers found)".format(
                     self.eyetracker_id, len(eyetrackers)))
 
-        self.calibration = tr.ScreenBasedCalibration(self.eyetracker)
+        self.calibration = self.tr.ScreenBasedCalibration(self.eyetracker)
+
         self.update_calibration = self._update_calibration_auto
         if _has_addons:
             self.update_validation = self._update_validation_auto
@@ -211,7 +241,7 @@ class TobiiController:
         Returns:
             None
         """
-                # Split coordinate tuples into separate columns
+        # Split coordinate tuples into separate columns
         self.gaze_data.append(gaze_data)
 
     def _get_psychopy_pos(self, p, units=None):
@@ -433,12 +463,12 @@ class TobiiController:
 
         self.gaze_data = []
         self.event_data = []
-        self.eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA,
+        self.eyetracker.subscribe_to(self.tr.EYETRACKER_GAZE_DATA,
                                      self._on_gaze_data,
                                      as_dictionary=True)
         core.wait(1)  # wait a bit for the eye tracker to get ready
         self.recording = True
-        self.t0 = tr.get_system_time_stamp()
+        self.t0 = self.tr.get_system_time_stamp()
 
     def stop_recording(self):
         """Stop recording.
@@ -452,7 +482,7 @@ class TobiiController:
         if not self.recording:
             raise RuntimeWarning("Not recoding now.")
 
-        self.eyetracker.unsubscribe_from(tr.EYETRACKER_GAZE_DATA,
+        self.eyetracker.unsubscribe_from(self.tr.EYETRACKER_GAZE_DATA,
                                          self._on_gaze_data)
         self.recording = False
         # time correction for event data
@@ -533,7 +563,7 @@ class TobiiController:
         if not self.recording:
             raise RuntimeWarning("Not recording now.")
 
-        self.event_data.append([tr.get_system_time_stamp(), event])
+        self.event_data.append([self.tr.get_system_time_stamp(), event])
 
     def close(self):
         """Close the data file.
@@ -928,7 +958,7 @@ class TobiiController:
         img_draw = ImageDraw.Draw(img)
         result_img = visual.SimpleImageStim(self.win, img, autoLog=False)
         img_draw.rectangle(((0, 0), tuple(self.win.size)), fill=(0, 0, 0, 0))
-        if self.calibration_result.status == tr.CALIBRATION_STATUS_FAILURE:
+        if self.calibration_result.status == self.tr.CALIBRATION_STATUS_FAILURE:
             # computeCalibration failed.
             pass
         else:
@@ -944,7 +974,7 @@ class TobiiController:
                         lp = this_sample.left_eye.position_on_display_area
                         rp = this_sample.right_eye.position_on_display_area
                         if (this_sample.left_eye.validity ==
-                                tr.VALIDITY_VALID_AND_USED):
+                                self.tr.VALIDITY_VALID_AND_USED):
                             img_draw.line(
                                 (
                                     (p[0] * self.win.size[0],
@@ -957,7 +987,7 @@ class TobiiController:
                                 fill=(0, 255, 0, 255),
                             )
                         if (this_sample.right_eye.validity ==
-                                tr.VALIDITY_VALID_AND_USED):
+                                self.tr.VALIDITY_VALID_AND_USED):
                             img_draw.line(
                                 (
                                     (p[0] * self.win.size[0],
@@ -1073,7 +1103,7 @@ class TobiiController:
         if self.eyetracker is None:
             raise ValueError("Eyetracker is not found.")
 
-        self.eyetracker.subscribe_to(tr.EYETRACKER_USER_POSITION_GUIDE,
+        self.eyetracker.subscribe_to(self.tr.EYETRACKER_USER_POSITION_GUIDE,
                                      self._on_gaze_data,
                                      as_dictionary=True)
         core.wait(1)  # wait a bit for the eye tracker to get ready
@@ -1114,7 +1144,7 @@ class TobiiController:
 
             self.win.flip()
 
-        self.eyetracker.unsubscribe_from(tr.EYETRACKER_USER_POSITION_GUIDE,
+        self.eyetracker.unsubscribe_from(self.tr.EYETRACKER_USER_POSITION_GUIDE,
                                          self._on_gaze_data)
 
     # property getters and setters for parameter changes
@@ -1152,9 +1182,10 @@ class TobiiInfantController(TobiiController):
             Default is 1.
         numkey_dict: keys used for calibration. Default is the number pad.
     """
-    def __init__(self, win, id=0, filename="gaze_TOBII_output.tsv", calibration_disc_size=15):
-        super().__init__(win, id, filename)
+    def __init__(self, win, id=0, filename="gaze_TOBII_output.tsv", calibration_disc_size=15, mock=False):
+        super().__init__(win, id, filename, mock)
         self.update_calibration = self._update_calibration_infant_auto
+        self.mock = mock
         self.shrink_speed = 1
         self.Events = []
         self.calibration_disc_size = calibration_disc_size
@@ -1202,10 +1233,7 @@ class TobiiInfantController(TobiiController):
 
         if not self.gaze_data:
             raise RuntimeWarning("No data were collected.")
-
-        import pandas as pd
-        import os
-
+        
         # ---------------------------
         # Gaze Data
         # ---------------------------
@@ -1241,8 +1269,6 @@ class TobiiInfantController(TobiiController):
 
         # Compute trial_time
         for start, end in zip(start_trial_events, end_trial_events):
-            print(len(start_trial_events))
-            print(start, end)
             mask = (data_df['system_time_stamp'] >= start) & (data_df['system_time_stamp'] <= end)
             data_df.loc[mask, 'trial_time'] = round((data_df.loc[mask, 'system_time_stamp'] - start) / 1000.0, 2)
 
@@ -1253,27 +1279,29 @@ class TobiiInfantController(TobiiController):
                         'gaze_x', 'gaze_y', 'pupil_size', 'events']
         data_df = data_df[columns_order]
 
-        # Append only new gaze data
-        if os.path.isfile(self.filename):
-            existing_df = pd.read_csv(self.filename)
-            new_df = data_df[~data_df['system_time_stamp'].isin(existing_df['system_time_stamp'])]
-        else:
-            new_df = data_df
+        # Write new gaze data to CSV
+        # The data_df already contains only new data from self.gaze_data
+        if not data_df.empty:
+            data_df.to_csv(self.filename, mode='a', index=False, 
+                        header=not os.path.isfile(self.filename))
 
-        if not new_df.empty:
-            new_df.to_csv(self.filename, mode='a', index=False, header=not os.path.isfile(self.filename))
-
+        # Clear processed gaze data to free memory
+        self.gaze_data = []
+        self.event_data = []
+        core.wait(0.1)
         # ---------------------------
         # Validation Results
         # ---------------------------
-        validation_columns_order = ['stimulus_x', 'stimulus_y', 'validation_step', 'system_time_stamp', 'study_time',
-                                    'left_x', 'left_y', 'left_valid',
-                                    'right_x', 'right_y', 'right_valid',
-                                    'gaze_x', 'gaze_y']
-        if self.validation_result_buffers is not None:
+        if self.validation_result_buffers is not None and len(self.validation_result_buffers) != 0:
+            validation_columns_order = ['stimulus_x', 'stimulus_y', 'validation_step', 'system_time_stamp', 'study_time',
+                                        'left_x', 'left_y', 'left_valid',
+                                        'right_x', 'right_y', 'right_valid',
+                                        'gaze_x', 'gaze_y']
+            
             val_records = []
             prev_validation_step = None
             validation_start_time = 0
+            
             for val_buffer in self.validation_result_buffers:
                 if val_buffer['validation_step'] != prev_validation_step:
                     validation_start_time = val_buffer['system_time_stamp']
@@ -1281,38 +1309,37 @@ class TobiiInfantController(TobiiController):
                 val_buffer['validation_time'] = round((val_buffer['system_time_stamp'] - validation_start_time) / 1000.0, 2)
                 val_records.append(val_buffer)
                 prev_validation_step = val_buffer['validation_step']
+            
             val_df = pd.DataFrame(val_records)
             val_df = val_df[validation_columns_order]
 
-            # Append only new validation steps
-            if os.path.isfile(self.validation_filename):
-                existing_val_df = pd.read_csv(self.validation_filename)
-                new_val_df = val_df[~val_df['validation_step'].isin(existing_val_df['validation_step'])]
-            else:
-                new_val_df = val_df
-
-            if not new_val_df.empty:
-                new_val_df.to_csv(self.validation_filename, mode='a', index=False, header=not os.path.isfile(self.validation_filename))
+            # Write new validation data to CSV
+            if not val_df.empty:
+                val_df.to_csv(self.validation_filename, mode='a', index=False, 
+                            header=not os.path.isfile(self.validation_filename))
+            
+            # Clear processed validation data to free memory
+            self.validation_result_buffers = list()
 
         # ---------------------------
         # Validation Summary
         # ---------------------------
-        validation_summary_columns_order = ['point', 'stimulus_x', 'stimulus_y', 'validation_step', 'Mean_accuracy_degrees_left', 'Mean_accuracy_degrees_right',
-                                            'Mean_accuracy_pixels_left', 'Mean_accuracy_pixels_right']
         if self.validation_summary_buffers is not None and len(self.validation_summary_buffers) != 0:
+            validation_summary_columns_order = ['point', 'stimulus_x', 'stimulus_y', 'validation_step', 
+                                            'Mean_accuracy_degrees_left', 'Mean_accuracy_degrees_right',
+                                            'Mean_accuracy_pixels_left', 'Mean_accuracy_pixels_right']
+            
             val_summary_df = pd.DataFrame(self.validation_summary_buffers)
             val_summary_df = val_summary_df[validation_summary_columns_order]
 
-            # Append only new validation steps
-            if os.path.isfile(self.validation_summary_filename):
-                existing_val_summary_df = pd.read_csv(self.validation_summary_filename)
-                new_val_summary_df = val_summary_df[~val_summary_df['validation_step'].isin(existing_val_summary_df['validation_step'])]
-            else:
-                new_val_summary_df = val_summary_df
+            # Write new validation summary to CSV
+            if not val_summary_df.empty:
+                val_summary_df.to_csv(self.validation_summary_filename, mode='a', index=False, 
+                                    header=not os.path.isfile(self.validation_summary_filename))
+            
+            # Clear processed validation summary data to free memory
+            self.validation_summary_buffers = list()
 
-            if not new_val_summary_df.empty:
-                new_val_summary_df.to_csv(self.validation_summary_filename, mode='a', index=False, header=not os.path.isfile(self.validation_summary_filename))
-    
     def start_recording(self, filename=None, newfile=True):
         """Start recording with CSV support"""
         if filename is not None:
@@ -1324,19 +1351,19 @@ class TobiiInfantController(TobiiController):
         
         self.gaze_data = []
         self.event_data = []
-        self.eyetracker.subscribe_to(tr.EYETRACKER_GAZE_DATA,
+        self.eyetracker.subscribe_to(self.tr.EYETRACKER_GAZE_DATA,
                                      self._on_gaze_data,
                                      as_dictionary=True)
         core.wait(1)
         self.recording = True
-        self.t0 = tr.get_system_time_stamp()
+        self.t0 = self.tr.get_system_time_stamp()
     
     def stop_recording(self):
         """Stop recording with CSV support"""
         if not self.recording:
             raise RuntimeWarning("Not recording now.")
 
-        self.eyetracker.unsubscribe_from(tr.EYETRACKER_GAZE_DATA,
+        self.eyetracker.unsubscribe_from(self.tr.EYETRACKER_GAZE_DATA,
                                          self._on_gaze_data)
         self.recording = False
         
@@ -1354,7 +1381,7 @@ class TobiiInfantController(TobiiController):
         if not self.recording:
             raise RuntimeWarning("Not recording now.")
         
-        self.event_data.append([tr.get_system_time_stamp(), event])
+        self.event_data.append([self.tr.get_system_time_stamp(), event])
 
     def _update_calibration_infant(self,
                                    _focus_time=0.5,
@@ -1384,6 +1411,7 @@ class TobiiInfantController(TobiiController):
         clock = core.Clock()
         while in_calibration:
             # get keys
+            core.wait(0.001)
             keys = event.getKeys()
             for key in keys:
                 if key in self.numkey_dict:
@@ -1424,22 +1452,23 @@ class TobiiInfantController(TobiiController):
             self.win.flip()
 
     def _update_validation_infant(self,
-                                  validation_points,
-                                  _focus_time=0.5,
-                                  collect_key="space"):
-        """Semi-automatic validation procedure for infants."""
+                                validation_points,
+                                _focus_time=0.5,
+                                collect_key="space"):
+        """Semi-automatic validation procedure for infants."""        
         for idx, current_validation_point in enumerate(validation_points):
             event.clearEvents()
             if self._audio is not None:
-                self._audio.play()
+                self._audio.play()            
             deg = 0
             this_target = self.targets.get_stim(idx)
             orig_size = self.targets.get_stim_original_size(idx)
             this_target.setSize(
                 (self.calibration_disc_size,
-                 self.calibration_disc_size * (orig_size[0] / orig_size[1])))
+                self.calibration_disc_size * (orig_size[0] / orig_size[1])))
             this_target.setPos(current_validation_point)
             in_validation = True
+            
             while in_validation:
                 deg += 0.5
                 this_target.setOri(ceil(deg))
@@ -1449,12 +1478,25 @@ class TobiiInfantController(TobiiController):
                 keys = event.getKeys()
                 for key in keys:
                     if key == collect_key:
+                        # stop audio after each point
                         if self._audio is not None:
-                            self._audio.pause()
-                        core.wait(_focus_time, 0.0)
+                            self._audio.stop()
+                        print(f"Space pressed for point {idx}", flush=True)
+                        core.wait(_focus_time)
                         self._collect_validation_data(current_validation_point)
                         in_validation = False
                         break
+            
+            print(f"Finished point {idx}", flush=True)
+        
+        # Stop audio after ALL points are done
+        if self._audio is not None:
+            try:
+                self._audio.stop()
+            except Exception as e:
+                print(f"Error stopping audio: {e}", flush=True)
+        
+        print("Validation complete", flush=True)
 
     def _update_calibration_infant_auto(self, _focus_time=0.5, collect_key="space"):
         """Semi-automatic calibration procedure.
@@ -1501,86 +1543,24 @@ class TobiiInfantController(TobiiController):
                 this_target.draw()
                 self.win.flip()
                 
+                core.wait(0.01)
                 # Check for key press
                 keys = event.getKeys()
                 for key in keys:
                     if key == collect_key:
                         # Collect data immediately
-                        self._collect_calibration_data(this_pos)
+                        try:
+                            core.wait(_focus_time)
+                            self._collect_calibration_data(this_pos)
+                        except Exception as e:
+                            print(f"Error collecting calibration data: {e}")
                         # Move to next point immediately
                         in_calibration = False
                         break
         
         # Stop audio after all points are done
         if self._audio is not None:
-            self._audio.pause()
-
-    def _update_calibration_infant_auto_old(self,
-                                _focus_time=0.5,
-                                collect_key="space",
-                                exit_key="return",
-                                auto_duration=2.0):
-        """The calibration procedure designed for infants.
-
-            An implementation of run_calibration().
-
-        Args:
-            focus_time: the duration allowing the subject to focus in seconds.
-                            Default is 0.5.
-            collect_key: key to start collecting samples. Default is space.
-            exit_key: key to finish and leave the current calibration
-                procedure. It should not be confused with `decision_key`, which
-                is used to leave the whole calibration process. `exit_key` is
-                used to leave the current calibration, the user may recalibrate
-                or accept the result afterwards. Default is return (Enter)
-            auto_duration: duration in seconds to show each point before
-                auto-collecting in auto_mode. Default is 2.0.
-
-        Returns:
-            None
-        """
-        # start calibration
-        event.clearEvents()
-        # Automatic mode - iterate through retry points
-        clock = core.Clock()
-        for point_idx in self.retry_points:
-            # Play sound if it exists
-            if self._audio is not None:
-                self._audio.play()
-            
-            # Get calibration point
-            this_target = self.targets.get_stim(point_idx)
-            this_pos = self.original_calibration_points[point_idx]
-            this_target.setPos(this_pos)
-            
-            # Show animated target for auto_duration
-            clock.reset()
-            while clock.getTime() < auto_duration:
-                # Check for manual exit
-                keys = event.getKeys()
-                if exit_key in keys:
-                    if self._audio is not None:
-                        self._audio.pause()
-                    return
-                
-                # Animate target
-                t = clock.getTime() * self.shrink_speed
-                newsize = [
-                    (np.sin(t)**2 + self.calibration_target_min) * e
-                    for e in self.targets.get_stim_original_size(point_idx)
-                ]
-                this_target.setSize(newsize)
-                this_target.draw()
-                self.win.flip()
-            
-            # Stop sound
-            if self._audio is not None:
-                self._audio.pause()
-            
-            # Allow focus time then collect
-            core.wait(_focus_time, 0.0)
-            self._collect_calibration_data(
-                self.original_calibration_points[point_idx])
+            self._audio.stop()
 
     def run_calibration(self,
                         calibration_points,
@@ -1791,7 +1771,7 @@ class TobiiInfantController(TobiiController):
 
         # setup the procedure
         self.validation = ScreenBasedCalibrationValidation(
-            self.eyetracker, sample_count, int(1000 * timeout))
+            self.eyetracker, sample_count, int(1000 * timeout), self.mock)
 
         if validation_points is None:
             validation_points = self.original_calibration_points
@@ -1821,7 +1801,6 @@ class TobiiInfantController(TobiiController):
         return result_buffer
 
     def write_buffer_to_file(self, gaze_data_buffer, filename):
-        print("here?")
         global Events
 
         # Swap buffers - get current data and start fresh
@@ -1967,6 +1946,10 @@ class TobiiInfantController(TobiiController):
                 lt = trial_timer.getTime() 
                 return round(lt, 3), "next_trial"
 
+            if not self.gaze_data:
+                # No gaze data yet, wait a bit
+                core.wait(0.01)
+                continue
             gaze_data = self.gaze_data[-1]
             lv = gaze_data["left_gaze_point_validity"]
             rv = gaze_data["right_gaze_point_validity"]
@@ -1999,7 +1982,14 @@ class TobiiInfantController(TobiiController):
         lt = max_time 
         return round(lt, 3), "normal"
 
+class MockTobiiInfantController(TobiiInfantController):
+    """Mock infant controller that mimics the real TobiiInfantController API"""
+    def __init__(self, win, id=0, filename="mock_gaze_output.csv", calibration_disc_size=200):
+         # Now call parent __init__ which will use our MockTobiiResearch
+        super().__init__(win, id, filename, calibration_disc_size, mock=True)
+        print("Mock Tobii Infant Controller initialized")
 
 # backward compatible
 tobii_controller = TobiiController
 tobii_infant_controller = TobiiInfantController
+tobii_mock_infant_controller = MockTobiiInfantController
