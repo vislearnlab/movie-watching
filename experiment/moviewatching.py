@@ -410,10 +410,12 @@ def run_experiment(Sub, debug=False, mock=False):
     controller.eyetracker.set_gaze_output_frequency(250)
     grabber.setAutoDraw(False)
     grabber.stop()
-    from psychopy_sounddevice import SoundDeviceSound
-    calibration_sound = SoundDeviceSound(CALIB_SOUND)
+    # TEST AJH 12.18.25 (audio crackle/stutter isolation):
+    # These SoundDeviceSound objects were being created here but never used
+    # (we don't pass them into calibration_routine, and nothing plays them).
+    # On some systems, simply opening/holding an extra audio stream can cause
+    # pops/crackles when movies start/stop audio. So for Test B we remove them.
     VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
-    validation_sound = SoundDeviceSound(VALID_SOUND)
     if should_calibrate:
         calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial")
     if existing_trial_order is not None:
