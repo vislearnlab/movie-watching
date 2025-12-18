@@ -9,3 +9,5 @@ later_validation:
 trial_config:
   max_time: 60
   away_time: 20
+reuse_session:
+  time_delta_hours: 1

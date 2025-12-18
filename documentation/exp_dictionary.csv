@@ -3,9 +3,8 @@ last updated:,Dec 12 2025,,,,
 ,,,,,
 Key / Input,Action / Command,Type,Description,Notes / Timing Considerations,Example Use
 Spacebar,Advance calibration/validation routines,Keyboard shortcut,Moves the experiment to the next calibration or validation step,Only works during calibration/validation; do not press mid-trial,Continue calibration after an error point
-p,Pause experiment,Keyboard shortcut,Temporarily halts the experiment until resumed,Ensure participant is not looking at screen; resumes with r,Pause trial to adjust equipment or check calibration
-r,Resume experiment,Keyboard shortcut,Resumes experiment after pause,Only works if previously paused,Continue trial after adjustment
-q,Quit experiment,Keyboard shortcut,Ends current session,Saves current data before exiting,Emergency stop or end of session
+Spacebar,Pause experiment,Keyboard shortcut,Temporarily halts the experiment until resumed,Ensure participant is not looking at screen; resumes by clicking space again,Pause trial to adjust equipment or check calibration
+Spacebar,Resume experiment,Keyboard shortcut,Resumes experiment after pause,Only works if previously paused,Continue trial after adjustment
 n,Next trial,Keyboard shortcut,Skips to next trial,May trigger a fixation check before moving,Move to next trial if participant is ready
 c,Force recalibration mid-experiment,Keyboard shortcut,Runs a full recalibration routine in the middle of the session,Use if eye tracker drifts or accuracy drops; pauses trial automatically,Recalibrate after noticing drift during a block
 Esc,Quit experiment entirely,Keyboard shortcut,Immediately ends the experiment,Emergency use only; may not save current trial data,Stop session immediately if a major issue occurs

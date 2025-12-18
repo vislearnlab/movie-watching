@@ -1,35 +1,45 @@
 from argparse import ArgumentParser
 import os
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
+os.environ["FFREPORT"] = "file=/dev/null"  
+os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
 import numpy as np
 import random
 from pathlib import Path
-from psychopy import core, visual, event, monitors, sound
-from psychopy_tobii_infant import TobiiInfantController
+import logging as pylogging
 from psychopy import logging
 logging.console.setLevel(logging.ERROR)
+from psychopy import core, visual, event, monitors, prefs
+from psychopy.visual.movies import MovieStim
+from psychopy_tobii_infant import TobiiInfantController, MockTobiiInfantController
 import tobii_research as tr
+from mock_tobii_research import MockTobiiResearch
 import time
 import pandas as pd
 import yaml
-from gooey import Gooey
-from psychopy.hardware import keyboard
-from psychtoolbox import audio
-
-from psychopy import prefs
-
-devices = audio.get_devices()
-
-# find HDMI / monitor-like devices
-candidates = [d for d in devices
-              if any(keyword.lower() in d['DeviceName'].lower() 
-                     for keyword in ['hdmi', 'display', 'monitor', 'nvidia', 'amd', 'PA24'])]
+import sounddevice as sd
+import datetime
+from glob import glob
+# known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
+from psychopy_sounddevice import SoundDeviceSound
+# Get list of all audio devices
+devices = sd.query_devices()
+candidates = []
+for idx, device in enumerate(devices):
+    device_name = device['name']
+    # Check if it's an output device and matches monitor keywords
+    if device['max_output_channels'] > 0:
+        if any(keyword.lower() in device_name.lower() 
+                for keyword in ['hdmi', 'display', 'monitor', 'nvidia', 'amd', 'PA24']):
+            candidates.append((idx, device))
 
 if len(candidates) > 0:
-    # choose the best candidate (e.g., last one)
-    best = candidates[-1]
-    prefs.hardware['audioLib'] = ['ptb']
-    prefs.hardware['audioDevice'] = best['DeviceName']
-    print("Using monitor audio device:", best['DeviceName'])
+    best_idx, best_device = candidates[-1]
+    # Set the default output device for sounddevice
+    sd.default.device = best_idx
+    prefs.hardware['audioLib'] = ['sounddevice']
+    prefs.hardware['audioDevice'] = best_device['name']
+    print("Using monitor audio device:", best_device['name'])
 else:
     print("No monitor audio found, using default.")
 
@@ -38,14 +48,14 @@ trial_types = ["sesame", "slow", "frank", "pixar"]
 with open("config.yaml", 'r') as stream:
     config_data = yaml.safe_load(stream)
 
-# @Gooey(program_name="Movie watching")
 def main():
     DIR = Path("../")
     parser = ArgumentParser(description="Movie Watching Experiment")
     parser.add_argument('--subject', type=str, required=True, help='Subject ID (e.g., S001)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--mock', action='store_true', help='Enable mock eye tracker mode')
     args = parser.parse_args()
-    run_experiment(args.subject, args.debug)
+    run_experiment(args.subject, args.debug, args.mock)
 
 def trial_order(dir, debug=False):
     blocks = {}
@@ -99,74 +109,180 @@ def trial_order(dir, debug=False):
     
     return Trials
 
-def calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event, mode="initial", skip_first_calibration=False):
-    # Run validation loop
+def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False):
+    import gc
+    
+    global config_data
     max_retries = config_data[f"{mode}_validation"]["max_retries"]
     good_threshold = config_data[f"{mode}_validation"]["good_threshold"]
     bad_threshold = config_data[f"{mode}_validation"]["bad_threshold"]
+    
     i = 0
-
     while i < max_retries:
-
+        # RESET STIMULI BEFORE EACH VALIDATION
+        if i > 0:
+            print("Resetting stimuli for retry...", flush=True)
+            controller.targets.reset_stims()
+            controller.win.flip()
+            core.wait(0.1)
+            event.clearEvents()
+        
         # Run calibration
         if not skip_first_calibration or i > 0:
-            controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
+            # Cleanup before creating audio
+            sd.stop()
+            gc.collect()
+            core.wait(0.2)
+            
+            print(f"Creating calibration sound for iteration {i}", flush=True)
+            calibration_sound = SoundDeviceSound(CALIB_SOUND)
+            try:
+                controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
+            finally:
+                try:
+                    calibration_sound.stop()
+                except:
+                    pass
+                del calibration_sound
+                sd.stop()
+                gc.collect()
+                core.wait(0.2)
 
-        # Run validation
-        result = controller.run_validation(
-            validation_points=CALIPOINTS,
-            infant_stims=CALISTIMS,
-            show_results=True,
-            event=f"{calib_event}_{i+1}",
-            audio=validation_sound
-        )
+        # Cleanup before validation
+        sd.stop()
+        gc.collect()
+        core.wait(0.2)
+        
+        print(f"Creating validation sound for iteration {i}", flush=True)
+        validation_sound = SoundDeviceSound(VALID_SOUND)
+        try:
+            result = controller.run_validation(
+                validation_points=CALIPOINTS,
+                infant_stims=CALISTIMS,
+                show_results=True,
+                event=f"{calib_event}_{i+1}",
+                audio=validation_sound
+            )
+        finally:
+            try:
+                validation_sound.stop()
+            except:
+                pass
+            del validation_sound
+            sd.stop()
+            gc.collect()
+            core.wait(0.2)
 
-        # Extract the 5 accuracy values for each eye 
-        left = [
-            result.get(f"Point_{idx}_accuracy_degrees_left", bad_threshold+.01)
-            for idx in range(1, 6)
-        ]
-        right = [
-            result.get(f"Point_{idx}_accuracy_degrees_right", bad_threshold+.01)
-            for idx in range(1, 6)
-        ]
+        # Your validation checking logic...
+        left = [result.get(f"Point_{idx}_accuracy_degrees_left", bad_threshold+.01) for idx in range(1, 6)]
+        right = [result.get(f"Point_{idx}_accuracy_degrees_right", bad_threshold+.01) for idx in range(1, 6)]
 
-        # Check: does a single eye individually pass these thresholds?
         def eye_passes(targets):
             good = sum(t < good_threshold for t in targets)   
             bad  = sum(t > bad_threshold for t in targets)   
             return (good >= 4) and (bad == 0)
 
-        # Average both eyes per target
         avg = [(l + r) / 2 for l, r in zip(left, right)]
-
         avg_good = sum(t < good_threshold for t in avg)
         avg_bad  = sum(t > bad_threshold for t in avg)
-
         avg_ok = (avg_good >= 4) and (avg_bad == 0)
 
-        # If average fails, check each eye individually
         if avg_ok:
             break
         else:
             left_ok  = eye_passes(left)
             right_ok = eye_passes(right)
-
             if left_ok or right_ok:
                 break
 
-        # If nothing passed then recalibrate
         i += 1
         if i < max_retries:
-            controller.display_text(
-                "Validation failed. Recalibrating...",
-                duration=2
-            )
+            controller.display_text("Validation failed. Recalibrating...", duration=2)
+    
+    # Final cleanup
+    controller.targets.reset_stims()
+    sd.stop()
+    gc.collect()
+    core.wait(0.1)
 
+def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
+    """
+    Check for existing records within the last hour and prompt user to resume.
+    
+    Returns:
+        tuple: (filename, should_calibrate, start_trial_index, timestamp_to_use, existing_trial_order)
+    """
+    global config_data
+    existing_files = glob(str(subject_dir / f'{Sub}_*.csv'))
+    recent_file = None
+    last_timestamp = None
 
-def run_experiment(Sub, debug=False):
+    if existing_files:
+        current_time = datetime.datetime.now()
+        for file in existing_files:
+            try:
+                # Extract timestamp from filename (assumes format: Sub_YYYYMMDD_HHMMSS.csv)
+                file_timestamp_str = file.split('_')[-2] + '_' + file.split('_')[-1].replace('.csv', '')
+                file_timestamp = datetime.datetime.strptime(file_timestamp_str, '%Y%m%d_%H%M%S')
+                
+                if current_time - file_timestamp < datetime.timedelta(hours=config_data['reuse_session']['time_delta_hours']):
+                    recent_file = file
+                    last_timestamp = file_timestamp_str
+                    break
+            except (ValueError, IndexError):
+                continue
+
+    # No recent file found - start fresh
+    if not recent_file:
+        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+
+    # Recent file found - ask user
+    response = input(f"Found existing record from {last_timestamp}. Use existing records? (y/n): ").strip().lower()
+    
+    if response != 'y':
+        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+    
+    # User wants to resume - load existing trial order and find last trial
+    print(f"Resuming from existing file: {recent_file}")
+    
+    # Load the existing trial order
+    trial_order_file = subject_dir / f"{Sub}_{last_timestamp}_trial_order.csv"
+    existing_trial_order = None
+    
+    try:
+        if trial_order_file.exists():
+            existing_trial_order = pd.read_csv(trial_order_file).to_dict('records')
+            print(f"Loaded existing trial order from {trial_order_file}")
+        else:
+            print(f"Warning: Trial order file not found at {trial_order_file}")
+            return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+    except Exception as e:
+        print(f"Error reading trial order: {e}. Starting fresh session.")
+        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+    
+    # Find last completed trial
+    try:
+        existing_data = pd.read_csv(recent_file)
+        if not existing_data.empty and 'trial' in existing_data.columns:
+            last_trial_idx = existing_data['trial'].max()
+            # Skip to the trial after the last completed one, plus one more as specified
+            start_trial_idx = last_trial_idx + 2
+            print(f"Resuming from trial {start_trial_idx} (skipping trial {last_trial_idx + 1})")
+            return recent_file, False, start_trial_idx, last_timestamp, existing_trial_order
+    except Exception as e:
+        print(f"Error reading existing data: {e}. Starting from the beginning of existing trial order.")
+    
+    return recent_file, False, 0, last_timestamp, existing_trial_order
+
+def run_experiment(Sub, debug=False, mock=False):
     # Constants
-    global DIR
+    os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
+    os.environ["FFREPORT"] = "file=/dev/null"  
+    os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
+    import gc
+    gc.collect()
+    
+    global DIR, config_data
     TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
     DISPSIZE = (1920, 1080)
     CALINORMP = [(-0.4, 0.4 ), (-0.4, -0.4), (0.0, 0.0), (0.4, 0.4), (0.4, -0.4)]
@@ -174,9 +290,9 @@ def run_experiment(Sub, debug=False):
     STIM_DIR = DIR / os.path.join('stimuli')
     CALIB_DIR = STIM_DIR / 'calibration'
     CALIB_SOUND = os.path.join(CALIB_DIR, 'hothothot3.wav')
-    calibration_sound = sound.Sound(CALIB_SOUND)
+    #calibration_sound = SoundDeviceSound(CALIB_SOUND)
     VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
-    validation_sound = sound.Sound(VALID_SOUND)
+    #validation_sound = SoundDeviceSound(VALID_SOUND)
     CALISTIMS = [
         f"{CALIB_DIR}/{x}" for x in os.listdir(CALIB_DIR)
         if x.endswith('.png') and not x.startswith('.')
@@ -188,7 +304,10 @@ def run_experiment(Sub, debug=False):
 
     ###############################################################################
     # Setup Eye Tracker and Monitor
-    eye_tracker = tr.find_all_eyetrackers()[0]
+    if not mock:
+        eye_tracker = tr.find_all_eyetrackers()[0]
+    else:
+        eye_tracker = MockTobiiResearch.find_all_eyetrackers()[0]
 
     # Get display area information
     display_area = eye_tracker.get_display_area()
@@ -212,6 +331,14 @@ def run_experiment(Sub, debug=False):
     mon.setDistance(viewing_distance_cm)
     mon.setSizePix([DISPSIZE[0], DISPSIZE[1]])
     mon.saveMon()
+    # Initialize TobiiController
+    subject_dir = data_dir / f"{Sub}"
+    os.makedirs(subject_dir, exist_ok=True)
+
+    # Check for existing session and get parameters
+    filename, should_calibrate, start_trial_idx, timestamp_to_use, existing_trial_order = check_and_resume_session(
+        subject_dir, Sub, TIMESTAMP
+    )
 
     # Create window
     win = visual.Window(size=[DISPSIZE[0], DISPSIZE[1]],
@@ -219,35 +346,47 @@ def run_experiment(Sub, debug=False):
                         monitor=mon,
                         screen=1,
                         fullscr=True,
-                        allowGUI=False)
+                        allowGUI=False,
+                        checkTiming=False)
 
-    # Initialize TobiiController
-    subject_dir = data_dir / f"{Sub}"
-    os.makedirs(subject_dir, exist_ok=True)
-    filename = subject_dir / f'{Sub}_{TIMESTAMP}.csv'
-    controller = TobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
+    if not mock:
+        controller = TobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
+    else:
+        controller = MockTobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
 
     ###############################################################################
-    # Show Status and Calibrationj.
-    grabber = visual.MovieStim(win, f"{STIM_DIR}/ag/Attentiongrabber.mp4", size=[600, 600], units='pix')
+    # Show Status and Calibration.
+    win.flip()
+    core.wait(0.1)
+    grabber = MovieStim(win, f"{STIM_DIR}/ag/Attentiongrabber.mp4", size=[600, 600], units='pix')
     grabber.setAutoDraw(True)
     grabber.play()
     controller.show_status()
     controller.eyetracker.set_gaze_output_frequency(250)
     grabber.setAutoDraw(False)
     grabber.stop()
-    calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event="pre_validation", mode="initial")
-    
-    Trials = trial_order(f"{DIR}/stimuli/main_blocks", debug=debug)
+    calibration_sound = SoundDeviceSound(CALIB_SOUND)
+    VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
+    validation_sound = SoundDeviceSound(VALID_SOUND)
+    if should_calibrate:
+        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial")
+    if existing_trial_order is not None:
+        Trials = existing_trial_order
+        print("Using existing trial order") 
+    else:
+        Trials = trial_order(f"{DIR}/stimuli/main_blocks", debug=debug)
+        pd.DataFrame(Trials).to_csv(subject_dir / f"{Sub}_{timestamp_to_use}_trial_order.csv", index=False)
+    # Skip to the appropriate trial if resuming
+    if start_trial_idx > 0:
+        Trials = Trials[start_trial_idx:]
     print(Trials)
-    pd.DataFrame(Trials).to_csv(subject_dir / f"{Sub}_{TIMESTAMP}_trial_order.csv", index=False)
     # Start Recording
     controller.start_recording()
 
     for trial in Trials:
         recalibrate = 1
         if trial['within_block_trial_index'] == 0 and trial['block_index'] != 0:
-            calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True)
+            calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True)
         t1 = time.time()
         trial_id = trial['total_trial_index']
         video_path = trial['video_path']
@@ -257,53 +396,80 @@ def run_experiment(Sub, debug=False):
         
         # Record trial start event
         controller.record_event(f"Loop_Start_{trial_id}")
-        
+        core.wait(0.5)
         # Create movie stimulus
-        movie = visual.MovieStim(
+        movie = MovieStim(
             win,
             video_path,
             size=[1920, 1080],
             units='pix',
             loop=False,
-            name=video_name
+            name=video_name,
+            movieLib="ffpyplayer"
         )
-        
-        win.flip()
-        # Start movie
+        movie.play()
         movie.setAutoDraw(True)
         win.flip()  # Ensure movie is on screen
         t2 = time.time()
-        controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")   
-        lt, event_type = controller.collect_lt_with_calibration(60, 20)
-        print(f'Trial {trial_id} Looking time: %.3fs' % lt)
-        if event_type == "pause":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Paused")
-            movie.pause()
-            
-            # wait until space is pressed
-            keys = []
-            while 'space' not in keys:
-                keys = event.getKeys(keyList=['space'])
-            movie.play()  # resume playback
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Resumed")
-        controller.record_event(f"Trial_End_{trial_id}")
-        if event_type == "calibration":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Forced_Recalibration")
-        elif event_type == "looking_away":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Looked_Away")
+        controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")  
+        event_type = "play"
+ 
+        # Collect looking time with pause handling
+        # todo: get length directly from video
+        if trial['block_id'] != "pixar":
+            total_time = config_data['trial_config']['max_time']
         else:
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Normal")
+            total_time = 150
+        remaining_time = total_time
+        total_lt = 0
+        while remaining_time > 1:
+            lt, event_type = controller.collect_lt_with_calibration(remaining_time, config_data['trial_config']['away_time'])
+            total_lt += lt
+            print(f'Trial {trial_id} Looking time: %.3fs (total: %.3fs): Event {event_type}' % (lt, total_lt))
+            if event_type == "pause":
+                controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Paused")
+                controller.eyetracker.unsubscribe_from(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data)
+                controller.recording = False
+                movie.pause()         
+                event.waitKeys(keyList=['space'])
+                # start recording again
+                controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
+                controller.recording = True
+                movie.play()  # resume playback
+                controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Resumed")
+                # Update remaining time and continue loop
+                remaining_time = total_time - total_lt
+                
+            else:
+                # Trial ended for another reason (looking_away, calibration, escape, or normal)
+                break
+        
+        # Record final event based on how trial ended
+        if event_type == "calibration":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Forced_Recalibration_Key_Press")
+        elif event_type == "looking_away":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Looked_Away")
+        elif event_type == "next_trial":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Ended_Trial")
+        elif event_type == "escape":
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Ended_Experiment")
+        else:
+            controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Normal")
+        controller.record_event(f"Trial_End_{trial_id}")
+        movie.pause()
         controller._flush_data_csv()
-        core.wait(0.05)
+        core.wait(0.2)
         movie.setAutoDraw(False)
+        core.wait(0.2)
         movie.stop()
+        # delete the movie object
+        core.wait(0.2)
+        del movie
         if event_type == "escape":
-            controller.record_event(f"Trial_{trial_id}_LookingTime_{lt}_Ended_Trial")
             break
         t3 = time.time()
         if event_type != "normal":
             if event_type == "looking_away":
-                controller.record_event(f"Trial_{trial_id}_Ended_Looking_Away")
                 controller.display_text("Press 'c' to recalibrate, or press 'p' (or wait 5s) to proceed.")
                 start_wait = time.time()
                 key = None
@@ -314,14 +480,12 @@ def run_experiment(Sub, debug=False):
                         key = keys[0]
                         break
                     core.wait(0.01)
-                print(f"we pressed a key here! it's {key}")
                 if key == 'c':
-                    controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looking_Away")
-                    calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")
+                    controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looked_Away")
+                    calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")
                     recalibrate += 1
-            else:
-                controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Key_Press")
-                calibration_routine(controller, CALIPOINTS, CALISTIMS, calibration_sound, validation_sound, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")
+            elif event_type == "calibration":
+                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")
         win.flip()
         controller.record_event(f"Loop_End_{trial_id}")
         t4 = time.time()
@@ -339,5 +503,4 @@ def run_experiment(Sub, debug=False):
     core.quit()
 
 if __name__ == '__main__':
-    args = main()
-    run_experiment(args.subject)
+    main()

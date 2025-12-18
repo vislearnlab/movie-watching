@@ -1,0 +1,15 @@
+movie-watching event dictionary,,,,,
+last updated:,Dec 17 2025,,,,
+,,,,,
+Event Name,Description
+Trial_Start_{trial_id},Event to mark the first timestamp at which a trial video is displayed to a participant
+Trial_End_{trial_id},Event to mark the last timestamp at which a trial video is displayed to a participant
+Trial_{trial_id}_LookingTime_{looking_time}_Forced_Recalibration_Key_Press,Experimenter forced recalibration by clicking the 'c' button during a trial
+Trial_{trial_id}_LookingTime_{looking_time}_Paused,Trial was paused by clicking space
+Trial_{trial_id}_LookingTime_{looking_time}_Resumed,Trial was paused and then resumed by clicking space
+Trial_{trial_id}_LookingTime_{looking_time}_EndedTrial,Rest of the trial was skipped by clicking 'n'
+Trial_{trial_id}_LookingTime_{looking_time}_Ended_Experiment,Experimenter forced end of experiment by clicking 'esc'
+Trial_{trial_id}_LookingTime_{looking_time}_Looked_Away,Rest of the trial was skipped because participant looked away from the screen for an extended duration
+Trial_{trial_id}_Forced_Recalibation_Looked_Away,Experimenter forced recalibration after participant had looked away from the screen for an extended duration
+Loop_End_{trial_id},End of the trial loop for the specific trial ID
+Loop_Start_{trial_id},Start of the loop for a specific trial ID
