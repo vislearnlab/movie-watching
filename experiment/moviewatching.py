@@ -468,6 +468,14 @@ def run_experiment(Sub, debug=False, mock=False):
             total_time = config_data['trial_config']['max_time']
         else:
             total_time = 150
+        # TEST (AJH 12.18.25): end a tiny bit early to avoid ffpyplayer/MP4 audio
+        # reaching end-of-file (EOF) on its own. EOF transitions can produce a
+        # click/pop/crackle on some macOS audio outputs.
+        #
+        # Your observation ("no crackle when pressing N") is consistent with EOF
+        # being the trigger, since pressing N ends the trial before the movie ends.
+        END_EARLY_SEC = 0.25
+        total_time = max(1.0, float(total_time) - END_EARLY_SEC)
         remaining_time = total_time
         total_lt = 0
         while remaining_time > 1:
