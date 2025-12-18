@@ -8,7 +8,7 @@ import tobii_research as tr
 from mock_tobii_research import MockTobiiResearch
 from PIL import Image, ImageDraw
 from psychopy import logging
-logging.console.setLevel(logging.ERROR)
+logging.console.setLevel(logging.CRITICAL)
 from psychopy import core, event, visual
 from psychopy.tools.monitorunittools import cm2pix, deg2pix, pix2cm, pix2deg
 
@@ -470,7 +470,7 @@ class TobiiController:
         self.recording = True
         self.t0 = self.tr.get_system_time_stamp()
 
-    def stop_recording(self):
+    def stop_recording(self, pause=False):
         """Stop recording.
 
         Args:

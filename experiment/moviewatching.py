@@ -1,8 +1,12 @@
 from argparse import ArgumentParser
 import os
+os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
+os.environ["FFREPORT"] = "file=/dev/null"  
+os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
 import numpy as np
 import random
 from pathlib import Path
+import logging as pylogging
 from psychopy import logging
 logging.console.setLevel(logging.ERROR)
 from psychopy import core, visual, event, monitors, prefs
@@ -16,13 +20,8 @@ import yaml
 import sounddevice as sd
 import datetime
 from glob import glob
-
 # known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
 from psychopy_sounddevice import SoundDeviceSound
-
-os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
-os.environ["FFREPORT"] = "file=/dev/null"  
-os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
 # Get list of all audio devices
 devices = sd.query_devices()
 candidates = []
@@ -33,7 +32,7 @@ for idx, device in enumerate(devices):
         if any(keyword.lower() in device_name.lower() 
                 for keyword in ['hdmi', 'display', 'monitor', 'nvidia', 'amd', 'PA24']):
             candidates.append((idx, device))
-print(candidates)
+
 if len(candidates) > 0:
     best_idx, best_device = candidates[-1]
     # Set the default output device for sounddevice
@@ -125,7 +124,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
             print("Resetting stimuli for retry...", flush=True)
             controller.targets.reset_stims()
             controller.win.flip()
-            core.wait(0.3)
+            core.wait(0.1)
             event.clearEvents()
         
         # Run calibration
@@ -204,7 +203,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
     controller.targets.reset_stims()
     sd.stop()
     gc.collect()
-    core.wait(0.2)
+    core.wait(0.1)
 
 def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
     """
@@ -381,8 +380,6 @@ def run_experiment(Sub, debug=False, mock=False):
     if start_trial_idx > 0:
         Trials = Trials[start_trial_idx:]
     print(Trials)
-    
-    pd.DataFrame(Trials).to_csv(subject_dir / f"{Sub}_{TIMESTAMP}_trial_order.csv", index=False)
     # Start Recording
     controller.start_recording()
 
@@ -399,6 +396,7 @@ def run_experiment(Sub, debug=False, mock=False):
         
         # Record trial start event
         controller.record_event(f"Loop_Start_{trial_id}")
+        core.wait(0.5)
         # Create movie stimulus
         movie = MovieStim(
             win,
@@ -409,7 +407,6 @@ def run_experiment(Sub, debug=False, mock=False):
             name=video_name,
             movieLib="ffpyplayer"
         )
-        core.wait(0.5)
         movie.play()
         movie.setAutoDraw(True)
         win.flip()  # Ensure movie is on screen
@@ -418,20 +415,26 @@ def run_experiment(Sub, debug=False, mock=False):
         event_type = "play"
  
         # Collect looking time with pause handling
+        # todo: get length directly from video
         if trial['block_id'] != "pixar":
             total_time = config_data['trial_config']['max_time']
         else:
-            total_time = 70
+            total_time = 150
         remaining_time = total_time
         total_lt = 0
         while remaining_time > 1:
             lt, event_type = controller.collect_lt_with_calibration(remaining_time, config_data['trial_config']['away_time'])
             total_lt += lt
-            print(f'Trial {trial_id} Looking time: %.3fs (total: %.3fs)' % (lt, total_lt))
+            print(f'Trial {trial_id} Looking time: %.3fs (total: %.3fs): Event {event_type}' % (lt, total_lt))
             if event_type == "pause":
                 controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Paused")
+                controller.eyetracker.unsubscribe_from(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data)
+                controller.recording = False
                 movie.pause()         
                 event.waitKeys(keyList=['space'])
+                # start recording again
+                controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
+                controller.recording = True
                 movie.play()  # resume playback
                 controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Resumed")
                 # Update remaining time and continue loop
@@ -453,14 +456,15 @@ def run_experiment(Sub, debug=False, mock=False):
         else:
             controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Normal")
         controller.record_event(f"Trial_End_{trial_id}")
+        movie.pause()
         controller._flush_data_csv()
-        core.wait(0.05)
+        core.wait(0.2)
         movie.setAutoDraw(False)
+        core.wait(0.2)
         movie.stop()
         # delete the movie object
+        core.wait(0.2)
         del movie
-        import gc; gc.collect()
-        core.wait(0.05)
         if event_type == "escape":
             break
         t3 = time.time()
@@ -500,4 +504,3 @@ def run_experiment(Sub, debug=False, mock=False):
 
 if __name__ == '__main__':
     main()
-
