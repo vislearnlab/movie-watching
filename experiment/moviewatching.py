@@ -27,8 +27,25 @@ with open("config.yaml", 'r') as stream:
 
 def _configure_audio_device():
     """
-    FIX #1 : do NOT call PortAudio (sounddevice) at import time.
-    Querying devices during import can segfault on some macOS setups.
+    FIX #1: Move audio device detection *out of import-time* and into runtime.
+
+    Plain-language summary of the change:
+    - BEFORE: this script imported `sounddevice` and called `sd.query_devices()`
+      at the top level of the file (i.e., during Python import).
+    - AFTER: the `sounddevice` import + `sd.query_devices()` call now happen
+      only when `run_experiment()` starts and calls this function.
+
+    Why this matters (segfault context):
+    - `sounddevice` talks to PortAudio, which is native (C/C++) code.
+    - On some macOS setups, calling into PortAudio during module import can
+      crash the whole process with a "Segmentation fault" (no Python traceback).
+    - By deferring the PortAudio call until runtime, we avoid crashing during
+      the import/initialization phase and make failures easier to localize.
+
+    What this function actually does:
+    - Best-effort: picks an output device that looks like a monitor/HDMI device
+      (by name keyword match) and sets PsychoPy's audio prefs accordingly.
+    - If anything fails, it prints a message and continues using system defaults.
     """
     try:
         import sounddevice as sd
@@ -300,7 +317,14 @@ def run_experiment(Sub, debug=False, mock=False):
     import gc
     gc.collect()
     
-    # FIX #1: move audio configuration into runtime (not import-time)
+    # FIX #1 AJH 12.18.25
+    # Run PortAudio device detection here at runtime instead of at file import.
+    #
+    # In practice, this means:
+    # - `python moviewatching.py ...` is less likely to segfault immediately
+    #   just from importing this module.
+    # - If there is still a segfault later, we now know it is *not* coming from
+    #   the old import-time `sd.query_devices()` call.
     _configure_audio_device()
 
     global DIR, config_data
