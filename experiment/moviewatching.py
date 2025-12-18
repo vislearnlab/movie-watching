@@ -17,36 +17,51 @@ from mock_tobii_research import MockTobiiResearch
 import time
 import pandas as pd
 import yaml
-import sounddevice as sd
 import datetime
 from glob import glob
-# known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
-from psychopy_sounddevice import SoundDeviceSound
-# Get list of all audio devices
-devices = sd.query_devices()
-candidates = []
-for idx, device in enumerate(devices):
-    device_name = device['name']
-    # Check if it's an output device and matches monitor keywords
-    if device['max_output_channels'] > 0:
-        if any(keyword.lower() in device_name.lower() 
-                for keyword in ['hdmi', 'display', 'monitor', 'nvidia', 'amd', 'PA24']):
-            candidates.append((idx, device))
-
-if len(candidates) > 0:
-    best_idx, best_device = candidates[-1]
-    # Set the default output device for sounddevice
-    sd.default.device = best_idx
-    prefs.hardware['audioLib'] = ['sounddevice']
-    prefs.hardware['audioDevice'] = best_device['name']
-    print("Using monitor audio device:", best_device['name'])
-else:
-    print("No monitor audio found, using default.")
 
 DIR = Path("../")
 trial_types = ["sesame", "slow", "frank", "pixar"]
 with open("config.yaml", 'r') as stream:
     config_data = yaml.safe_load(stream)
+
+def _configure_audio_device():
+    """
+    FIX #1 : do NOT call PortAudio (sounddevice) at import time.
+    Querying devices during import can segfault on some macOS setups.
+    """
+    try:
+        import sounddevice as sd
+    except Exception as e:
+        print(f"Audio setup skipped (sounddevice import failed): {e}")
+        return
+
+    # known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
+    # Get list of all audio devices (best-effort)
+    try:
+        devices = sd.query_devices()
+    except Exception as e:
+        print(f"Audio device query failed; using default audio. Error: {e}")
+        return
+
+    candidates = []
+    for idx, device in enumerate(devices):
+        device_name = device['name']
+        # Check if it's an output device and matches monitor keywords
+        if device['max_output_channels'] > 0:
+            if any(keyword.lower() in device_name.lower() 
+                    for keyword in ['hdmi', 'display', 'monitor', 'nvidia', 'amd', 'PA24']):
+                candidates.append((idx, device))
+
+    if len(candidates) > 0:
+        best_idx, best_device = candidates[-1]
+        # Set the default output device for sounddevice
+        sd.default.device = best_idx
+        prefs.hardware['audioLib'] = ['sounddevice']
+        prefs.hardware['audioDevice'] = best_device['name']
+        print("Using monitor audio device:", best_device['name'])
+    else:
+        print("No monitor audio found, using default.")
 
 def main():
     DIR = Path("../")
@@ -111,6 +126,9 @@ def trial_order(dir, debug=False):
 
 def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False):
     import gc
+    import sounddevice as sd
+    # known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
+    from psychopy_sounddevice import SoundDeviceSound
     
     global config_data
     max_retries = config_data[f"{mode}_validation"]["max_retries"]
@@ -282,6 +300,9 @@ def run_experiment(Sub, debug=False, mock=False):
     import gc
     gc.collect()
     
+    # FIX #1: move audio configuration into runtime (not import-time)
+    _configure_audio_device()
+
     global DIR, config_data
     TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
     DISPSIZE = (1920, 1080)
@@ -365,6 +386,7 @@ def run_experiment(Sub, debug=False, mock=False):
     controller.eyetracker.set_gaze_output_frequency(250)
     grabber.setAutoDraw(False)
     grabber.stop()
+    from psychopy_sounddevice import SoundDeviceSound
     calibration_sound = SoundDeviceSound(CALIB_SOUND)
     VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
     validation_sound = SoundDeviceSound(VALID_SOUND)
@@ -504,3 +526,4 @@ def run_experiment(Sub, debug=False, mock=False):
 
 if __name__ == '__main__':
     main()
+
