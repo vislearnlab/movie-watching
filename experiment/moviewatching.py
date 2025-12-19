@@ -474,7 +474,7 @@ def run_experiment(Sub, debug=False, mock=False):
         #
         # Your observation ("no crackle when pressing N") is consistent with EOF
         # being the trigger, since pressing N ends the trial before the movie ends.
-        END_EARLY_SEC = 0.1
+        END_EARLY_SEC = 0.25
         total_time = max(1.0, float(total_time) - END_EARLY_SEC)
         remaining_time = total_time
         total_lt = 0
@@ -515,9 +515,9 @@ def run_experiment(Sub, debug=False, mock=False):
         movie.pause()
         core.wait(0.2)
         controller._flush_data_csv()
-        core.wait(0.2)
+        core.wait(0.3)
         movie.setAutoDraw(False)
-        core.wait(0.2)
+        core.wait(0.3)
         movie.stop()
         # delete the movie object
         core.wait(0.2)
