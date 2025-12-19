@@ -159,7 +159,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
             print("Resetting stimuli for retry...", flush=True)
             controller.targets.reset_stims()
             controller.win.flip()
-            core.wait(0.1)
+            core.wait(0.3)
             event.clearEvents()
         
         # Run calibration
@@ -444,7 +444,6 @@ def run_experiment(Sub, debug=False, mock=False):
         
         # Record trial start event
         controller.record_event(f"Loop_Start_{trial_id}")
-        core.wait(0.5)
         # Create movie stimulus
         movie = MovieStim(
             win,
@@ -455,6 +454,7 @@ def run_experiment(Sub, debug=False, mock=False):
             name=video_name,
             movieLib="ffpyplayer"
         )
+        core.wait(0.25)
         movie.play()
         movie.setAutoDraw(True)
         win.flip()  # Ensure movie is on screen
@@ -474,7 +474,7 @@ def run_experiment(Sub, debug=False, mock=False):
         #
         # Your observation ("no crackle when pressing N") is consistent with EOF
         # being the trigger, since pressing N ends the trial before the movie ends.
-        END_EARLY_SEC = 0.25
+        END_EARLY_SEC = 0.1
         total_time = max(1.0, float(total_time) - END_EARLY_SEC)
         remaining_time = total_time
         total_lt = 0
@@ -513,6 +513,7 @@ def run_experiment(Sub, debug=False, mock=False):
             controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Normal")
         controller.record_event(f"Trial_End_{trial_id}")
         movie.pause()
+        core.wait(0.2)
         controller._flush_data_csv()
         core.wait(0.2)
         movie.setAutoDraw(False)
@@ -521,6 +522,8 @@ def run_experiment(Sub, debug=False, mock=False):
         # delete the movie object
         core.wait(0.2)
         del movie
+        import gc; gc.collect()
+        core.wait(0.05)
         if event_type == "escape":
             break
         t3 = time.time()
