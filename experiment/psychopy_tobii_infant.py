@@ -1,5 +1,4 @@
 import atexit
-from fileinput import filename
 import os
 from datetime import datetime
 import pandas as pd
