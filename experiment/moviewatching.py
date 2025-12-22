@@ -1,8 +1,7 @@
-from argparse import ArgumentParser
 import os
-os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
-os.environ["FFREPORT"] = "file=/dev/null"  
-os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
+import sys
+from helpers import suppress_ffmpeg_warnings
+from argparse import ArgumentParser
 import numpy as np
 import random
 from pathlib import Path
@@ -12,6 +11,7 @@ logging.console.setLevel(logging.ERROR)
 from psychopy import core, visual, event, monitors, prefs
 from psychopy.visual.movies import MovieStim
 from psychopy_tobii_infant import TobiiInfantController, MockTobiiInfantController
+from psychopy.constants import PLAYING, PAUSED, FINISHED, NOT_STARTED
 import tobii_research as tr
 from mock_tobii_research import MockTobiiResearch
 import time
@@ -19,6 +19,7 @@ import pandas as pd
 import yaml
 import datetime
 from glob import glob
+from psychopy_sounddevice import SoundDeviceSound
 
 DIR = Path("../")
 trial_types = ["sesame", "slow", "frank", "pixar"]
@@ -26,27 +27,6 @@ with open("config.yaml", 'r') as stream:
     config_data = yaml.safe_load(stream)
 
 def _configure_audio_device():
-    """
-    FIX #1: Move audio device detection *out of import-time* and into runtime.
-
-    Plain-language summary of the change:
-    - BEFORE: this script imported `sounddevice` and called `sd.query_devices()`
-      at the top level of the file (i.e., during Python import).
-    - AFTER: the `sounddevice` import + `sd.query_devices()` call now happen
-      only when `run_experiment()` starts and calls this function.
-
-    Why this matters (segfault context):
-    - `sounddevice` talks to PortAudio, which is native (C/C++) code.
-    - On some macOS setups, calling into PortAudio during module import can
-      crash the whole process with a "Segmentation fault" (no Python traceback).
-    - By deferring the PortAudio call until runtime, we avoid crashing during
-      the import/initialization phase and make failures easier to localize.
-
-    What this function actually does:
-    - Best-effort: picks an output device that looks like a monitor/HDMI device
-      (by name keyword match) and sets PsychoPy's audio prefs accordingly.
-    - If anything fails, it prints a message and continues using system defaults.
-    """
     try:
         import sounddevice as sd
     except Exception as e:
@@ -92,7 +72,7 @@ def main():
 def trial_order(dir, debug=False):
     blocks = {}
     for file in os.listdir(dir):
-        if file.endswith('.mp4') and not file.startswith("intertrial_calibration"):
+        if file.endswith('.mp4') and not file.startswith("intertrial_calibration") and not "stripped" in file:
             block_num = file.split('_')[0]
             block_num = block_num.replace('india', '').replace('us', '')
             if block_num not in blocks:
@@ -144,8 +124,6 @@ def trial_order(dir, debug=False):
 def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False):
     import gc
     import sounddevice as sd
-    # known issues with directly integrating sounddevice that we are circumventing (https://github.com/psychopy/psychopy-sounddevice/issues/5)
-    from psychopy_sounddevice import SoundDeviceSound
     
     global config_data
     max_retries = config_data[f"{mode}_validation"]["max_retries"]
@@ -154,20 +132,18 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
     
     i = 0
     while i < max_retries:
-        # RESET STIMULI BEFORE EACH VALIDATION
+        # reset stimli before each validation/calibration
         if i > 0:
             print("Resetting stimuli for retry...", flush=True)
             controller.targets.reset_stims()
             controller.win.flip()
-            core.wait(0.3)
+            core.wait(0.1)
             event.clearEvents()
         
-        # Run calibration
         if not skip_first_calibration or i > 0:
-            # Cleanup before creating audio
             sd.stop()
             gc.collect()
-            core.wait(0.2)
+            core.wait(0.1)
             
             print(f"Creating calibration sound for iteration {i}", flush=True)
             calibration_sound = SoundDeviceSound(CALIB_SOUND)
@@ -181,12 +157,12 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
                 del calibration_sound
                 sd.stop()
                 gc.collect()
-                core.wait(0.2)
+                core.wait(0.1)
 
         # Cleanup before validation
         sd.stop()
         gc.collect()
-        core.wait(0.2)
+        core.wait(0.1)
         
         print(f"Creating validation sound for iteration {i}", flush=True)
         validation_sound = SoundDeviceSound(VALID_SOUND)
@@ -208,7 +184,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
             gc.collect()
             core.wait(0.2)
 
-        # Your validation checking logic...
+        # validation checking logic
         left = [result.get(f"Point_{idx}_accuracy_degrees_left", bad_threshold+.01) for idx in range(1, 6)]
         right = [result.get(f"Point_{idx}_accuracy_degrees_right", bad_threshold+.01) for idx in range(1, 6)]
 
@@ -291,40 +267,29 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
         else:
             print(f"Warning: Trial order file not found at {trial_order_file}")
             return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
-    except Exception as e:
-        print(f"Error reading trial order: {e}. Starting fresh session.")
+    except Exception:
         return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
     
-    # Find last completed trial
     try:
         existing_data = pd.read_csv(recent_file)
-        if not existing_data.empty and 'trial' in existing_data.columns:
-            last_trial_idx = existing_data['trial'].max()
-            # Skip to the trial after the last completed one, plus one more as specified
-            start_trial_idx = last_trial_idx + 2
-            print(f"Resuming from trial {start_trial_idx} (skipping trial {last_trial_idx + 1})")
-            return recent_file, False, start_trial_idx, last_timestamp, existing_trial_order
-    except Exception as e:
-        print(f"Error reading existing data: {e}. Starting from the beginning of existing trial order.")
+        if not existing_data.empty and 'events' in existing_data.columns:
+            trial_end_events = existing_data[existing_data['events'].str.startswith('Trial_End_', na=False)]
+            if not trial_end_events.empty:
+                last_completed = trial_end_events['events'].str.extract(r'Trial_End_(\d+)')[0].astype(int).max()
+                start_trial_idx = last_completed + 1
+                return recent_file, False, start_trial_idx, last_timestamp, existing_trial_order
+    except Exception:
+        pass
     
     return recent_file, False, 0, last_timestamp, existing_trial_order
 
 def run_experiment(Sub, debug=False, mock=False):
-    # Constants
-    os.environ["OPENCV_LOG_LEVEL"] = "SILENT"  
-    os.environ["FFREPORT"] = "file=/dev/null"  
+    os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
+    os.environ["FFREPORT"] = "file=/dev/null:level=quiet"
     os.environ['FFMPEG_LOG_LEVEL'] = 'quiet'
     import gc
     gc.collect()
     
-    # FIX #1 AJH 12.18.25
-    # Run PortAudio device detection here at runtime instead of at file import.
-    #
-    # In practice, this means:
-    # - `python moviewatching.py ...` is less likely to segfault immediately
-    #   just from importing this module.
-    # - If there is still a segfault later, we now know it is *not* coming from
-    #   the old import-time `sd.query_devices()` call.
     _configure_audio_device()
 
     global DIR, config_data
@@ -335,9 +300,7 @@ def run_experiment(Sub, debug=False, mock=False):
     STIM_DIR = DIR / os.path.join('stimuli')
     CALIB_DIR = STIM_DIR / 'calibration'
     CALIB_SOUND = os.path.join(CALIB_DIR, 'hothothot3.wav')
-    #calibration_sound = SoundDeviceSound(CALIB_SOUND)
     VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
-    #validation_sound = SoundDeviceSound(VALID_SOUND)
     CALISTIMS = [
         f"{CALIB_DIR}/{x}" for x in os.listdir(CALIB_DIR)
         if x.endswith('.png') and not x.startswith('.')
@@ -403,103 +366,204 @@ def run_experiment(Sub, debug=False, mock=False):
     # Show Status and Calibration.
     win.flip()
     core.wait(0.1)
-    grabber = MovieStim(win, f"{STIM_DIR}/ag/Attentiongrabber.mp4", size=[600, 600], units='pix')
+    with suppress_ffmpeg_warnings():
+        grabber = MovieStim(win, f"{STIM_DIR}/ag/Attentiongrabber.mp4", size=[600, 600], units='pix')
     grabber.setAutoDraw(True)
     grabber.play()
     controller.show_status()
     controller.eyetracker.set_gaze_output_frequency(250)
     grabber.setAutoDraw(False)
     grabber.stop()
-    # TEST AJH 12.18.25 (audio crackle/stutter isolation):
-    # These SoundDeviceSound objects were being created here but never used
-    # (we don't pass them into calibration_routine, and nothing plays them).
-    # On some systems, simply opening/holding an extra audio stream can cause
-    # pops/crackles when movies start/stop audio. So for Test B we remove them.
-    VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
+    
     if should_calibrate:
         calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial")
+    
     if existing_trial_order is not None:
         Trials = existing_trial_order
         print("Using existing trial order") 
     else:
         Trials = trial_order(f"{DIR}/stimuli/main_blocks", debug=debug)
         pd.DataFrame(Trials).to_csv(subject_dir / f"{Sub}_{timestamp_to_use}_trial_order.csv", index=False)
-    # Skip to the appropriate trial if resuming
+    
     if start_trial_idx > 0:
-        Trials = Trials[start_trial_idx:]
-    print(Trials)
-    # Start Recording
+        Trials = [t for t in Trials if t['total_trial_index'] >= start_trial_idx]
+    
     controller.start_recording()
-
+    
     for trial in Trials:
-        recalibrate = 1
-        if trial['within_block_trial_index'] == 0 and trial['block_index'] != 0:
-            calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True)
         t1 = time.time()
         trial_id = trial['total_trial_index']
         video_path = trial['video_path']
         video_name = trial['video_name']
+        if trial_id > 0:  # Skip on first trial
+            controller._flush_data_csv()
+        if trial['within_block_trial_index'] == 0 and trial['block_index'] != 0:
+            calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True)
+            controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
+
+        stripped_video_path = video_path.replace('.mp4', '_stripped.mp4')
+        audio_path = video_path.replace('.mp4', '.mp3')
         
-        print(f"Starting Trial {trial_id}: {video_name}")
-        
-        # Record trial start event
         controller.record_event(f"Loop_Start_{trial_id}")
-        # Create movie stimulus
-        movie = MovieStim(
-            win,
-            video_path,
-            size=[1920, 1080],
-            units='pix',
-            loop=False,
-            name=video_name,
-            movieLib="ffpyplayer"
-        )
-        core.wait(0.25)
+        with suppress_ffmpeg_warnings():
+            movie = MovieStim(
+                win,
+                stripped_video_path,
+                size=[1920, 1080],
+                units='pix',
+                loop=False,
+                noAudio=True,
+                name=video_name,
+                movieLib="ffpyplayer"
+            )
+        
+        import soundfile as sf
+        import sounddevice as sd
+        import threading
+        
+        audio_data, samplerate = sf.read(audio_path)
+        if len(audio_data.shape) == 1:
+            audio_data = audio_data.reshape(-1, 1)
+        
+        class SeekableAudio:
+            def __init__(self, data, samplerate):
+                self.data = data
+                self.samplerate = samplerate
+                self.stream = None
+                self.current_frame = 0
+                self.lock = threading.Lock()
+                self.playing = False
+                
+            def _callback(self, outdata, frames, time_info, status):
+                with self.lock:
+                    if not self.playing or self.current_frame >= len(self.data):
+                        outdata.fill(0)
+                        if self.current_frame >= len(self.data):
+                            raise sd.CallbackStop()
+                        return
+                    
+                    end_frame = min(self.current_frame + frames, len(self.data))
+                    chunk = self.data[self.current_frame:end_frame]
+                    
+                    if len(chunk) < frames:
+                        outdata[:len(chunk)] = chunk
+                        outdata[len(chunk):].fill(0)
+                    else:
+                        outdata[:] = chunk
+                        
+                    self.current_frame = end_frame
+                
+            def play(self, start_time=0):
+                with self.lock:
+                    self.current_frame = int(start_time * self.samplerate)
+                    self.playing = True
+                    
+                if self.stream is not None:
+                    try:
+                        self.stream.stop()
+                        self.stream.close()
+                    except:
+                        pass
+                    
+                self.stream = sd.OutputStream(
+                    samplerate=self.samplerate,
+                    channels=self.data.shape[1],
+                    callback=self._callback
+                )
+                self.stream.start()
+                
+            def stop(self):
+                with self.lock:
+                    self.playing = False
+                    
+                if self.stream is not None:
+                    try:
+                        self.stream.stop()
+                        self.stream.close()
+                    except:
+                        pass
+                    self.stream = None
+                    
+            def get_current_time(self):
+                with self.lock:
+                    return self.current_frame / self.samplerate
+        
+        audio = SeekableAudio(audio_data, samplerate)
+        
+        core.wait(0.1)
+        
         movie.play()
-        movie.setAutoDraw(True)
-        win.flip()  # Ensure movie is on screen
+        audio.play()
+        
+        playback_start_time = time.time()
+        accumulated_pause_time = 0
+        
         t2 = time.time()
         controller.record_event(f"Trial_Start_{trial_id}|Video_{video_name}")  
         event_type = "play"
- 
-        # Collect looking time with pause handling
-        # todo: get length directly from video
+
         if trial['block_id'] != "pixar":
             total_time = config_data['trial_config']['max_time']
         else:
             total_time = 150
-        # TEST (AJH 12.18.25): end a tiny bit early to avoid ffpyplayer/MP4 audio
-        # reaching end-of-file (EOF) on its own. EOF transitions can produce a
-        # click/pop/crackle on some macOS audio outputs.
-        #
-        # Your observation ("no crackle when pressing N") is consistent with EOF
-        # being the trigger, since pressing N ends the trial before the movie ends.
+        
         END_EARLY_SEC = 0.25
         total_time = max(1.0, float(total_time) - END_EARLY_SEC)
         remaining_time = total_time
         total_lt = 0
-        while remaining_time > 1:
-            lt, event_type = controller.collect_lt_with_calibration(remaining_time, config_data['trial_config']['away_time'])
-            total_lt += lt
-            print(f'Trial {trial_id} Looking time: %.3fs (total: %.3fs): Event {event_type}' % (lt, total_lt))
+        playback_start_time = time.time()
+        accumulated_pause_time = 0
+        total_lt = 0
+
+        while True:
+            # Calculate actual remaining time
+            current_time = time.time()
+            elapsed_playback = current_time - playback_start_time - accumulated_pause_time
+            remaining_time = total_time - elapsed_playback
+            
+            if remaining_time <= 0.1:
+                break
+            
+            movie.draw()
+            win.flip()
+            
+            check_interval = min(0.033, remaining_time)
+            lt, event_type = controller.collect_lt_with_calibration(check_interval, config_data['trial_config']['away_time'])
+            total_lt += lt        
             if event_type == "pause":
-                controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Paused")
+                current_playback_time = time.time()
+                elapsed_playback = current_playback_time - playback_start_time - accumulated_pause_time
+                paused_audio_time = audio.get_current_time()
+                controller.record_event(f"Trial_{trial_id}_LookingTime_{round(elapsed_playback,3)}_Paused")
                 controller.eyetracker.unsubscribe_from(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data)
                 controller.recording = False
-                movie.pause()         
-                event.waitKeys(keyList=['space'])
+
+                movie.pause()
+                audio.stop()
+                
+                pause_start = time.time()
+                while True:
+                    movie.draw()
+                    win.flip()
+                    keys = event.getKeys(keyList=['space'])
+                    if 'space' in keys:
+                        break
+                    core.wait(0.01)
+                pause_duration = time.time() - pause_start
+                accumulated_pause_time += pause_duration
+                
+                movie.play()
+                resume_time = paused_audio_time
+                audio.play(start_time=resume_time)
                 # start recording again
                 controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
                 controller.recording = True
-                movie.play()  # resume playback
-                controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Resumed")
-                # Update remaining time and continue loop
-                remaining_time = total_time - total_lt
+                controller.record_event(f"Trial_{trial_id}_LookingTime_{round(elapsed_playback,3)}_Resumed")
                 
-            else:
+            elif event_type != "normal":
                 # Trial ended for another reason (looking_away, calibration, escape, or normal)
                 break
-        
+        total_lt = round(elapsed_playback, 3)
         # Record final event based on how trial ended
         if event_type == "calibration":
             controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Forced_Recalibration_Key_Press")
@@ -511,22 +575,22 @@ def run_experiment(Sub, debug=False, mock=False):
             controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Ended_Experiment")
         else:
             controller.record_event(f"Trial_{trial_id}_LookingTime_{total_lt}_Normal")
+
         controller.record_event(f"Trial_End_{trial_id}")
         movie.pause()
-        core.wait(0.2)
+        win.flip()
+        audio.stop()
+        core.wait(0.1)
         controller._flush_data_csv()
-        core.wait(0.3)
-        movie.setAutoDraw(False)
-        core.wait(0.3)
+        core.wait(0.1)
         movie.stop()
-        # delete the movie object
-        core.wait(0.2)
-        del movie
-        import gc; gc.collect()
+        del audio
+        del audio_data
         core.wait(0.05)
-        if event_type == "escape":
-            break
-        t3 = time.time()
+        del movie
+        gc.collect()
+        core.wait(0.05)
+                    
         if event_type != "normal":
             if event_type == "looking_away":
                 controller.display_text("Press 'c' to recalibrate, or press 'p' (or wait 5s) to proceed.")
@@ -539,23 +603,21 @@ def run_experiment(Sub, debug=False, mock=False):
                         key = keys[0]
                         break
                     core.wait(0.01)
+                    
                 if key == 'c':
                     controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looked_Away")
                     calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")
-                    recalibrate += 1
             elif event_type == "calibration":
-                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")
-        win.flip()
+                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")                
         controller.record_event(f"Loop_End_{trial_id}")
+        if event_type == "escape":
+            break
         t4 = time.time()
-        # Check for escape key
+        
         keys = event.getKeys()
         if 'escape' in keys:
             break
-        print(f"Trial {trial_id} duration: {t4 - t1:.2f} seconds, First frame delay (0.5s): {t2 - t1:.2f} seconds, Movie duration (120s): {t3 - t2:.2f} seconds, ISI (1s): {t4 - t3:.2f} seconds")
-
-    ###############################################################################
-    # Stop recording and cleanup
+    
     controller.stop_recording()
     controller.close()
     win.close()
@@ -563,4 +625,4 @@ def run_experiment(Sub, debug=False, mock=False):
 
 if __name__ == '__main__':
     main()
-
+    

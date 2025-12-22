@@ -179,7 +179,6 @@ class TobiiController:
     def __init__(self, win, id=0, filename="gaze_TOBII_output.txt", mock=False):
         self.eyetracker_id = id
         self.win = win
-        print(self.win.size)
         self.filename = filename
         self.validation_filename = filename.replace(".csv", "_validation.csv")
         self.validation_summary_filename = filename.replace(".csv", "_validation_summary.csv")
@@ -479,7 +478,7 @@ class TobiiController:
             None
         """
         if not self.recording:
-            raise RuntimeWarning("Not recoding now.")
+            raise RuntimeWarning("Not recording now.")
 
         self.eyetracker.unsubscribe_from(self.tr.EYETRACKER_GAZE_DATA,
                                          self._on_gaze_data)
@@ -801,8 +800,6 @@ class TobiiController:
             for (key, value) in self.validation_result.points.items():
                 this_point = value[-1]
                 p = this_point.screen_point
-                print(f"Calibration point at {p}")
-                print(f"Calibration point in window size: {(p.x * self.win.size[0], p.y * self.win.size[1])}")
                 
                 for this_sample in this_point.gaze_data:
                     lp = this_sample.left_eye.gaze_point.position_on_display_area
@@ -967,8 +964,6 @@ class TobiiController:
 
                 for this_point in self.calibration_result.calibration_points:
                     p = this_point.position_on_display_area
-                    print(f"Calibration point at {p}")
-                    print(f"Calibration point in window size: {(p[0] * self.win.size[0], p[1] * self.win.size[1])}")
                     for this_sample in this_point.calibration_samples:
                         lp = this_sample.left_eye.position_on_display_area
                         rp = this_sample.right_eye.position_on_display_area
@@ -1193,8 +1188,6 @@ class TobiiInfantController(TobiiController):
     
     def _convert_tobii_record_csv(self, record):
         """Convert tobii record to CSV-friendly format with separate columns"""
-        #lp = self._get_psychopy_pos(record["left_gaze_point_on_display_area"])
-        #rp = self._get_psychopy_pos(record["right_gaze_point_on_display_area"])
         left_x, left_y = record['left_gaze_point_on_display_area']
         right_x, right_y = record['right_gaze_point_on_display_area']
         pixel_positions = self._tobii_to_pixels(
@@ -1360,7 +1353,7 @@ class TobiiInfantController(TobiiController):
     def stop_recording(self):
         """Stop recording with CSV support"""
         if not self.recording:
-            raise RuntimeWarning("Not recording now.")
+            return  # Silently return if not recording
 
         self.eyetracker.unsubscribe_from(self.tr.EYETRACKER_GAZE_DATA,
                                          self._on_gaze_data)
@@ -1378,7 +1371,7 @@ class TobiiInfantController(TobiiController):
     def record_event(self, event):
         """Record events with timestamp"""
         if not self.recording:
-            raise RuntimeWarning("Not recording now.")
+            return  # Silently return if not recording
         
         self.event_data.append([self.tr.get_system_time_stamp(), event])
 
@@ -1480,22 +1473,17 @@ class TobiiInfantController(TobiiController):
                         # stop audio after each point
                         if self._audio is not None:
                             self._audio.stop()
-                        print(f"Space pressed for point {idx}", flush=True)
                         core.wait(_focus_time)
                         self._collect_validation_data(current_validation_point)
                         in_validation = False
                         break
-            
-            print(f"Finished point {idx}", flush=True)
         
         # Stop audio after ALL points are done
         if self._audio is not None:
             try:
                 self._audio.stop()
-            except Exception as e:
-                print(f"Error stopping audio: {e}", flush=True)
-        
-        print("Validation complete", flush=True)
+            except Exception:
+                pass
 
     def _update_calibration_infant_auto(self, _focus_time=0.5, collect_key="space"):
         """Semi-automatic calibration procedure.
@@ -1551,8 +1539,8 @@ class TobiiInfantController(TobiiController):
                         try:
                             core.wait(_focus_time)
                             self._collect_calibration_data(this_pos)
-                        except Exception as e:
-                            print(f"Error collecting calibration data: {e}")
+                        except Exception:
+                            pass
                         # Move to next point immediately
                         in_calibration = False
                         break
@@ -1842,11 +1830,9 @@ class TobiiInfantController(TobiiController):
         data_df = data_df[['time', 'left_x_new', 'left_y_new', 'left_valid', 'left_pupil', 'left_pupil_valid', 'right_x_new', 'right_y_new', 'right_valid', 'right_pupil', 'right_pupil_valid', 'events', 'left_x', 'left_y', 'right_x', 'right_y']]
         
         # Save to CSV
-        print("saving to", filename)
         if (os.path.exists(filename)):
             data_df.to_csv(filename, mode='a', index=False, header=not os.path.isfile(filename))
         else:
-            print("first save")
             data_df.to_csv(filename, index=False)
 
     # Collect looking time
@@ -1975,10 +1961,12 @@ class TobiiInfantController(TobiiController):
                     return round(lt, 3), "looking_away"
                 looking = False
 
-            self.win.flip()
+            # REMOVED: self.win.flip()
+            # Let the caller handle flipping so movie can be drawn
+            core.wait(0.001)  # Small wait to prevent CPU spinning
 
         # Trial ended normally by time limit
-        lt = max_time 
+        lt = trial_timer.getTime()  
         return round(lt, 3), "normal"
 
 class MockTobiiInfantController(TobiiInfantController):
@@ -1986,7 +1974,6 @@ class MockTobiiInfantController(TobiiInfantController):
     def __init__(self, win, id=0, filename="mock_gaze_output.csv", calibration_disc_size=200):
          # Now call parent __init__ which will use our MockTobiiResearch
         super().__init__(win, id, filename, calibration_disc_size, mock=True)
-        print("Mock Tobii Infant Controller initialized")
 
 # backward compatible
 tobii_controller = TobiiController
