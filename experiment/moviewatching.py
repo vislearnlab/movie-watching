@@ -623,7 +623,7 @@ def run_experiment(Sub, debug=False, mock=False):
         playback_start_time = time.time()
         accumulated_pause_time = 0
         total_lt = 0
-
+        absent_lt = 0
         while True:
             # Calculate actual remaining time
             current_time = time.time()
@@ -638,11 +638,18 @@ def run_experiment(Sub, debug=False, mock=False):
             
             check_interval = min(0.033, remaining_time)
             try:
-                lt, event_type = controller.collect_lt_with_calibration(check_interval, config_data['trial_config']['away_time'])
+                lt, event_type, curr_absent_lt = controller.collect_lt_with_calibration(check_interval, config_data['trial_config']['away_time'])
             except Exception as e:
                 log_exception(logger, e, f"collecting looking time for trial {trial_id}")
                 break
-                
+            
+            # subtracting 0.01 to allow for some noisiness/latency in window flipping
+            if curr_absent_lt >= check_interval - 0.01:
+                absent_lt += curr_absent_lt
+                if absent_lt >= config_data['trial_config']['away_time']:
+                    event_type = "looking_away"
+            else:
+                absent_lt = 0
             total_lt += lt        
             if event_type == "pause":
                 current_playback_time = time.time()

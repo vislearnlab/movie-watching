@@ -1834,67 +1834,6 @@ class TobiiInfantController(TobiiController):
             data_df.to_csv(filename, mode='a', index=False, header=not os.path.isfile(filename))
         else:
             data_df.to_csv(filename, index=False)
-
-    # Collect looking time
-    def collect_lt(self, max_time, min_away, blink_dur=1):
-        """Collect looking time data in runtime.
-
-            Collect and calculate looking time in runtime. Also end the trial
-            automatically when the participant look away.
-
-        Args:
-            max_time: maximum looking time in seconds.
-            min_away: minimum duration to stop in seconds.
-            blink_dur: the tolerable duration of missing data in seconds.
-
-        Returns:
-            lt (float): The looking time in the trial.
-        """
-        trial_timer = core.Clock()
-        absence_timer = core.Clock()
-        away_time = []
-
-        looking = True
-        trial_timer.reset()
-        absence_timer.reset()
-
-        while trial_timer.getTime() <= max_time:
-            gaze_data = self.gaze_data[-1]
-            lv = gaze_data["left_gaze_point_validity"]
-            rv = gaze_data["right_gaze_point_validity"]
-
-            if any((lv, rv)):
-                # if the last sample is missing
-                if not looking:
-                    away_dur = absence_timer.getTime()
-                    if away_dur >= min_away:
-                        away_time.append(away_dur)
-                        lt = trial_timer.getTime() - np.sum(away_time)
-                        # stop the trial
-                        return round(lt, 3)
-                    elif away_dur >= blink_dur:
-                        away_time.append(away_dur)
-                    # if missing samples are tolerable
-                    else:
-                        pass
-                looking = True
-                absence_timer.reset()
-            else:
-                if absence_timer.getTime() >= min_away:
-                    away_dur = absence_timer.getTime()
-                    away_time.append(away_dur)
-                    lt = trial_timer.getTime() - np.sum(away_time)
-                    # terminate the trial
-                    return round(lt, 3)
-                else:
-                    pass
-                looking = False
-
-            self.win.flip()
-        # if the loop is completed, return the looking time
-        else:
-            lt = max_time - np.sum(away_time)
-            return round(lt, 3)
     
     def collect_lt_with_calibration(self, max_time, min_away, blink_dur=1, calibration_key='c', escape_key='escape', next_key='n', pause_key='space'):
         """
@@ -1915,21 +1854,20 @@ class TobiiInfantController(TobiiController):
         absence_timer.reset()
 
         while trial_timer.getTime() <= max_time:
-
             # check calibration key ANY TIME during the trial
             keys = event.getKeys()
             if calibration_key in keys:
                 lt = trial_timer.getTime() 
-                return round(lt, 3), "calibration"
+                return round(lt, 3), "calibration", 0.0
             elif escape_key in keys:
                 lt = trial_timer.getTime()
-                return round(lt, 3), "escape"
+                return round(lt, 3), "escape", 0.0
             elif pause_key in keys:
                 lt = trial_timer.getTime() 
-                return round(lt, 3), "pause"
+                return round(lt, 3), "pause", 0.0
             elif next_key in keys:
                 lt = trial_timer.getTime() 
-                return round(lt, 3), "next_trial"
+                return round(lt, 3), "next_trial", 0.0
 
             if not self.gaze_data:
                 # No gaze data yet, wait a bit
@@ -1946,7 +1884,7 @@ class TobiiInfantController(TobiiController):
                     if away_dur >= min_away:
                         away_time.append(away_dur)
                         lt = trial_timer.getTime() 
-                        return round(lt, 3), "looking_away"
+                        return round(lt, 3), "looking_away", 0.0
                     elif away_dur >= blink_dur:
                         away_time.append(away_dur)
                 looking = True
@@ -1958,7 +1896,7 @@ class TobiiInfantController(TobiiController):
                     away_dur = absence_timer.getTime()
                     away_time.append(away_dur)
                     lt = trial_timer.getTime() 
-                    return round(lt, 3), "looking_away"
+                    return round(lt, 3), "looking_away", 0.0
                 looking = False
 
             # REMOVED: self.win.flip()
@@ -1967,7 +1905,7 @@ class TobiiInfantController(TobiiController):
 
         # Trial ended normally by time limit
         lt = trial_timer.getTime()  
-        return round(lt, 3), "normal"
+        return round(lt, 3), "normal", round(absence_timer.getTime(), 3)
 
 class MockTobiiInfantController(TobiiInfantController):
     """Mock infant controller that mimics the real TobiiInfantController API"""
