@@ -9,12 +9,12 @@ conda create -n moviewatching python=3.10
 conda activate moviewatching
 pip install -r requirements.txt
 cd experiment
-python moviewatching.py --subject <SUBJECT_ID>
+python run_movie.py --subject <SUBJECT_ID>
 ```
 
-If you do not have an eye tracker, alternatively run `python moviewatching.py --subject <SUBJECT_ID> --mock` in place of the last line.
+If you do not have an eye tracker, alternatively run `python run_movie.py --subject <SUBJECT_ID> --mock` in place of the last line.
 
-Output data is saved to `data/raw` and more information about the data variables is in `documentation/data_dictionary.csv`
+Output data is saved to `data/raw`, logs are saved to `data/logs`, and more information about the data variables is in `documentation/data_dictionary.csv`
 
 ## Switching Conda from Rosetta to ARM in MacOS
 Here are instructions to switch your Conda environment from Rosetta to ARM in MacOS. First right-click on the Terminal icon in Applications > Utilities. Select Get Info > Uncheck the tick box that says 'Open using Rosetta'
