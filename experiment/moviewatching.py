@@ -257,7 +257,7 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
     Check for existing records within the last hour and prompt user to resume.
     
     Returns:
-        tuple: (filename, should_calibrate, start_trial_index, timestamp_to_use, existing_trial_order)
+        tuple: (filename, start_trial_index, timestamp_to_use, existing_trial_order)
     """
     global logger, config_data
     existing_files = glob(str(subject_dir / f'{Sub}_*.csv'))
@@ -284,14 +284,14 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
     # No recent file found - start fresh
     if not recent_file:
         logger.info("No recent session found, starting fresh")
-        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', 0, TIMESTAMP, None
 
     # Recent file found - ask user
     response = input(f"Found existing record from {last_timestamp}. Use existing records? (y/n): ").strip().lower()
     
     if response != 'y':
         logger.info("User chose not to resume, starting fresh")
-        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', 0, TIMESTAMP, None
     
     # User wants to resume - load existing trial order and find last trial
     logger.info(f"Resuming from existing file: {recent_file}")
@@ -306,10 +306,10 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
             logger.info(f"Loaded existing trial order from {trial_order_file}")
         else:
             logger.warning(f"Trial order file not found at {trial_order_file}")
-            return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+            return subject_dir / f'{Sub}_{TIMESTAMP}.csv', 0, TIMESTAMP, None
     except Exception as e:
         log_exception(logger, e, "loading trial order file")
-        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', True, 0, TIMESTAMP, None
+        return subject_dir / f'{Sub}_{TIMESTAMP}.csv', 0, TIMESTAMP, None
     
     try:
         existing_data = pd.read_csv(recent_file)
@@ -319,11 +319,11 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
                 last_completed = trial_end_events['events'].str.extract(r'Trial_End_(\d+)')[0].astype(int).max()
                 start_trial_idx = last_completed + 1
                 logger.info(f"Resuming from trial {start_trial_idx} (last completed: {last_completed})")
-                return recent_file, False, start_trial_idx, last_timestamp, existing_trial_order
+                return recent_file, start_trial_idx, last_timestamp, existing_trial_order
     except Exception as e:
         log_exception(logger, e, "reading existing data file")
     
-    return recent_file, False, 0, last_timestamp, existing_trial_order
+    return recent_file, 0, last_timestamp, existing_trial_order
 
 def run_experiment(Sub, debug=False, mock=False):
     global logger, DIR, config_data
@@ -402,7 +402,7 @@ def run_experiment(Sub, debug=False, mock=False):
     os.makedirs(subject_dir, exist_ok=True)
 
     # Check for existing session and get parameters
-    filename, should_calibrate, start_trial_idx, timestamp_to_use, existing_trial_order = check_and_resume_session(
+    filename, start_trial_idx, timestamp_to_use, existing_trial_order = check_and_resume_session(
         subject_dir, Sub, TIMESTAMP
     )
 
@@ -446,12 +446,10 @@ def run_experiment(Sub, debug=False, mock=False):
     except Exception as e:
         log_exception(logger, e, "showing status and attention grabber")
     
-    if should_calibrate:
-        logger.info("Initial calibration required")
-        try:
-            calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial")
-        except Exception as e:
-            log_exception(logger, e, "initial calibration routine")
+    try:
+        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial")
+    except Exception as e:
+        log_exception(logger, e, "initial calibration routine")
     
     if existing_trial_order is not None:
         Trials = existing_trial_order
