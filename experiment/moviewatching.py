@@ -493,7 +493,8 @@ def run_experiment(Sub, debug=False, mock=False):
             logger.info(f"Block validation at trial {trial_id}")
             try:
                 calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True)
-                controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
+                if mock:
+                    controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
             except Exception as e:
                 log_exception(logger, e, f"block validation at trial {trial_id}")
 
