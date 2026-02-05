@@ -1,0 +1,142 @@
+---
+title: "Eyetracking QC Visualizations"
+output: html_notebook
+---
+
+This notebook generates quality control visualizations from the QC report CSV.
+
+# Setup
+
+```{r setup, message=FALSE}
+library(tidyverse)
+
+# Specify which QC report to load
+qc_filename <- "qc_report_YYYYMMDD.csv"  # <-- CHANGE THIS TO YOUR FILE
+
+# Load the data
+qc_data <- read_csv(paste0("../data/qc_checks/", qc_filename))
+
+# Quick look at the data
+glimpse(qc_data)
+```
+
+# Plot 1: Validity by Participant
+
+One bar per participant showing mean % valid (averaged across both eyes and all trials), with error bars reflecting variance across trials.
+
+```{r validity-by-participant, fig.width=8, fig.height=5}
+participant_summary <- qc_data %>%
+  group_by(participant_id) %>%
+  summarise(
+    mean_valid = mean(mean_percent_valid),
+    sd_valid = sd(mean_percent_valid),
+    n_trials = n()
+  )
+
+ggplot(participant_summary, aes(x = participant_id, y = mean_valid)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_errorbar(aes(ymin = mean_valid - sd_valid, 
+                    ymax = mean_valid + sd_valid), 
+                width = 0.2) +
+  labs(
+    title = "Data Validity by Participant",
+    x = "Participant",
+    y = "Mean % Valid (both eyes)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Plot 2a: Validity by Trial Name (stimulus)
+
+Shows validity trends by stimulus, with each participant as a separate line.
+
+```{r validity-by-trial-name, fig.width=10, fig.height=6}
+ggplot(qc_data, aes(x = trial_name, y = mean_percent_valid, 
+                    color = participant_id, group = participant_id)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Data Validity by Stimulus",
+    x = "Trial Name",
+    y = "% Valid (both eyes)",
+    color = "Participant"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Plot 2b: Validity by Trial Index (over time)
+
+Shows validity trends over the course of the experiment, with each participant as a separate line.
+
+```{r validity-by-trial-index, fig.width=10, fig.height=6}
+ggplot(qc_data, aes(x = trial_index, y = mean_percent_valid, 
+                    color = participant_id, group = participant_id)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Data Validity Over Time",
+    x = "Trial Index",
+    y = "% Valid (both eyes)",
+    color = "Participant"
+  ) +
+  scale_x_continuous(breaks = seq(0, max(qc_data$trial_index), 1)) +
+  theme_minimal()
+```
+
+# Plot 3: Calibration Drift Over Blocks
+
+Shows validation accuracy (in degrees) across blocks, with one line per participant. Higher values = worse calibration.
+
+```{r calibration-drift, fig.width=8, fig.height=5}
+# Get one row per participant per block (they're repeated across trials)
+block_calibration <- qc_data %>%
+  select(participant_id, block_index, val_mean_deg) %>%
+  distinct()
+
+ggplot(block_calibration, aes(x = block_index, y = val_mean_deg, 
+                               color = participant_id, group = participant_id)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Calibration Drift Across Blocks",
+    x = "Block Index",
+    y = "Validation Accuracy (degrees)",
+    color = "Participant"
+  ) +
+  scale_x_continuous(breaks = 0:3) +
+  theme_minimal()
+```
+
+# Plot 4: Calibration vs Validity
+
+Scatter plot showing whether worse calibration (higher degrees) is associated with more data loss (lower % valid). Each dot is one trial, colored by participant.
+
+```{r calibration-vs-validity, fig.width=8, fig.height=6}
+ggplot(qc_data, aes(x = val_mean_deg, y = mean_percent_valid, 
+                    color = participant_id)) +
+  geom_point(size = 2, alpha = 0.7) +
+  labs(
+    title = "Calibration Accuracy vs Data Validity",
+    x = "Validation Accuracy (degrees, lower = better)",
+    y = "% Valid (both eyes)",
+    color = "Participant"
+  ) +
+  theme_minimal()
+```
+
+# Summary Table
+
+```{r summary-table}
+qc_data %>%
+  group_by(participant_id) %>%
+  summarise(
+    n_trials = n(),
+    mean_validity = round(mean(mean_percent_valid), 1),
+    min_validity = round(min(mean_percent_valid), 1),
+    mean_calibration_deg = round(mean(val_mean_deg), 2),
+    max_calibration_deg = round(max(val_mean_deg), 2)
+  ) %>%
+  knitr::kable()
+```
