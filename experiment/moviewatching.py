@@ -80,8 +80,9 @@ def main():
     parser.add_argument('--subject', type=str, required=True, help='Subject ID (e.g., S001)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--mock', action='store_true', help='Enable mock eye tracker mode')
+    parser.add_argument('--no-shuffle', dest='no_shuffle', action='store_true', help='Disable randomization of calibration/validation point order')
     args = parser.parse_args()
-    run_experiment(args.subject, args.debug, args.mock)
+    run_experiment(args.subject, args.debug, args.mock, shuffle_points=not args.no_shuffle)
 
 def trial_order(dir, debug=False):
     global logger
@@ -138,7 +139,7 @@ def trial_order(dir, debug=False):
     logger.info(f"Generated trial order with {len(Trials)} trials across {len(block_keys)} blocks")
     return Trials
 
-def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False):
+def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False, shuffle_points=True):
     global logger, config_data
     import gc
     import sounddevice as sd
@@ -169,7 +170,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
             calibration_sound = SoundDeviceSound(CALIB_SOUND)
             try:
                 logger.info(f"Running calibration iteration {i+1}/{max_retries}")
-                controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound)
+                controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound, shuffle_points=shuffle_points)
             except Exception as e:
                 log_exception(logger, e, f"calibration iteration {i}")
             finally:
@@ -196,7 +197,8 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
                 infant_stims=CALISTIMS,
                 show_results=True,
                 event=f"{calib_event}_{i+1}",
-                audio=validation_sound
+                audio=validation_sound,
+                shuffle_points=shuffle_points
             )
         except Exception as e:
             log_exception(logger, e, f"validation iteration {i}")
@@ -325,7 +327,7 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
     
     return recent_file, 0, last_timestamp, existing_trial_order
 
-def run_experiment(Sub, debug=False, mock=False):
+def run_experiment(Sub, debug=False, mock=False, shuffle_points=True):
     global logger, DIR, config_data
     
     # Initialize logging first
@@ -447,7 +449,7 @@ def run_experiment(Sub, debug=False, mock=False):
         log_exception(logger, e, "showing status and attention grabber")
     
     try:
-        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial")
+        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial", shuffle_points=shuffle_points)
     except Exception as e:
         log_exception(logger, e, "initial calibration routine")
     
@@ -492,7 +494,7 @@ def run_experiment(Sub, debug=False, mock=False):
         if trial['within_block_trial_index'] == 0 and not first_trial:
             logger.info(f"Block validation at trial {trial_id}")
             try:
-                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True)
+                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True, shuffle_points=shuffle_points)
                 if mock:
                     controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
             except Exception as e:
@@ -740,12 +742,12 @@ def run_experiment(Sub, debug=False, mock=False):
                     controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looked_Away")
                     logger.info(f"User requested recalibration after looking away in trial {trial_id}")
                     try:
-                        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later")
+                        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later", shuffle_points=shuffle_points)
                     except Exception as e:
                         log_exception(logger, e, f"forced calibration after trial {trial_id}")
             elif event_type == "calibration":
                 try:
-                    calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later")
+                    calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later", shuffle_points=shuffle_points)
                 except Exception as e:
                     log_exception(logger, e, f"key-forced calibration at trial {trial_id}")
                     

@@ -745,6 +745,8 @@ class TobiiController:
         self.validation_summary_buffers.append({
             "validation_step": validation_event,
             "point": "mean",
+            "point_index": None,
+            "presentation_order": None,
             "stimulus_x": None,
             "stimulus_y": None,
             **mean_metrics,
@@ -753,8 +755,11 @@ class TobiiController:
         # -------------------------
         # Per-point metrics
         # -------------------------
+        shuffled_indices = getattr(self, 'validation_shuffled_indices', None)
         for idx, (_, values) in enumerate(validation_result.points.items(), start=1):
             last = values[-1]
+            presentation_order = idx
+            point_index = shuffled_indices[idx - 1] + 1 if shuffled_indices is not None else idx
 
             point_metrics = self._validation_metrics(
                 prefix=f"Point_{idx}_accuracy",
@@ -776,9 +781,11 @@ class TobiiController:
             self.validation_summary_buffers.append({
                 "validation_step": validation_event,
                 "point": f"Point {idx}",
+                "point_index": point_index,
+                "presentation_order": presentation_order,
                 "stimulus_x": stimulus_positions["ave_x"],
                 "stimulus_y": stimulus_positions["ave_y"],
-                **point_mean_metrics,  
+                **point_mean_metrics,
             })
 
         return result_buffer
@@ -797,10 +804,13 @@ class TobiiController:
             result_img = visual.SimpleImageStim(self.win, img, autoLog=False)
             img_draw.rectangle(((0, 0), tuple(self.win.size)), fill=(0, 0, 0, 0))
             # Draw calibration points if available
-            for (key, value) in self.validation_result.points.items():
+            shuffled_indices = getattr(self, 'validation_shuffled_indices', None)
+            for enum_idx, (key, value) in enumerate(self.validation_result.points.items(), start=1):
                 this_point = value[-1]
                 p = this_point.screen_point
-                
+                presentation_order = enum_idx
+                point_index = shuffled_indices[enum_idx - 1] + 1 if shuffled_indices is not None else enum_idx
+
                 for this_sample in this_point.gaze_data:
                     lp = this_sample.left_eye.gaze_point.position_on_display_area
                     rp = this_sample.right_eye.gaze_point.position_on_display_area
@@ -824,6 +834,8 @@ class TobiiController:
                     }
                     self.validation_result_buffers.append({
                         "validation_step": validation_event,
+                        "point_index": point_index,
+                        "presentation_order": presentation_order,
                         **this_sample_record
                     })
                     img_draw.line(
@@ -1183,6 +1195,7 @@ class TobiiInfantController(TobiiController):
         self.shrink_speed = 1
         self.Events = []
         self.calibration_disc_size = calibration_disc_size
+        self.validation_shuffled_indices = None
         if _has_addons:
             self.update_validation = self._update_validation_infant
     
@@ -1285,7 +1298,8 @@ class TobiiInfantController(TobiiController):
         # Validation Results
         # ---------------------------
         if self.validation_result_buffers is not None and len(self.validation_result_buffers) != 0:
-            validation_columns_order = ['stimulus_x', 'stimulus_y', 'validation_step', 'system_time_stamp', 'study_time',
+            validation_columns_order = ['stimulus_x', 'stimulus_y', 'point_index', 'presentation_order',
+                                        'validation_step', 'system_time_stamp', 'study_time',
                                         'left_x', 'left_y', 'left_valid',
                                         'right_x', 'right_y', 'right_valid',
                                         'gaze_x', 'gaze_y']
@@ -1317,7 +1331,8 @@ class TobiiInfantController(TobiiController):
         # Validation Summary
         # ---------------------------
         if self.validation_summary_buffers is not None and len(self.validation_summary_buffers) != 0:
-            validation_summary_columns_order = ['point', 'stimulus_x', 'stimulus_y', 'validation_step', 
+            validation_summary_columns_order = ['point', 'point_index', 'presentation_order',
+                                            'stimulus_x', 'stimulus_y', 'validation_step',
                                             'Mean_accuracy_degrees_left', 'Mean_accuracy_degrees_right',
                                             'Mean_accuracy_pixels_left', 'Mean_accuracy_pixels_right']
             
@@ -1553,6 +1568,7 @@ class TobiiInfantController(TobiiController):
                         calibration_points,
                         infant_stims,
                         shuffle=True,
+                        shuffle_points=True,
                         audio=None,
                         focus_time=0.5,
                         decision_key="space",
@@ -1638,6 +1654,8 @@ class TobiiInfantController(TobiiController):
         # set all points
         cp_num = len(self.original_calibration_points)
         self.retry_points = list(range(cp_num))
+        if shuffle_points:
+            np.random.shuffle(self.retry_points)
 
         in_calibration_loop = True
         event.clearEvents()
@@ -1710,6 +1728,7 @@ class TobiiInfantController(TobiiController):
                        validation_points=None,
                        infant_stims=None,
                        shuffle=True,
+                       shuffle_points=True,
                        sample_count=30,
                        timeout=1,
                        focus_time=0.5,
@@ -1768,6 +1787,13 @@ class TobiiInfantController(TobiiController):
                                          infant_stims,
                                          shuffle=shuffle,
                                          *kwargs)
+
+        # Shuffle validation point presentation order and record the mapping
+        shuffled_indices = list(range(len(validation_points)))
+        if shuffle_points:
+            np.random.shuffle(shuffled_indices)
+        self.validation_shuffled_indices = shuffled_indices
+        validation_points = [validation_points[i] for i in shuffled_indices]
 
         # clear the display
         self.win.flip()
