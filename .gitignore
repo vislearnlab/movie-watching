@@ -17,3 +17,4 @@ data/raw
 stimuli/**/*.mp4
 stimuli/**/*.mp3
 stimuli/**/*.wav
+.Rproj.user

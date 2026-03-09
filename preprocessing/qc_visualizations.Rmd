@@ -9,12 +9,13 @@ This notebook generates quality control visualizations from the QC report CSV.
 
 ```{r setup, message=FALSE}
 library(tidyverse)
+library(here)
 
 # Specify which QC report to load
-qc_filename <- "qc_report_YYYYMMDD.csv"  # <-- CHANGE THIS TO YOUR FILE
+qc_filename <- "qc_report_20260309.csv"  # <-- CHANGE THIS TO YOUR FILE
 
 # Load the data
-qc_data <- read_csv(paste0("../data/qc_checks/", qc_filename))
+qc_data <- read_csv(here("data/qc_checks/", qc_filename))
 
 # Quick look at the data
 glimpse(qc_data)
@@ -65,6 +66,22 @@ ggplot(qc_data, aes(x = trial_name, y = mean_percent_valid,
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+```{r}
+mw031_data <- qc_data |> filter(participant_id == 'MW031') |>
+  pivot_longer(cols=c(left_percent_valid, right_percent_valid), names_to="eye", values_to="percent_valid")
+ggplot(mw031_data, aes(x = trial_name, y = percent_valid, 
+                    color = eye, group = eye)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Data Validity by Stimulus",
+    x = "Trial Name",
+    y = "% Valid (left/right)",
+    color = "Eye"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
 
 # Plot 2b: Validity by Trial Index (over time)
 
@@ -84,6 +101,42 @@ ggplot(qc_data, aes(x = trial_index, y = mean_percent_valid,
   scale_x_continuous(breaks = seq(0, max(qc_data$trial_index), 1)) +
   theme_minimal()
 ```
+```{r}
+qc_data_trial_mean <- qc_data |> 
+  group_by(trial_index) |>
+  summarize(
+    group_mean_valid = mean(mean_percent_valid),
+    ci = qt(0.975, df = n() - 1) * sd(mean_percent_valid) / sqrt(n())
+  )
+n_participant <- length(unique(qc_data$participant_id))
+
+ggplot(qc_data, aes(x = trial_index, y = mean_percent_valid, 
+                    color = as.numeric(str_extract(participant_id, "\\d+$")), group = participant_id)) +
+  geom_line(alpha = 0.4) +
+  geom_line(data = qc_data_trial_mean, color = "black", aes(y = group_mean_valid, group = NA)) +
+  geom_ribbon(data = qc_data_trial_mean, 
+              aes(y = group_mean_valid, 
+                  ymin = group_mean_valid - ci, 
+                  ymax = group_mean_valid + ci,
+                  group = NA),
+              fill = "black", alpha = 0.2, color = NA) +
+  labs(
+    title = "Data Validity Over Time",
+    x = "Trial Index",
+    y = "% Valid (both eyes)",
+    color = "Participant"
+  ) +
+  scale_color_viridis_c(
+    name = "Participant",
+    breaks = seq(1, n_participant, by = 4),
+    labels = seq(1, n_participant, by = 4),
+    limits = c(1, n_participant)
+  ) +
+  scale_x_continuous(breaks = seq(0, max(qc_data$trial_index), 1)) +
+  theme_minimal() +
+  guides(color = guide_colorbar(barwidth = 4, barheight = 5, title.position = "top"))
+
+```
 
 # Plot 3: Calibration Drift Over Blocks
 
@@ -93,7 +146,7 @@ Shows validation accuracy (in degrees) across blocks, with one line per particip
 # Get one row per participant per block (they're repeated across trials)
 block_calibration <- qc_data %>%
   select(participant_id, block_index, val_mean_deg) %>%
-  distinct()
+  distinct() 
 
 ggplot(block_calibration, aes(x = block_index, y = val_mean_deg, 
                                color = participant_id, group = participant_id)) +
