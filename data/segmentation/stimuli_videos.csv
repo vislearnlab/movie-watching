@@ -1,0 +1,162 @@
+video_block,time,salient_variable,video_path,start_time_s,end_time_s
+Sesame US 1,0:00,face (cow),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,0.0,1.0
+Sesame US 1,0:01,face (turkey),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,1.0,3.0
+Sesame US 1,0:03,"face (child), face (man), face (monster) ",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,3.0,8.0
+Sesame US 1,0:08,"face (child), face (goat), hands",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,8.0,11.0
+Sesame US 1,0:11,"face (child), face (man), face (monster) ",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,11.0,19.0
+Sesame US 1,0:19,"hand, bucket, sand",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,19.0,20.0
+Sesame US 1,0:20,"face, bucket, hand",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,20.0,24.0
+Sesame US 1,0:24,"chicken, people",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,24.0,28.0
+Sesame US 1,0:28,"face, hand, monster",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,28.0,33.0
+Sesame US 1,0:33,face (sheep),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,33.0,36.0
+Sesame US 1,0:36,"face, hand, monster",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,36.0,37.0
+Sesame US 1,0:37,"face (sheep), face (monster), hand (monster), feed",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,37.0,39.0
+Sesame US 1,0:39,"face (monsters), hand (monster), feed, sheep",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,39.0,49.0
+Sesame US 1,0:49,"face, face (monster)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,49.0,52.0
+Sesame US 1,0:52,face (chickens) ,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,52.0,55.0
+Sesame US 1,0:55,faces (kids),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,55.0,60.0
+Sesame US 1,1:00,eggs,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_1_stripped.mp4,60.0,60.5605
+Sesame US 2,0:00,"face, face (monster) ",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,0.0,4.0
+Sesame US 2,0:04,tires,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,4.0,6.0
+Sesame US 2,0:06,"people (kids), hands",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,6.0,9.0
+Sesame US 2,0:09,"face, monster (face)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,9.0,10.0
+Sesame US 2,0:10,"face (child), face (monster) ",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,10.0,14.0
+Sesame US 2,0:14,"hands, shovel",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,14.0,19.0
+Sesame US 2,0:19,"face, shovel",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,19.0,23.0
+Sesame US 2,0:23,"face, face (monster) ",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,23.0,26.0
+Sesame US 2,0:26,shovel,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,26.0,29.0
+Sesame US 2,0:29,"face, face (monster) ",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,29.0,31.0
+Sesame US 2,0:31,"face, shovel, hand",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,31.0,33.0
+Sesame US 2,0:33,"face, hand, shovel, monster",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,33.0,37.0
+Sesame US 2,0:37,shovel,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,37.0,41.0
+Sesame US 2,0:41,"face, monster (face)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,41.0,43.0
+Sesame US 2,0:43,shovel,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,43.0,46.0
+Sesame US 2,0:46,"face, monster (monster)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,46.0,48.0
+Sesame US 2,0:48,"shovel, plant, hand",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,48.0,51.0
+Sesame US 2,0:51,"face, hand, plant",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,51.0,53.0
+Sesame US 2,0:53,"shovel, plant, face",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,53.0,56.0
+Sesame US 2,0:56,"face, face (monster) ",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameus_2_stripped.mp4,56.0,60.8274
+Slow Animals,0:00,turtle,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_animals_stripped.mp4,0.0,15.0
+Slow Animals,0:15,horse,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_animals_stripped.mp4,15.0,30.0
+Slow Animals,0:30,birds,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_animals_stripped.mp4,30.0,47.0
+Slow Animals,0:47,"ocean, penguin",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_animals_stripped.mp4,47.0,60.7273
+Slow Hands,0:00,"hands, thread/needle",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_hands_stripped.mp4,0.0,15.0
+Slow Hands,0:15,"hands, sponge, plate, water",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_hands_stripped.mp4,15.0,30.0
+Slow Hands,0:30,"hands, orange, lemon",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_hands_stripped.mp4,30.0,45.0
+Slow Hands,0:45,"hands, stamps",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_hands_stripped.mp4,45.0,60.72
+Slow Inanimate,0:00,"plane, water",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_inanimate_stripped.mp4,0.0,15.0
+Slow Inanimate,0:15,truck,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_inanimate_stripped.mp4,15.0,30.0
+Slow Inanimate,0:30,hot air balloon,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_inanimate_stripped.mp4,30.0,45.0
+Slow Inanimate,0:45,train,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_inanimate_stripped.mp4,45.0,60.7273
+Slow People,0:00,"faces, hands, bike, dog",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_people_stripped.mp4,0.0,15.0
+Slow People,0:15,"faces, hands, rocks",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_people_stripped.mp4,15.0,30.0
+Slow People,0:30,"logs, hands, faces",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_people_stripped.mp4,30.0,45.0
+Slow People,0:45,"Faces, hands, ball, bat",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/slow_people_stripped.mp4,45.0,60.7607
+Frank Complex,0:00,"face, mountain",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,0.0,5.0
+Frank Complex,0:05,"face (baby), hands, ball",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,5.0,10.0
+Frank Complex,0:10,"faces, bed, window",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,10.0,15.0
+Frank Complex,0:15,"Faces, hands, plates, bouquet",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,15.0,20.0
+Frank Complex,0:20,"faces, hands, ice cream",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,20.0,25.0
+Frank Complex,0:25,"faces, hands, balls",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,25.0,30.0
+Frank Complex,0:30,"Faces, hands, sift",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,30.0,35.0
+Frank Complex,0:35,"faces, hands, glass",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,35.0,40.0
+Frank Complex,0:40,"faces, hands, feet",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,40.0,44.0
+Frank Complex,0:44,"faces, hands, cake, fruit bowl",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,44.0,46.0
+Frank Complex,0:46,"face, hands, piano",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,46.0,50.0
+Frank Complex,0:50,"faces, hands, teacup",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,50.0,55.0
+Frank Complex,0:55,"faces, hands, bowl",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_complex_stripped.mp4,55.0,60.32
+Frank Objects,0:00,windmill with balls,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,0.0,5.0
+Frank Objects,0:05,Rotating planetarium,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,5.0,14.0
+Frank Objects,0:14,Windmill with dolphins,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,14.0,20.0
+Frank Objects,0:20,Marble,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,20.0,25.0
+Frank Objects,0:25,balls,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,25.0,28.0
+Frank Objects,0:28,Lava lamp,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,28.0,36.0
+Frank Objects,0:36,spinning wheel,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,36.0,40.0
+Frank Objects,0:40,Pinwheel,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,40.0,45.0
+Frank Objects,0:45,Marbles,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,45.0,54.0
+Frank Objects,0:54,"balls, bell",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_objects_stripped.mp4,54.0,60.12
+Frank Play,0:00,"face, piano, stool",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,0.0,4.0
+Frank Play,0:04,"face, bowls, hands",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,4.0,9.0
+Frank Play,0:09,"face, chair, hands",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,9.0,13.0
+Frank Play,0:13,"face, hands, fridge, bowl",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,13.0,18.0
+Frank Play,0:18,"Face, hands, cups",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,18.0,20.0
+Frank Play,0:20,"face, hands, lamp",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,20.0,22.0
+Frank Play,0:22,"face, hands, blanket",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,22.0,26.0
+Frank Play,0:26,"face, flower",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,26.0,28.0
+Frank Play,0:28,"face, hands, tissue",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,28.0,32.0
+Frank Play,0:32,"face, hands, building block",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,32.0,34.0
+Frank Play,0:34,"face, hands, feet, ball",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,34.0,37.0
+Frank Play,0:37,"face, hands, stool, piano",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,37.0,40.0
+Frank Play,0:40,"umbrella, face, hands, poncho",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,40.0,45.0
+Frank Play,0:45,"face, hands, paper",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,45.0,48.0
+Frank Play,0:48,"face, hands, cymbals",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,48.0,55.0
+Frank Play,0:55,"face, hands, bubblewand",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,55.0,58.0
+Frank Play,0:58,"Face, hand, pinwheel",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/frank_play_stripped.mp4,58.0,60.92
+Sesame India 1,0:00,"Pen, paper",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,0.0,1.0
+Sesame India 1,0:01,"Face (muppet), pen",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,1.0,4.0
+Sesame India 1,0:04,"face (muppet), face (child), pen",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,4.0,9.0
+Sesame India 1,0:09,face (muppet),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,9.0,13.0
+Sesame India 1,0:13,face (child),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,13.0,14.0
+Sesame India 1,0:14,"face (child), face (muppet)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,14.0,18.0
+Sesame India 1,0:18,face (child),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,18.0,24.0
+Sesame India 1,0:24,"face (person), face (muppet)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,24.0,28.0
+Sesame India 1,0:28,"faces, hands, ball",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,28.0,33.0
+Sesame India 1,0:33,"faces, hands, chalk",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,33.0,34.0
+Sesame India 1,0:34,"hands, eraser, board",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,34.0,36.0
+Sesame India 1,0:36,"hands, chalk, board",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,36.0,38.0
+Sesame India 1,0:38,"faces (children), face (muppet), hands",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,38.0,40.0
+Sesame India 1,0:40,"hands, chalk, board",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,40.0,42.0
+Sesame India 1,0:42,"faces (children), face (muppet), hands",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,42.0,44.0
+Sesame India 1,0:44,"hands, chalk, board",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,44.0,46.0
+Sesame India 1,0:46,"faces (children), face (muppet), hands",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,46.0,49.0
+Sesame India 1,0:49,faces (children),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,49.0,51.0
+Sesame India 1,0:51,face (child),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,51.0,52.0
+Sesame India 1,0:52,"faces (children), feet, hands",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,52.0,56.0
+Sesame India 1,0:56,"face (child), face (muppet)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_1_stripped.mp4,56.0,60.0
+Sesame India 2,0:00,Face (muppet),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,0.0,12.0
+Sesame India 2,0:12,"face (child), hands, trashcan, face (muppet)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,12.0,20.0
+Sesame India 2,0:20,face (muppet),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,20.0,23.0
+Sesame India 2,0:23,faces (children),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,23.0,26.0
+Sesame India 2,0:26,"face (child), face (muppet)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,26.0,30.0
+Sesame India 2,0:30,face (child),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,30.0,33.0
+Sesame India 2,0:33,"face (child), face (muppet), hands (muppet)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,33.0,35.0
+Sesame India 2,0:35,"Apple slices, hands, face (child)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,35.0,38.0
+Sesame India 2,0:38,"face (person), hands, feet",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,38.0,41.0
+Sesame India 2,0:41,"face (child), hands, book",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,41.0,49.0
+Sesame India 2,0:49,"face (muppet), faces (children)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,49.0,55.0
+Sesame India 2,0:55,"face (muppet), hand (muppet)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,55.0,59.0
+Sesame India 2,0:59,faces (children),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/sesameindia_2_stripped.mp4,59.0,60.84
+Pixar Birds,0:00,"face (small bird), feet (small bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,0.0,4.0
+Pixar Birds,0:04,"faces (small birds), feet (small birds), tail",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,4.0,7.0
+Pixar Birds,0:07,"faces (small birds), wings (small bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,7.0,10.0
+Pixar Birds,0:10,"faces (small birds), wings (small bird), wire",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,10.0,26.0
+Pixar Birds,0:26,"face (big bird), wing (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,26.0,29.0
+Pixar Birds,0:29,faces (small birds),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,29.0,31.0
+Pixar Birds,0:31,"face (big bird), wing (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,31.0,34.0
+Pixar Birds,0:34,faces (small birds),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,34.0,44.0
+Pixar Birds,0:44,face (big bird),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,44.0,49.0
+Pixar Birds,0:49,"birds (small), bird (big), wire, field",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,49.0,52.0
+Pixar Birds,0:52,faces (small birds),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,52.0,54.0
+Pixar Birds,0:54,"face (big bird), wings (big bird), wire, ",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,54.0,58.0
+Pixar Birds,0:58,faces (small birds),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,58.0,60.0
+Pixar Birds,1:00,"faces (small birds), feet (big bird), wings (big bird), face (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,60.0,68.0
+Pixar Birds,1:08,"faces (small birds), face (big bird), feet (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,68.0,71.0
+Pixar Birds,1:11,face (big bird),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,71.0,73.0
+Pixar Birds,1:13,faces (small birds),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,73.0,75.0
+Pixar Birds,1:15,"faces (small birds), face (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,75.0,79.0
+Pixar Birds,1:19,"face (big bird), wings (big bird), feet (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,79.0,81.0
+Pixar Birds,1:21,"faces (small birds), feet (big bird), wire",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,81.0,85.0
+Pixar Birds,1:25,"faces (small birds), feet (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,85.0,97.0
+Pixar Birds,1:37,"faces (small birds), feet (big bird), face (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,97.0,99.0
+Pixar Birds,1:39,face (big bird),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,99.0,103.0
+Pixar Birds,1:43,faces (small birds),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,103.0,107.0
+Pixar Birds,1:47,"small birds, big bird, wire, field",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,107.0,108.0
+Pixar Birds,1:48,"faces (small birds), feet (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,108.0,111.0
+Pixar Birds,1:51,faces (small birds),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,111.0,119.0
+Pixar Birds,1:59,feathers,/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,119.0,122.0
+Pixar Birds,2:02,"Face (big bird), body (big bird), feet (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,122.0,126.0
+Pixar Birds,2:06,"face (big bird), feathers",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,126.0,133.0
+Pixar Birds,2:13,Face (small bird),/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,133.0,134.0
+Pixar Birds,2:14,"face (small bird), face (big bird), wing (big bird), leaf",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,134.0,140.0
+Pixar Birds,2:20,"faces (small birds), face (big bird), wing (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,140.0,149.0
+Pixar Birds,2:29,"face (big bird), wings (big bird)",/labs/vislearnlab/experiments/movie-watching/stimuli/main_blocks/pixar_birds_stripped.mp4,149.0,150.15
