@@ -10,28 +10,35 @@ This notebook generates quality control visualizations from the QC report CSV.
 ```{r setup, message=FALSE}
 library(tidyverse)
 library(here)
+library(forcats)
+
 
 # Specify which QC report to load
-qc_filename <- "qc_report_20260309.csv"  # <-- CHANGE THIS TO YOUR FILE
+qc_filename <- "qc_report_20260511.csv"  # <-- CHANGE THIS TO YOUR FILE
 
 # Load the data
-qc_data <- read_csv(here("data/qc_checks/", qc_filename))
+qc_data <- read_csv(here("data/qc_checks/", qc_filename)) |> filter(participant_id != "MW000")
 
 # Quick look at the data
 glimpse(qc_data)
 ```
 
-# Plot 1: Validity by Participant
+# Plot 1a: Validity by Participant
 
 One bar per participant showing mean % valid (averaged across both eyes and all trials), with error bars reflecting variance across trials.
 
-```{r validity-by-participant, fig.width=8, fig.height=5}
+```{r validity-by-participant, fig.width=12, fig.height=5}
 participant_summary <- qc_data %>%
-  group_by(participant_id) %>%
+  mutate(participant_type = case_when(
+    startsWith(participant_id, "MWK") ~ "kids (5-7 yos)",
+    startsWith(participant_id, "MW") ~ "adults",
+    startsWith(participant_id, "HMET") ~ "infants (12-24 mos)"
+  )) %>%
+  group_by(participant_id, participant_type) %>%
   summarise(
     mean_valid = mean(mean_percent_valid),
     sd_valid = sd(mean_percent_valid),
-    n_trials = n()
+    n_trials = n(),
   )
 
 ggplot(participant_summary, aes(x = participant_id, y = mean_valid)) +
@@ -46,6 +53,38 @@ ggplot(participant_summary, aes(x = participant_id, y = mean_valid)) +
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+# Plot 1b: Validity by Participant Group
+
+```{r validity-by-participant-type, fig.width=12, fig.height=8}
+summarized_data <- function(data, x_var, y_var, group_var) {
+  return(data %>%
+           group_by_at(c(x_var, group_var)) %>%
+           summarise(mean_value = mean(.data[[y_var]], na.rm = TRUE),
+                     sd_value = sd(.data[[y_var]], na.rm = TRUE),
+                     n = n(),
+                     se = sd_value / sqrt(n()),
+                     ci_lower = mean_value - qt(1 - (0.05 / 2), n - 1) * se,
+                     ci_upper = mean_value + qt(1 - (0.05 / 2), n - 1) * se,
+                     .groups = 'drop')
+  )
+}
+
+participant_type_summary <- summarized_data(participant_summary |> filter(mean_valid > 50), "participant_type", "mean_valid", "participant_type") 
+
+participant_type_summary$participant_type <-
+  fct_relevel(participant_type_summary$participant_type, "adults", after = Inf)
+
+
+participant_type_summary_plot <- ggplot(participant_type_summary, aes(x=participant_type, y=mean_value)) +
+  geom_point(size=4) +
+  geom_errorbar(aes(ymin=ci_lower, ymax=ci_upper), width=0) +
+  geom_jitter(data=participant_summary, aes(x=participant_type, y=mean_valid), alpha=0.5, width=0.1) +
+  ylab("Mean valid % (both eyes)") +
+  geom_hline(yintercept=50, linetype="dotted") +
+  xlab("Participant type")
+
+ggsave(here("figures/valid_data_per_group.png"), participant_type_summary_plot)
 ```
 
 # Plot 2a: Validity by Trial Name (stimulus)
@@ -182,7 +221,7 @@ ggplot(qc_data, aes(x = val_mean_deg, y = mean_percent_valid,
 # Summary Table
 
 ```{r summary-table}
-qc_data %>%
+summary_data <- qc_data %>%
   group_by(participant_id) %>%
   summarise(
     n_trials = n(),
@@ -190,6 +229,10 @@ qc_data %>%
     min_validity = round(min(mean_percent_valid), 1),
     mean_calibration_deg = round(mean(val_mean_deg), 2),
     max_calibration_deg = round(max(val_mean_deg), 2)
-  ) %>%
+  ) 
+  
+summary_data |>
   knitr::kable()
+
+write.csv(summary_data, here("data/qc_checks/summary.csv"))
 ```

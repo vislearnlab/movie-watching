@@ -1,0 +1,416 @@
+---
+title: "Inter-Subject Correlation (ISC) — Movie Watching Eye-Tracking"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    theme: cosmo
+    highlight-style: github
+---
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(glue)
+library(patchwork)
+library(zoo)
+library(here)
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+SERVER_PATH <- "/Volumes/vislearnlab/experiments/movie-watching"
+data_dir         <- file.path(SERVER_PATH, "data/raw/")
+isc_pairwise_csv <- file.path(SERVER_PATH, "data/data_to_be_analyzed/isc_pairwise.csv")
+summary_csv      <- here("data/qc_checks/summary.csv")
+
+# ── QC thresholds 
+min_valid_pct <- 50   # mean_validity % across trials
+min_trials    <- 6    # minimum usable trials (half of total trials)
+
+# ── Example time-series participants 
+# Two adults and one child used for the 10-second gaze trace plot.
+# Change these to any valid participant IDs in your dataset.
+ex_adult_1 <- "MW047"
+ex_adult_2 <- "MW048"
+ex_child   <- "MWK006"
+
+example_video <- "sesameus_2"   # video shown in the time-series panel
+```
+
+---
+
+# Part 1: QC Filtering
+
+We use the pre-computed `summary.csv` to identify which participants have
+sufficient data quality, then filter `isc_pairwise.csv` to only those pairs
+where **both** participants pass QC.
+
+```{r qc}
+summ <- read_csv(summary_csv, show_col_types = FALSE) |>
+  select(participant_id, n_trials, mean_validity)
+
+passed_qc <- summ |>
+  filter(mean_validity >= min_valid_pct, n_trials >= min_trials) |>
+  filter(!startsWith(participant_id, "HMET")) |> #excluding infant participants for now
+  pull(participant_id)
+
+cat(glue("{length(passed_qc)} / {nrow(summ)} participants pass QC ",
+         "(≥{min_valid_pct}% valid, ≥{min_trials} trials)\n\n"))
+
+summ |>
+  mutate(included = participant_id %in% passed_qc) |>
+  arrange(desc(included), desc(mean_validity))
+```
+
+---
+
+# Part 2: Load & Filter Pairwise ISC
+
+```{r load-isc}
+isc_raw <- read_csv(isc_pairwise_csv, show_col_types = FALSE)
+
+# Keep only pairs where both participants passed QC
+isc <- isc_raw |>
+  filter(pid_a %in% passed_qc, pid_b %in% passed_qc) |>
+  # Use isc_xy (average of horizontal + vertical) as the primary ISC measure
+  rename(isc = isc_xy) |>
+  # Simplify comparison labels for plotting
+  mutate(
+    pair_type = case_when(
+      comparison == "adults-adults"   ~ "Adult–Adult",
+      comparison == "kids-kids"       ~ "Child–Child",
+      comparison == "adults-kids"     ~ "Child–Adult",
+      comparison == "infants-infants" ~ "Infant–Infant",
+      comparison == "adults-infants"  ~ "Adult–Infant",
+      comparison == "infants-kids"    ~ "Infant–Child",
+      TRUE                             ~ comparison
+    ),
+    pair_type = factor(pair_type, levels = c(
+      "Infant–Infant", "Infant–Child", "Child–Child",
+      "Child–Adult", "Adult–Infant", "Adult–Adult"
+    ))
+  )
+
+cat(glue("Retained {nrow(isc)} pair × video rows ",
+         "({n_distinct(c(isc$pid_a, isc$pid_b))} unique participants)\n"))
+isc |> count(pair_type)
+```
+
+---
+
+# Part 3: Example Time-Series (`r example_video`, first 10 s)
+
+We load the raw gaze files for the three example participants directly.
+
+```{r ts-load-helpers}
+# ── File discovery: participant ID is the prefix of the filename ──────────────
+find_gaze_path <- function(pid) {
+  hits <- list.files(data_dir, pattern = glue("^{pid}_.*\\.csv$"),
+                     full.names = TRUE, recursive = TRUE) |>
+    keep(~ !str_detect(basename(.x), "_trial_order|_validation"))
+  if (length(hits) == 0) { warning(glue("No gaze file found for {pid}")); return(NULL) }
+  hits[which.min(nchar(basename(hits)))]
+}
+
+find_trial_order_path <- function(pid) {
+  hits <- list.files(data_dir, pattern = glue("^{pid}_.*_trial_order\\.csv$"),
+                     full.names = TRUE, recursive = TRUE)
+  if (length(hits) == 0) { warning(glue("No trial_order found for {pid}")); return(NULL) }
+  hits[1]
+}
+
+load_gaze_pid <- function(pid) {
+  path <- find_gaze_path(pid)
+  if (is.null(path)) return(NULL)
+  read_csv(path, show_col_types = FALSE) |> mutate(participant = pid)
+}
+
+# ── Load the three example participants ───────────────────────────────────────
+example_pids <- c(ex_adult_1, ex_adult_2, ex_child)
+
+gaze_ex <- map(example_pids, load_gaze_pid) |>
+  compact() |>
+  list_rbind()
+
+# Use one participant's trial order for the video -> trial_index lookup
+to_path <- find_trial_order_path(ex_adult_1)
+trial_order_ex <- read_csv(to_path, show_col_types = FALSE)
+
+video_key <- trial_order_ex |>
+  select(trial_index = total_trial_index, video_name, block_id)
+
+cat("Loaded gaze for:", paste(unique(gaze_ex$participant), collapse = ", "), "\n")
+```
+
+```{r ts-parse}
+# Label rows with trial / video (same logic as before)
+gaze_labeled_ex <- gaze_ex |>
+  group_by(participant) |>
+  mutate(
+    video_name = str_extract(events, "(?<=\\|Video_)[^|]+"),
+    video_name = zoo::na.locf(video_name, na.rm = FALSE)
+  ) |>
+  ungroup() |>
+  left_join(video_key, by = "video_name") |>
+  filter(!is.na(trial_time), !is.na(trial_index))
+
+# Resample to 8 ms grid (4 ms == 250 Hz)
+gaze_resampled_ex <- gaze_labeled_ex |>
+  mutate(time_bin = round(trial_time / 8) * 8) |>
+  group_by(participant, trial_index, time_bin) |>
+  summarise(gaze_x = mean(gaze_x, na.rm = TRUE),
+            gaze_y = mean(gaze_y, na.rm = TRUE),
+            .groups = "drop")
+```
+
+```{r ts-plot-helper}
+plot_isc_timeseries <- function(p1, p2, label1, label2, panel_title,
+                                video = example_video, max_sec = 10) {
+  t_idx <- video_key |> filter(video_name == video) |> pull(trial_index)
+  if (length(t_idx) == 0) {
+    message("Video '", video, "' not found. Available: ",
+            paste(sort(unique(video_key$video_name)), collapse = ", "))
+    return(NULL)
+  }
+  t_idx <- t_idx[1]
+
+  ts_data <- gaze_resampled_ex |>
+    filter(participant %in% c(p1, p2),
+           trial_index == t_idx,
+           time_bin <= max_sec * 1000) |>
+    group_by(participant) |>
+    mutate(gaze_x_norm = (gaze_x - min(gaze_x, na.rm = TRUE)) /
+             (max(gaze_x, na.rm = TRUE) - min(gaze_x, na.rm = TRUE))) |>
+    ungroup() |>
+    mutate(participant = factor(participant, levels = c(p1, p2)))
+
+  # Pull ISC value from the pre-computed pairwise table
+  isc_val <- isc |>
+    filter(
+      (pid_a == p1 & pid_b == p2) | (pid_a == p2 & pid_b == p1),
+      video_name == video
+    ) |>
+    pull(isc_x) |> first() |> round(2)
+  isc_label <- if (is.na(isc_val)) "ISC = NA" else glue("horizontal ISC = {isc_val}")
+
+  ggplot(ts_data, aes(x = time_bin / 1000, y = gaze_x_norm,
+                      colour = participant, linewidth = participant)) +
+    geom_line(na.rm = TRUE) +
+    scale_colour_manual(
+      values = setNames(c("grey60", "black"), c(p1, p2)),
+      labels = setNames(c(label1, label2), c(p1, p2))
+    ) +
+    scale_linewidth_manual(
+      values = setNames(c(0.7, 1.2), c(p1, p2)),
+      labels = setNames(c(label1, label2), c(p1, p2))
+    ) +
+    annotate("text", x = max_sec * 0.97, y = 0.05,
+             label = isc_label, hjust = 1, size = 3.5) +
+    scale_x_continuous(breaks = seq(0, max_sec, 2)) +
+    scale_y_continuous(breaks = c(0, 0.5, 1), limits = c(-0.05, 1.05)) +
+    labs(title = panel_title, x = "Time (s)",
+         y = "Horizontal gaze position",
+         colour = NULL, linewidth = NULL) +
+    theme_classic(base_size = 12) +
+    theme(legend.position = c(0.08, 0.25))
+}
+```
+
+```{r ts-plots, fig.width=8, fig.height=7, warning=FALSE}
+p_aa <- plot_isc_timeseries(
+  ex_adult_1, ex_adult_2, "A1", "A2",
+  panel_title = glue("(a) Adult–Adult ISC ({example_video})")
+)
+p_ca <- plot_isc_timeseries(
+  ex_adult_1, ex_child, "A1", "C1",
+  panel_title = glue("(b) Child–Adult ISC ({example_video})")
+)
+p_aa / p_ca
+ggsave(here("figures/isc_correlation.png"))
+```
+
+::: {.callout-tip}
+**What to notice**
+
+- In the adult–adult panel the traces closely follow each other — both adults tend to look at the same screen region at the same time.
+- In the child–adult panel the traces diverge more, reflected in a lower ISC value.
+:::
+
+---
+
+# Part 4: ISCw and ISCa
+
+Following Franchak et al. (2016):
+
+- **ISCw** — each observer's mean ISC with all *same-age* partners, averaged across videos.
+- **ISCa** — each child's mean ISC with all *adult* partners, averaged across videos.
+
+```{r isc-averages}
+# Reshape to one row per focal observer × partner × video
+isc_long <- isc |>
+  mutate(
+    partner_a = pid_b,
+    partner_b = pid_a
+  ) |>
+  pivot_longer(
+    cols = c(pid_a, pid_b),
+    names_to = "role",
+    values_to = "focal"
+  ) |>
+  mutate(
+    partner = if_else(role == "pid_a", partner_a, partner_b),
+    focal_group = if_else(role == "pid_a", group_a, group_b),
+    partner_group = if_else(role == "pid_a", group_b, group_a)
+  ) |>
+    select(
+    focal,
+    partner,
+    video_name,
+    isc,
+    pair_type,
+    focal_group,
+    partner_group
+  )
+
+# ISCw: within-age, averaged over partners then over videos
+iscw_by_video <- isc_long |>
+  filter(focal_group == partner_group) |>
+  group_by(focal, focal_group, video_name) |>
+  summarise(ISCw = mean(isc, na.rm = TRUE), .groups = "drop")
+
+iscw_by_subj <- iscw_by_video |>
+  group_by(focal, focal_group) |>
+  summarise(ISCw = mean(ISCw, na.rm = TRUE), .groups = "drop")
+
+# ISCa: each non-adult observer averaged with all adults
+isca_by_video <- isc_long |>
+  filter(focal_group != "adults", partner_group == "adults") |>
+  group_by(focal, focal_group, video_name) |>
+  summarise(ISCa = mean(isc, na.rm = TRUE), .groups = "drop")
+
+isca_by_subj <- isca_by_video |>
+  group_by(focal, focal_group) |>
+  summarise(ISCa = mean(ISCa, na.rm = TRUE), .groups = "drop")
+```
+
+---
+
+# Part 5: Summary Plots
+
+Two versions of a Franchak et al.–style dot plot. Mean ± 1 SE shown as a
+filled point + error bars; grey dots are individual observations.
+
+**Version A** — one dot per *subject* (ISC averaged over videos per subject)  
+**Version B** — one dot per *video* (ISC averaged over subjects per video)
+
+```{r build-plot-data}
+# We plot only the three pairings that mirror Franchak Fig. 2:
+# kids-kids, adults-kids, adults-adults
+# (infants shown separately if present)
+
+plot_comparisons <- c("Child–Child", "Child–Adult", "Adult–Adult")
+
+# ── Version A: per subject ────────────────────────────────────────────────────
+subj_avg <- bind_rows(
+  # Adult–Adult: each adult's mean ISC with all other adults
+  isc_long |>
+    filter(focal_group == "adults", partner_group == "adults") |>
+    group_by(focal) |>
+    summarise(isc_mean = mean(isc, na.rm = TRUE), .groups = "drop") |>
+    mutate(pair_type = "Adult–Adult"),
+
+  # Child–Child
+  isc_long |>
+    filter(focal_group == "kids", partner_group == "kids") |>
+    group_by(focal) |>
+    summarise(isc_mean = mean(isc, na.rm = TRUE), .groups = "drop") |>
+    mutate(pair_type = "Child–Child"),
+
+  # Child–Adult (from child's perspective)
+  isca_by_subj |>
+    filter(focal_group == "kids") |>
+    rename(isc_mean = ISCa) |>
+    select(focal, isc_mean) |>
+    mutate(pair_type = "Child–Adult")
+) |>
+  mutate(pair_type = factor(pair_type, levels = plot_comparisons))
+
+# ── Version B: per video ──────────────────────────────────────────────────────
+video_avg <- isc |>
+  filter(pair_type %in% plot_comparisons) |>
+  group_by(pair_type, video_name) |>
+  summarise(isc_mean = mean(isc, na.rm = TRUE), .groups = "drop") |>
+  mutate(pair_type = factor(pair_type, levels = plot_comparisons))
+
+# ── Summary stats ─────────────────────────────────────────────────────────────
+se_stats <- function(df) {
+  df |>
+    group_by(pair_type) |>
+    summarise(
+      mean_isc = mean(isc_mean, na.rm = TRUE),
+      se_isc   = sd(isc_mean, na.rm = TRUE) / sqrt(sum(!is.na(isc_mean))),
+      .groups  = "drop"
+    )
+}
+
+subj_stats  <- se_stats(subj_avg)
+video_stats <- se_stats(video_avg)
+```
+
+```{r plot-theme}
+isc_theme <- theme_classic(base_size = 13) +
+  theme(
+    axis.text.x        = element_text(size = 11),
+    legend.position    = "none",
+    panel.grid.major.y = element_line(colour = "grey92")
+  )
+
+dot_plot <- function(stats_df, jitter_df, plot_title) {
+  ggplot(stats_df, aes(x = pair_type, y = mean_isc)) +
+    geom_jitter(data  = jitter_df, aes(y = isc_mean),
+                width = 0.12, size = 1.8, alpha = 0.5, colour = "grey55") +
+    geom_errorbar(aes(ymin = mean_isc - se_isc, ymax = mean_isc + se_isc),
+                  width = 0.12, linewidth = 0.8) +
+    geom_point(size = 4) +
+    scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+    labs(title = plot_title, x = NULL, y = "ISC (Pearson r)") +
+    isc_theme
+}
+```
+
+## 5.1 Version A — jitter by subject
+
+```{r plot-subj, fig.width=5, fig.height=5}
+dot_plot(subj_stats, subj_avg, "Inter-subject correlation\n(dots = subjects)")
+ggsave(here("figures/isc_subjects.png"))
+```
+
+## 5.2 Version B — jitter by video
+
+```{r plot-video, fig.width=10, fig.height=10, dpi=300}
+  ggplot(video_stats, aes(x = pair_type, y = mean_isc)) +
+    geom_jitter(data  = video_avg, aes(y = isc_mean, color=video_name),
+                width = 0.12, size = 4, alpha = 0.5) +
+    geom_errorbar(aes(ymin = mean_isc - se_isc, ymax = mean_isc + se_isc),
+                  width = 0.12, linewidth = 0.8) +
+    geom_point(size = 4) +
+    #scale_color_viridis_d() +
+    scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+    labs(title = "ISC by pair type\n(dots = videos)", x = NULL, y = "ISC (Pearson r)")
+ggsave(here("figures/isc_videos.png"))
+```
+
+---
+
+# Summary
+
+| Step | What we did |
+|---|---|
+| **QC filter** | Kept participants with ≥ `r min_valid_pct` % valid gaze *and* ≥ `r min_trials` trials (`summary.csv`) |
+| **ISC source** | Pre-computed `isc_pairwise.csv`; used `isc_xy = (isc_x + isc_y) / 2` |
+| **Time-series** | Loaded raw gaze for `r paste(example_pids, collapse=", ")`; 10 s of `r example_video` |
+| **ISCw** | Each observer averaged with all same-age partners per video, then across videos |
+| **ISCa** | Each non-adult observer averaged with all adults per video, then across videos |
+| **Plots** | Two dot-plot versions: jitter by subject (Version A) and by video (Version B) |
