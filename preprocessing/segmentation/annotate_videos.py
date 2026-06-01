@@ -31,6 +31,7 @@ Prerequisites:
 
 import argparse
 import gc
+import json
 import logging
 import os
 import shutil
@@ -87,13 +88,13 @@ COLOURS = [
 # ─────────────────────────────────────────────────────────────────────────────
 
 def prompt_idx_of(p: dict):
-    """Return int prompt_idx from a prompt info dict, or None if absent/NaN."""
+    """Return prompt_idx from a prompt info dict as a string, or None if absent/NaN."""
     raw = p.get("prompt_idx")
     if raw is None:
         return None
     if isinstance(raw, float) and np.isnan(raw):
         return None
-    return int(raw)
+    return str(raw)
 
 
 def slugify(text: str) -> str:
@@ -121,6 +122,22 @@ def parse_coord(val) -> tuple[int, int] | None:
             pass
     log.warning(f"Could not parse coordinate '{val}' — ignoring.")
     return None
+
+
+def parse_coord_list(val) -> list[list[int]]:
+    """JSON '[[x,y],…]' string → list of [x, y] pairs. Returns [] on blank/error."""
+    if val is None:
+        return []
+    if isinstance(val, float) and np.isnan(val):
+        return []
+    s = str(val).strip()
+    if not s or s == "[]":
+        return []
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        log.warning(f"Could not parse coord list '{s}' — ignoring.")
+        return []
 
 
 def mask_npz_key(row_idx: int, prompt_slug: str, global_fi: int) -> str:
@@ -219,34 +236,106 @@ def draw_prompt_label(frame: np.ndarray, mask: np.ndarray, colour: tuple, label:
 # SAM 3 session
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _save_point_vis(
+    frames_dir: str,
+    coords_abs: list[list[int]],
+    labels: list[int],
+    save_path: str,
+) -> None:
+    """Overlay prompt points on the first frame of `frames_dir` and write to `save_path`."""
+    frame_path = os.path.join(frames_dir, "00000.jpg")
+    if not os.path.exists(frame_path):
+        return
+    img = cv2.imread(frame_path)
+    if img is None:
+        return
+    for (x, y), lbl in zip(coords_abs, labels):
+        colour = (0, 200, 0) if lbl == 1 else (0, 0, 200)   # green=include, red=exclude
+        cv2.circle(img, (int(x), int(y)), 10, colour, -1)
+        cv2.circle(img, (int(x), int(y)), 10, (255, 255, 255), 2)
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    cv2.imwrite(save_path, img)
+
+
 def run_sam3_session(
     predictor,
     frames_dir: str,
     prompt: str,
-    include_coord: tuple[int, int] | None = None,
-    exclude_coord: tuple[int, int] | None = None,
+    include_coords: list[list[int]] | None = None,
+    exclude_coords: list[list[int]] | None = None,
+    video_W: int = 1920,
+    video_H: int = 1080,
+    debug_vis_path: str | None = None,
 ) -> dict:
     """
     Run one SAM 3 session.  Always closes the session and flushes the CUDA
     cache afterwards — even on error — to prevent GPU memory accumulation.
+
+    include_coords: list of [x, y] absolute-pixel foreground points (label=1)
+    exclude_coords: list of [x, y] absolute-pixel background points (label=0)
+    video_W/video_H: frame dimensions, used to normalise coords to 0-1 range.
+    debug_vis_path: if set, saves a JPEG of frame 0 with the points overlaid.
     """
     response   = predictor.handle_request(request=dict(type="start_session", resource_path=frames_dir))
     session_id = response["session_id"]
     outputs: dict = {}
 
     try:
-        req: dict = dict(type="add_prompt", session_id=session_id, frame_index=0, text=prompt)
-        coords, labels = [], []
-        if include_coord is not None:
-            coords.append(list(include_coord)); labels.append(1)
-        if exclude_coord is not None:
-            coords.append(list(exclude_coord)); labels.append(0)
-        if coords:
-            req["point_coords"] = coords
-            req["point_labels"] = labels
+        coords_abs: list[list[int]] = []
+        labels:     list[int]       = []
+        for c in (include_coords or []):
+            coords_abs.append(list(c)); labels.append(1)
+        for c in (exclude_coords or []):
+            coords_abs.append(list(c)); labels.append(0)
 
-        predictor.handle_request(request=req)
-        log.info(f"      Prompt '{prompt}' added — propagating…")
+        # Step 1: text prompt creates the object(s) and returns obj_ids
+        text_resp = predictor.handle_request(request=dict(
+            type="add_prompt",
+            session_id=session_id,
+            frame_index=0,
+            text=prompt,
+        ))
+
+        # Step 2: if coordinates given, refine with a separate points-only call
+        # using the obj_id returned by the text prompt (SAM3 forbids mixing text
+        # and points in a single add_prompt request).
+        #
+        # SAM3 architecture note: add_prompt(text=...) only caches outputs for
+        # frame 0.  A subsequent add_prompt(points=...) records an "add" action
+        # in the session history, which causes propagate_in_video to choose
+        # "propagation_partial".  That mode asserts cached_frame_outputs exists
+        # for EVERY frame — so we must first run a full propagation (text-only)
+        # to populate the cache before adding point prompts and propagating again.
+        if coords_abs:
+            coords_rel = [[x / video_W, y / video_H] for x, y in coords_abs]
+            text_obj_ids = text_resp["outputs"]["out_obj_ids"].tolist()
+            if text_obj_ids:
+                # Warm-up pass: full VG propagation so cached_frame_outputs is
+                # populated for all frames (required by propagation_partial).
+                log.info(f"      Prompt '{prompt}': warm-up propagation to populate frame cache…")
+                for _ in predictor.handle_stream_request(
+                    request=dict(type="propagate_in_video", session_id=session_id)
+                ):
+                    pass  # discard; we only need the side-effect on the cache
+
+                # Now add point refinement and do the real propagation.
+                predictor.handle_request(request=dict(
+                    type="add_prompt",
+                    session_id=session_id,
+                    frame_index=0,
+                    points=torch.tensor(coords_rel, dtype=torch.float32),
+                    point_labels=torch.tensor(labels, dtype=torch.int32),
+                    obj_id=int(text_obj_ids[0]),
+                ))
+            else:
+                log.warning(f"      Prompt '{prompt}': text prompt returned no objects; skipping point refinement.")
+
+            if debug_vis_path:
+                _save_point_vis(frames_dir, coords_abs, labels, debug_vis_path)
+
+        n_inc = len(include_coords or [])
+        n_exc = len(exclude_coords or [])
+        log.info(f"      Prompt '{prompt}' added (include_pts={n_inc}, exclude_pts={n_exc}) — propagating…")
 
         for resp in predictor.handle_stream_request(
             request=dict(type="propagate_in_video", session_id=session_id)
@@ -339,6 +428,82 @@ def render_annotated_video(
     log.info("    Render complete.")
 
 
+def render_unified_video(
+    video_path: str,
+    rows_data: list[dict],
+    masks_dict: dict[str, np.ndarray],
+    prompt_label_colours: dict[tuple, tuple],
+    output_path: str,
+    fps: float,
+    video_W: int,
+    video_H: int,
+) -> None:
+    """
+    Render one continuous pass from the earliest start_frame to the latest
+    end_frame across all rows, overlaying every prompt's mask simultaneously
+    on each frame.  Use this instead of render_annotated_video when prompts
+    have overlapping time windows (e.g. datavyu CSV mode).
+    """
+    if not rows_data or not masks_dict:
+        log.warning("  No rows/masks — skipping unified render.")
+        return
+
+    min_frame = min(r["start_frame"] for r in rows_data)
+    max_frame = max(r["end_frame"]   for r in rows_data)
+    log.info(f"    Unified render: frames {min_frame}–{max_frame - 1} → {output_path}")
+
+    # Build prefix → (colour, label) from rows_data so we can look up by mask key
+    # Mask key format: "r{row_idx}_{prompt_slug}|{global_fi}"
+    key_prefix_to_style: dict[str, tuple] = {}
+    for row_data in rows_data:
+        rid = row_data["row_idx"]
+        for p in row_data["prompts"]:
+            slug   = slugify(p["prompt"])
+            prefix = f"r{rid}_{slug}"
+            style  = prompt_label_colours.get((p["prompt"], prompt_idx_of(p)),
+                                              (COLOURS[0], p["prompt"]))
+            key_prefix_to_style[prefix] = style
+
+    # Pre-build per-frame overlay list
+    frame_overlays: dict[int, list[tuple]] = {}
+    for mask_key, mask in masks_dict.items():
+        try:
+            prefix, fi_str = mask_key.rsplit("|", 1)
+            fi = int(fi_str)
+        except (ValueError, AttributeError):
+            continue
+        if fi < min_frame or fi >= max_frame:
+            continue
+        style = key_prefix_to_style.get(prefix, (COLOURS[0], ""))
+        frame_overlays.setdefault(fi, []).append((mask, style))
+
+    cap = cv2.VideoCapture(video_path)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, min_frame)
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (video_W, video_H))
+
+    try:
+        for fi in tqdm(range(min_frame, max_frame), desc="  render", unit="f", leave=False):
+            ret, bgr = cap.read()
+            if not ret:
+                break
+            for mask, (colour, label) in frame_overlays.get(fi, []):
+                if mask.any():
+                    draw_mask_overlay(bgr, mask, colour)
+                    if label:
+                        draw_prompt_label(bgr, mask, colour, label)
+            cv2.putText(
+                bgr, f"f{fi} | {fi / fps:.2f}s",
+                (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (220, 220, 220), 1, cv2.LINE_AA,
+            )
+            writer.write(bgr)
+    finally:
+        cap.release()
+        writer.release()
+
+    log.info("    Unified render complete.")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Core per-video annotation
 # ─────────────────────────────────────────────────────────────────────────────
@@ -355,13 +520,20 @@ def process_one_video(
     predictor,
     skip_existing: bool = False,
     render_only: bool = False,
+    debug_points: bool = False,
+    unified_render: bool = False,
 ) -> None:
     """
     Annotate all temporal chunks (rows) for one video, writing a single set:
       frames.csv     — bounding boxes for all rows × prompts
       masks.npz      — boolean masks keyed "r{row_idx}_{prompt_slug}|{global_fi}"
-      annotated.mp4  — optional; segments concatenated, each prompt color-labeled
+      annotated.mp4  — optional render
+
+    unified_render=True: render one continuous pass from min→max frame with all
+      masks overlaid simultaneously (correct for datavyu mode where prompts overlap).
+    unified_render=False: concatenate one clip per row (legacy behavior).
     """
+    print(f"Video path: {video_path}; Video W: {video_W}; Video H: {video_H}")
     video_stem = Path(video_path).stem.removesuffix("_stripped")
     video_out  = os.path.join(output_dir, video_stem)
     os.makedirs(video_out, exist_ok=True)
@@ -389,13 +561,13 @@ def process_one_video(
     # ── Load existing data for incremental / render-only runs ─────────────────
     all_records:    list[dict]            = []
     all_masks_dict: dict[str, np.ndarray] = {}
-    done_combos:    set[tuple[int, str]]  = set()  # (row_idx, prompt)
+    done_combos:    set[tuple[str, str]]  = set()  # (row_idx, prompt)
 
     if skip_existing or render_only:
         if os.path.exists(frames_csv):
             edf         = pd.read_csv(frames_csv)
             all_records = edf.to_dict("records")
-            done_combos = {(int(r["row_idx"]), str(r["prompt"])) for r in all_records}
+            done_combos = {(str(r["row_idx"]), str(r["prompt"])) for r in all_records}
             log.info(f"  Loaded {len(edf)} existing records ({len(done_combos)} (row,prompt) pairs).")
         if os.path.exists(masks_path):
             with np.load(masks_path, allow_pickle=False) as npz:
@@ -458,14 +630,26 @@ def process_one_video(
                     prompt      = pinfo["prompt"]
                     prompt_slug = slugify(prompt)
                     prompt_idx  = pinfo.get("prompt_idx")
-                    inc_coord   = pinfo.get("include_coord")
-                    exc_coord   = pinfo.get("exclude_coord")
+                    inc_coords  = pinfo.get("include_coords") or []
+                    exc_coords  = pinfo.get("exclude_coords") or []
 
                     # Accumulate SAM3 outputs across sub-chunks
                     all_sc_outputs: dict[int, object] = {}
                     for sci, (ss, se) in enumerate(subchunks):
+                        # Build debug vis path for first sub-chunk when coords are present
+                        vis_path = None
+                        if debug_points and sci == 0 and (inc_coords or exc_coords):
+                            vis_dir  = os.path.join(video_out, "debug_points")
+                            vis_path = os.path.join(vis_dir, f"{row_idx}_{prompt_slug}.jpg")
+
                         sc_out = run_sam3_session(
-                            predictor, sc_dirs[sci], prompt, inc_coord, exc_coord
+                            predictor, sc_dirs[sci], prompt,
+                            # Only pass point coords on the first sub-chunk
+                            include_coords=inc_coords if sci == 0 else None,
+                            exclude_coords=exc_coords if sci == 0 else None,
+                            video_W=video_W,
+                            video_H=video_H,
+                            debug_vis_path=vis_path,
                         )
                         log.info(f"    sc {sci + 1}/{len(subchunks)}: {len(sc_out)}/{se - ss} frames.")
                         for sc_fi, out in sc_out.items():
@@ -533,6 +717,17 @@ def process_one_video(
     if render_video:
         if not all_masks_dict:
             log.warning(f"  No masks available for {video_stem} — skipping render.")
+        elif unified_render:
+            render_unified_video(
+                video_path           = video_path,
+                rows_data            = rows_data,
+                masks_dict           = all_masks_dict,
+                prompt_label_colours = prompt_label_colours,
+                output_path          = ann_path,
+                fps                  = fps,
+                video_W              = video_W,
+                video_H              = video_H,
+            )
         else:
             render_annotated_video(
                 video_path           = video_path,
@@ -552,14 +747,21 @@ def process_one_video(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Annotate video chunks with SAM 3 from stimuli_prompts.csv.",
+        description="Annotate video chunks with SAM 3 from a stimuli CSV.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--csv", required=True,
-        help="Path to stimuli_prompts.csv (columns: row_idx, video_path, "
-             "start_time_s, end_time_s, prompt; optional: prompt_idx, "
-             "include_coord, exclude_coord, video_block).",
+        help="Path to stimuli_prompts.csv or stimuli_videos_datavyu.csv. "
+             "Format is auto-detected from column names.",
+    )
+    parser.add_argument(
+        "--faces_and_hands", action="store_true", default=True,
+        help="(datavyu CSV) Process only face/hand prompts (default: True).",
+    )
+    parser.add_argument(
+        "--no_faces_and_hands", dest="faces_and_hands", action="store_false",
+        help="(datavyu CSV) Process all prompts regardless of type.",
     )
     parser.add_argument(
         "--output_dir", default="preprocessing/segmentation/output",
@@ -573,6 +775,11 @@ def main():
         "--render_only", action="store_true",
         help="Skip SAM3 entirely; re-render annotated.mp4 from existing NPZ/CSV. "
              "Implies --render_video.",
+    )
+    parser.add_argument(
+        "--debug_points", action="store_true",
+        help="Save a JPEG of frame 0 with prompt points overlaid into "
+             "{output_dir}/{video}/debug_points/ for every prompt that has coords.",
     )
     parser.add_argument(
         "--chunk_size", type=int, default=500,
@@ -611,13 +818,36 @@ def main():
     df = pd.read_csv(CSV_PATH)
     log.info(f"{len(df)} rows in CSV.")
 
+    # ── Detect and normalize CSV format ───────────────────────────────────────
+    is_datavyu = "start_time_ms" in df.columns and "prompt_name" in df.columns
+
+    if is_datavyu:
+        log.info("Detected datavyu CSV format (stimuli_videos_datavyu.csv).")
+
+        # Apply --faces_and_hands filter before any other processing
+        if args.faces_and_hands and "faces_and_hands" in df.columns:
+            before = len(df)
+            df = df[df["faces_and_hands"].astype(str).str.lower() == "true"].reset_index(drop=True)
+            log.info(f"  faces_and_hands filter: {before} → {len(df)} rows.")
+
+        # Normalize to the column names the rest of main() expects
+        df["row_idx"]      = df["prompt_idx"]          # unique per prompt
+        df["start_time_s"] = df["start_time_ms"].astype(float) / 1000.0
+        df["end_time_s"]   = df["end_time_ms"].astype(float) / 1000.0
+        df["prompt"]       = df["prompt_name"]
+        # include_coords / exclude_coords are JSON lists — keep as-is; set old-style to None
+        df["include_coord"] = None
+        df["exclude_coord"] = None
+    else:
+        log.info("Detected legacy CSV format (stimuli_prompts.csv).")
+
     required_cols = {"row_idx", "video_path", "start_time_s", "end_time_s", "prompt"}
     missing = required_cols - set(df.columns)
     if missing:
         log.error(f"CSV missing columns: {missing}")
         sys.exit(1)
 
-    for col in ("include_coord", "exclude_coord", "prompt_idx"):
+    for col in ("include_coord", "exclude_coord", "prompt_idx", "include_coords", "exclude_coords"):
         if col not in df.columns:
             df[col] = None
 
@@ -667,18 +897,29 @@ def main():
             log.warning(f"Row {row_idx}: zero-duration chunk ({start_s}s–{end_s}s) — skipping.")
             continue
 
-        prompts = [
-            {
+        prompts = []
+        for _, r in group.iterrows():
+            # Prefer JSON list coords (datavyu format); fall back to single "x,y" (legacy)
+            if r.get("include_coords") not in (None, "", "[]") and not (
+                isinstance(r.get("include_coords"), float) and np.isnan(r.get("include_coords"))
+            ):
+                inc = parse_coord_list(r["include_coords"])
+                exc = parse_coord_list(r.get("exclude_coords", "[]"))
+            else:
+                single_inc = parse_coord(r.get("include_coord"))
+                single_exc = parse_coord(r.get("exclude_coord"))
+                inc = [list(single_inc)] if single_inc else []
+                exc = [list(single_exc)] if single_exc else []
+
+            prompts.append({
                 "prompt":        str(r["prompt"]),
                 "prompt_idx":    r.get("prompt_idx"),
-                "include_coord": parse_coord(r.get("include_coord")),
-                "exclude_coord": parse_coord(r.get("exclude_coord")),
-            }
-            for _, r in group.iterrows()
-        ]
+                "include_coords": inc,
+                "exclude_coords": exc,
+            })
 
         video_rows.setdefault(video_path, []).append({
-            "row_idx":     int(row_idx),
+            "row_idx":     str(row_idx),
             "start_frame": start_frame,
             "end_frame":   end_frame,
             "prompts":     prompts,
@@ -691,6 +932,10 @@ def main():
     predictor = None
     if not args.render_only:
         gpus = args.gpus if args.gpus is not None else list(range(torch.cuda.device_count()))
+        # Raise the Gloo collective-op timeout from the default 180 s so that a
+        # slow propagation pass (e.g. long clips or many frames) does not leave
+        # worker processes in a broken state when rank-0 exits early.
+        os.environ.setdefault("SAM3_COLLECTIVE_OP_TIMEOUT_SEC", "180")
         log.info(f"Loading SAM 3 on GPU(s) {gpus} — ~2 minutes …")
         predictor = build_sam3_video_predictor(gpus_to_use=gpus)
         log.info("SAM 3 ready.")
@@ -708,17 +953,19 @@ def main():
 
             try:
                 process_one_video(
-                    video_path    = video_path,
-                    fps           = fps,
-                    video_W       = W,
-                    video_H       = H,
-                    rows_data     = rows_data,
-                    output_dir    = str(OUTPUT_DIR),
-                    chunk_size    = args.chunk_size,
-                    render_video  = args.render_video,
-                    predictor     = predictor,
-                    skip_existing = args.skip_existing,
-                    render_only   = args.render_only,
+                    video_path     = video_path,
+                    fps            = fps,
+                    video_W        = W,
+                    video_H        = H,
+                    rows_data      = rows_data,
+                    output_dir     = str(OUTPUT_DIR),
+                    chunk_size     = args.chunk_size,
+                    render_video   = args.render_video,
+                    predictor      = predictor,
+                    skip_existing  = args.skip_existing,
+                    render_only    = args.render_only,
+                    debug_points   = args.debug_points,
+                    unified_render = is_datavyu,
                 )
                 n_done += 1
             except Exception as e:

@@ -10,22 +10,28 @@ make exclusion decisions in downstream analyses.
 HOW TO USE:
 1. Open Terminal
 2. Navigate to the folder containing this script
-3. Run: python eyetracking_qc.py /path/to/data
+3. Run: python dataQC_check.py /path/to/data
 4. Find your output in data/qc_checks/qc_report_YYYYMMDD.csv
 
 You can also specify a custom output path:
-    python eyetracking_qc.py /path/to/data /path/to/output.csv
+    python dataQC_check.py /path/to/data /path/to/output.csv
 
 INPUT STRUCTURE:
-    data/
-        MW001/
-            MW001_YYYYMMDD_HHMMSS.csv                 <- main gaze data
-            MW001_YYYYMMDD_HHMMSS_validation_summary.csv
-            MW001_YYYYMMDD_HHMMSS_trial_order.csv
-        MW002/
-            ...
+    data/raw/
+        adults/
+            MW001/
+                MW001_YYYYMMDD_HHMMSS.csv                 <- main gaze data
+                MW001_YYYYMMDD_HHMMSS_validation_summary.csv
+                MW001_YYYYMMDD_HHMMSS_trial_order.csv
+            MW002/
+                ...
+        kids/
+            MWK01/
+                ...
+        infants/
 """
 
+import argparse
 import os                   # for working with file paths and directories
 import sys                  # for reading command line arguments
 import glob                 # for finding files that match a pattern
@@ -33,6 +39,21 @@ import re                   # for pattern matching in strings (regular expressio
 import pandas as pd         # for working with tabular data (like Excel in Python)
 import numpy as np          # for numerical operations
 from pathlib import Path    # another way to work with file paths
+
+# Project root: two levels up from this script (preprocessing/qc/ -> project root)
+MAIN_DIR = Path(__file__).resolve().parents[2]
+
+
+def resolve_path(p):
+    """Resolve p relative to MAIN_DIR if it is not already absolute."""
+    p = Path(p)
+    return p if p.is_absolute() else MAIN_DIR / p
+
+
+def find_latest_qc_report(qc_dir):
+    """Return the most recent qc_report_*.csv in qc_dir, or None if none exist."""
+    reports = sorted(Path(qc_dir).glob("qc_report_*.csv"))
+    return reports[-1] if reports else None
 
 
 # =============================================================================
@@ -49,7 +70,7 @@ def find_participant_files(participant_dir):
     
     Returns dict with keys: 'gaze', 'validation_summary', 'trial_order'
     """
-    csv_files = glob.glob(os.path.join(participant_dir, '*.csv'))  # find all CSVs in folder
+    csv_files = glob.glob(os.path.join(participant_dir, '**', '*.csv'), recursive=True)  # find all CSVs in folder and in subfolders
     
     files = {                           # initialize empty dict to store file paths
         'gaze': None,
@@ -409,38 +430,59 @@ def process_participant(participant_dir):
     return results
 
 
-def process_all_participants(data_dir, output_path):
+def process_all_participants(data_dir, output_path, existing_df=None):
     """
     Process all participants in the data directory and save aggregated QC report.
-    
+
     Loops through each subfolder in the data directory, processes that
     participant's data, and combines all results into one CSV file.
+
+    If existing_df is provided, participants already present in it are skipped
+    and their rows are carried forward into the output unchanged.
     """
     # Find all participant folders (exclude qc_checks folder)
     participant_dirs = sorted([
-        d for d in glob.glob(os.path.join(data_dir, '*'))
-        if os.path.isdir(d) and os.path.basename(d) != 'qc_checks'
+        d for d in glob.glob(os.path.join(data_dir, '**', '*'), recursive=True)
+        if os.path.isdir(d) and not os.path.basename(d) in ['qc_checks', 'adults', 'infants', 'kids']
     ])
-    
+
+    already_done = set()
+    if existing_df is not None and not existing_df.empty:
+        already_done = set(existing_df['participant_id'].unique())
+        print(f"Loaded {len(already_done)} already-processed participant(s) from existing report.")
+
     print(f"Found {len(participant_dirs)} participant directories")
-    
-    all_results = []                                        # will hold results from all participants
-    
+
+    new_results = []                                        # will hold results from new participants
+
     for participant_dir in participant_dirs:
         participant_id = get_participant_id(participant_dir)
+
+        if participant_id in already_done:
+            print(f"\nSkipping {participant_id} (already in existing report)")
+            continue
+
         print(f"\nProcessing {participant_id}...")
-        
+
         try:
             results = process_participant(participant_dir)
-            all_results.extend(results)                     # add this participant's trials to list
+            new_results.extend(results)                     # add this participant's trials to list
             print(f"  Completed: {len(results)} trials")
         except Exception as e:
             print(f"  ERROR processing {participant_id}: {e}")
             continue
-    
+
+    # Merge new results with any existing data
+    existing_rows = existing_df if existing_df is not None else pd.DataFrame()
+    if new_results:
+        new_df = pd.DataFrame(new_results)
+        all_df = pd.concat([existing_rows, new_df], ignore_index=True)
+    else:
+        all_df = existing_rows
+
     # Convert results to DataFrame and save
-    if all_results:
-        output_df = pd.DataFrame(all_results)
+    if not all_df.empty:
+        output_df = all_df
         
         # Put columns in a sensible order
         column_order = [
@@ -461,7 +503,7 @@ def process_all_participants(data_dir, output_path):
     else:
         print("\nNo data processed!")
     
-    return output_df if all_results else None
+    return output_df if not all_df.empty else None
 
 
 # =============================================================================
@@ -474,29 +516,52 @@ def process_all_participants(data_dir, output_path):
 
 if __name__ == '__main__':
     from datetime import datetime
-    
-    # Check that user provided required arguments
-    if len(sys.argv) < 2:
-        print("Usage: python eyetracking_qc.py <data_directory> [output_csv]")
-        print("Example: python eyetracking_qc.py ./data")
-        print("         python eyetracking_qc.py ./data ./custom_output.csv")
-        print()
-        print("If output_csv is not specified, saves to <data_directory>/qc_checks/qc_report_YYYYMMDD.csv")
-        sys.exit(1)
-    
-    data_dir = sys.argv[1]                                  # first argument is data directory
-    
+
+    parser = argparse.ArgumentParser(
+        description="Eyetracking QC script.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "data_dir",
+        nargs="?",
+        default="data/raw",
+        help="Path to data directory (absolute or relative to project root).",
+    )
+    parser.add_argument(
+        "output_path",
+        nargs="?",
+        default=None,
+        help="Output CSV path. Defaults to data/qc_checks/qc_report_YYYYMMDD.csv.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Re-process all participants even if a prior report exists.",
+    )
+    args = parser.parse_args()
+
+    data_dir = str(resolve_path(args.data_dir))
+
     if not os.path.isdir(data_dir):
         print(f"Error: Data directory not found: {data_dir}")
         sys.exit(1)
-    
-    # Set output path: use provided path or default to data/qc_checks/qc_report_<date>.csv
-    if len(sys.argv) >= 3:
-        output_path = sys.argv[2]                           # user specified output path
+
+    # Default output goes to data/qc_checks/ relative to project root
+    qc_dir = str(MAIN_DIR / "data" / "qc_checks")
+    os.makedirs(qc_dir, exist_ok=True)
+
+    if args.output_path:
+        output_path = str(resolve_path(args.output_path))
     else:
-        qc_dir = os.path.join(data_dir, 'qc_checks')
-        os.makedirs(qc_dir, exist_ok=True)                  # create folder if it doesn't exist
         timestamp = datetime.now().strftime('%Y%m%d')
         output_path = os.path.join(qc_dir, f'qc_report_{timestamp}.csv')
-    
-    process_all_participants(data_dir, output_path)
+
+    # Load existing report unless --overwrite
+    existing_df = None
+    if not args.overwrite:
+        latest = find_latest_qc_report(qc_dir)
+        if latest:
+            print(f"Found existing report: {latest}")
+            existing_df = pd.read_csv(latest)
+
+    process_all_participants(data_dir, output_path, existing_df=existing_df)
