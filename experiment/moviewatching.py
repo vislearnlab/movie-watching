@@ -83,6 +83,7 @@ def main():
     parser.add_argument('--no-shuffle', dest='no_shuffle', action='store_true', help='Disable randomization of calibration/validation point order')
     parser.add_argument('--baby', action='store_true', help='Enable baby-specific experiment mode')
     args = parser.parse_args()
+    print(args.baby)
     run_experiment(args.subject, args.debug, args.mock, shuffle_points=not args.no_shuffle, baby_experiment=args.baby)
 
 def trial_order(dir, debug=False):
@@ -140,7 +141,7 @@ def trial_order(dir, debug=False):
     logger.info(f"Generated trial order with {len(Trials)} trials across {len(block_keys)} blocks")
     return Trials
 
-def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False, shuffle_points=True , baby_experiment=False):
+def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False, shuffle_points=True, baby_experiment=False):
     global logger, config_data
     import gc
     import sounddevice as sd
@@ -156,7 +157,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
         max_bad_points = config_data[f"general_validation"]["max_bad_points"]
     
     logger.info(f"Starting {mode} calibration routine (event: {calib_event})")
-    logger.debug(f"Max retries: {max_retries}, Good threshold: {good_threshold}, Bad threshold: {bad_threshold}")
+    logger.debug(f"Max retries: {max_retries}, Good threshold: {good_threshold}, Bad threshold: {bad_threshold}, Min good points: {min_good_points}, Max bad points: {max_bad_points}")
     
     i = 0
     while i < max_retries:
@@ -456,7 +457,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
         log_exception(logger, e, "showing status and attention grabber")
     
     try:
-        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial", shuffle_points=shuffle_points)
+        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event="pre_validation", mode="initial", shuffle_points=shuffle_points, baby_experiment=baby_experiment)
     except Exception as e:
         log_exception(logger, e, "initial calibration routine")
     
@@ -501,7 +502,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
         if trial['within_block_trial_index'] == 0 and not first_trial and (not baby_experiment or trial['block_id'] % 2 != 0):
             logger.info(f"Block validation at trial {trial_id}")
             try:
-                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True, shuffle_points=shuffle_points)
+                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True, shuffle_points=shuffle_points, baby_experiment=baby_experiment)
                 if mock:
                     controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
             except Exception as e:
@@ -749,12 +750,12 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
                     controller.record_event(f"Trial_{trial_id}_Forced_Recalibation_Looked_Away")
                     logger.info(f"User requested recalibration after looking away in trial {trial_id}")
                     try:
-                        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later", shuffle_points=shuffle_points)
+                        calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"lb_forced_validation_{trial['total_trial_index']}", mode="later", shuffle_points=shuffle_points, baby_experiment=baby_experiment)
                     except Exception as e:
                         log_exception(logger, e, f"forced calibration after trial {trial_id}")
             elif event_type == "calibration":
                 try:
-                    calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later", shuffle_points=shuffle_points)
+                    calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"key_forced_validation_trial{trial['total_trial_index']}", mode="later", shuffle_points=shuffle_points, baby_experiment=baby_experiment)
                 except Exception as e:
                     log_exception(logger, e, f"key-forced calibration at trial {trial_id}")
                     
