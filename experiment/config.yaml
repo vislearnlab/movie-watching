@@ -6,6 +6,11 @@ later_validation:
   max_retries: 2
   good_threshold: 3
   bad_threshold: 6
+general_validation:
+  min_good_points: 4
+  max_bad_points: 0
+  min_good_points_baby: 3
+  max_bad_points_baby: 2
 trial_config:
   max_time: 60
   away_time: 20

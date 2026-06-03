@@ -60,8 +60,8 @@ def _configure_audio_device():
 
     if len(candidates) > 0:
         best_idx, best_device = candidates[-1]
-        # Set the default output device for sounddevice
-        sd.default.device = best_idx
+        # Set the default output device for sounddevice - output should also be set manually from laptop settings to monitor
+        sd.default.device = (None, best_idx)
         prefs.hardware['audioLib'] = ['sounddevice']
         prefs.hardware['audioDevice'] = best_device['name']
         if logger:
@@ -81,8 +81,9 @@ def main():
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--mock', action='store_true', help='Enable mock eye tracker mode')
     parser.add_argument('--no-shuffle', dest='no_shuffle', action='store_true', help='Disable randomization of calibration/validation point order')
+    parser.add_argument('--baby', action='store_true', help='Enable baby-specific experiment mode')
     args = parser.parse_args()
-    run_experiment(args.subject, args.debug, args.mock, shuffle_points=not args.no_shuffle)
+    run_experiment(args.subject, args.debug, args.mock, shuffle_points=not args.no_shuffle, baby_experiment=args.baby)
 
 def trial_order(dir, debug=False):
     global logger
@@ -139,7 +140,7 @@ def trial_order(dir, debug=False):
     logger.info(f"Generated trial order with {len(Trials)} trials across {len(block_keys)} blocks")
     return Trials
 
-def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False, shuffle_points=True):
+def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False, shuffle_points=True , baby_experiment=False):
     global logger, config_data
     import gc
     import sounddevice as sd
@@ -147,6 +148,12 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
     max_retries = config_data[f"{mode}_validation"]["max_retries"]
     good_threshold = config_data[f"{mode}_validation"]["good_threshold"]
     bad_threshold = config_data[f"{mode}_validation"]["bad_threshold"]
+    if baby_experiment:
+        min_good_points = config_data[f"general_validation"]["min_good_points_baby"]
+        max_bad_points = config_data[f"general_validation"]["max_bad_points_baby"]
+    else:
+        min_good_points = config_data[f"general_validation"]["min_good_points"]
+        max_bad_points = config_data[f"general_validation"]["max_bad_points"]
     
     logger.info(f"Starting {mode} calibration routine (event: {calib_event})")
     logger.debug(f"Max retries: {max_retries}, Good threshold: {good_threshold}, Bad threshold: {bad_threshold}")
@@ -220,12 +227,12 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
         def eye_passes(targets):
             good = sum(t < good_threshold for t in targets)   
             bad  = sum(t > bad_threshold for t in targets)   
-            return (good >= 4) and (bad == 0)
+            return (good >= min_good_points) and (bad <= max_bad_points)
 
         avg = [(l + r) / 2 for l, r in zip(left, right)]
         avg_good = sum(t < good_threshold for t in avg)
         avg_bad  = sum(t > bad_threshold for t in avg)
-        avg_ok = (avg_good >= 4) and (avg_bad == 0)
+        avg_ok = (avg_good >= min_good_points) and (avg_bad <= max_bad_points)
 
         logger.debug(f"Validation results - Avg good: {avg_good}/5, Avg bad: {avg_bad}/5")
         
@@ -327,7 +334,7 @@ def check_and_resume_session(subject_dir, Sub, TIMESTAMP):
     
     return recent_file, 0, last_timestamp, existing_trial_order
 
-def run_experiment(Sub, debug=False, mock=False, shuffle_points=True):
+def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_experiment=False):
     global logger, DIR, config_data
     
     # Initialize logging first
@@ -491,7 +498,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True):
             except Exception as e:
                 log_exception(logger, e, f"flushing data before trial {trial_id}")
                 
-        if trial['within_block_trial_index'] == 0 and not first_trial:
+        if trial['within_block_trial_index'] == 0 and not first_trial and (not baby_experiment or trial['block_id'] % 2 != 0):
             logger.info(f"Block validation at trial {trial_id}")
             try:
                 calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True, shuffle_points=shuffle_points)

@@ -39,6 +39,8 @@ def main():
     parser.add_argument('--subject', type=str, help='Subject ID (will prompt if not provided)')
     parser.add_argument('--mock', action='store_true', help='Use mock eye tracker')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--no-shuffle', dest='no_shuffle', action='store_true', help='Disable randomization of calibration/validation point order')
+    parser.add_argument('--baby', action='store_true', help='Enable baby-specific experiment mode')
     args = parser.parse_args()
     
     # Get subject ID
@@ -59,6 +61,10 @@ def main():
         cmd.append("--mock")
     if args.debug:
         cmd.append("--debug")
+    if args.no_shuffle:
+        cmd.append("--no-shuffle")
+    if args.baby:
+        cmd.append("--baby")
     
     flags_str = " ".join(["--mock" if args.mock else "", "--debug" if args.debug else ""]).strip()
     print(f"\nStarting experiment for subject: {subject_id} {flags_str}\n")
