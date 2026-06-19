@@ -499,7 +499,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
             except Exception as e:
                 log_exception(logger, e, f"flushing data before trial {trial_id}")
                 
-        if trial['within_block_trial_index'] == 0 and not first_trial and (not baby_experiment or trial['block_id'] % 2 != 0):
+        if trial['within_block_trial_index'] == 0 and not first_trial and (not baby_experiment or int(trial['block_index']) % 2 != 0):
             logger.info(f"Block validation at trial {trial_id}")
             try:
                 calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True, shuffle_points=shuffle_points, baby_experiment=baby_experiment)
