@@ -1,5 +1,5 @@
 # macOS
-**/.DS_Store
+**/*.DS_Store
 
 # Python cache
 __pycache__/
@@ -18,3 +18,6 @@ stimuli/**/*.mp4
 stimuli/**/*.mp3
 stimuli/**/*.wav
 .Rproj.user
+
+preprocessing/segmentation/sam3
+preprocessing/segmentation/output*

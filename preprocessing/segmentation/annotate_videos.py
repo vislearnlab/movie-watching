@@ -752,7 +752,7 @@ def main():
     )
     parser.add_argument(
         "--csv", required=True,
-        help="Path to stimuli_prompts.csv or stimuli_videos_datavyu.csv. "
+        help="Path to stimuli_videos_roundx.csv. "
              "Format is auto-detected from column names.",
     )
     parser.add_argument(

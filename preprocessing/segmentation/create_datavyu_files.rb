@@ -15,7 +15,7 @@
 # PARAMETERS — edit these before running
 # =============================================================================
 
-CSV_PATH    = "/Users/vislearnlab/Documents/movie-watching/data/segmentation/stimuli_prompts.csv"   
+CSV_PATH    = "/Users/vislearnlab/Documents/movie-watching/data/segmentation/stimuli_prompts_round0.csv"   
 OUTPUT_DIR = "/Users/vislearnlab/Documents/movie-watching/preprocessing/segmentation/datavyu_segmentation"
 
 require 'csv'
