@@ -4,7 +4,7 @@ Batch video annotation using SAM 3, driven by stimuli_prompts.csv.
 Writes ONE set of output files per video into output_dir/{video_stem}/:
   frames.csv     — bounding boxes & metadata for all rows × prompts
   masks.npz      — boolean masks keyed "r{row_idx}_{prompt_slug}|{global_fi}"
-  annotated.mp4  — annotated video (optional); one segment per row, concatenated
+  annotated.mp4  — annotated video (optional); full-length, all masks overlaid
 
 Each prompt gets a unique, consistent colour and is labeled "{idx}. {prompt}"
 at its mask centroid in the rendered video.
@@ -266,6 +266,7 @@ def run_sam3_session(
     video_W: int = 1920,
     video_H: int = 1080,
     debug_vis_path: str | None = None,
+    prompt_idx=None,
 ) -> dict:
     """
     Run one SAM 3 session.  Always closes the session and flushes the CUDA
@@ -275,6 +276,8 @@ def run_sam3_session(
     exclude_coords: list of [x, y] absolute-pixel background points (label=0)
     video_W/video_H: frame dimensions, used to normalise coords to 0-1 range.
     debug_vis_path: if set, saves a JPEG of frame 0 with the points overlaid.
+    prompt_idx: the CSV-defined prompt_idx, used as the obj_id for a
+      points-only fallback prompt when the text prompt finds no object.
     """
     response   = predictor.handle_request(request=dict(type="start_session", resource_path=frames_dir))
     session_id = response["session_id"]
@@ -309,26 +312,41 @@ def run_sam3_session(
         if coords_abs:
             coords_rel = [[x / video_W, y / video_H] for x, y in coords_abs]
             text_obj_ids = text_resp["outputs"]["out_obj_ids"].tolist()
-            if text_obj_ids:
-                # Warm-up pass: full VG propagation so cached_frame_outputs is
-                # populated for all frames (required by propagation_partial).
-                log.info(f"      Prompt '{prompt}': warm-up propagation to populate frame cache…")
-                for _ in predictor.handle_stream_request(
-                    request=dict(type="propagate_in_video", session_id=session_id)
-                ):
-                    pass  # discard; we only need the side-effect on the cache
 
-                # Now add point refinement and do the real propagation.
+            # Warm-up pass: full VG propagation so cached_frame_outputs is
+            # populated for all frames (required by propagation_partial),
+            # whether we're refining the text-found object below or creating
+            # one from points alone.
+            log.info(f"      Prompt '{prompt}': warm-up propagation to populate frame cache…")
+            for _ in predictor.handle_stream_request(
+                request=dict(type="propagate_in_video", session_id=session_id)
+            ):
+                pass  # discard; we only need the side-effect on the cache
+
+            prompt_idx_valid = prompt_idx is not None and not (
+                isinstance(prompt_idx, float) and np.isnan(prompt_idx)
+            )
+            if text_obj_ids:
+                obj_id = int(text_obj_ids[0])
+            elif prompt_idx_valid:
+                # Text prompt found nothing on frame 0 — fall back to
+                # creating the object directly from the point coords alone,
+                # keyed by the CSV's own prompt_idx.
+                obj_id = int(float(prompt_idx))
+                log.warning(f"      Prompt '{prompt}': text prompt returned no objects; falling back to points-only prompt (obj_id={obj_id}).")
+            else:
+                log.warning(f"      Prompt '{prompt}': text prompt returned no objects and no prompt_idx to fall back on; skipping point refinement.")
+                obj_id = None
+
+            if obj_id is not None:
                 predictor.handle_request(request=dict(
                     type="add_prompt",
                     session_id=session_id,
                     frame_index=0,
                     points=torch.tensor(coords_rel, dtype=torch.float32),
                     point_labels=torch.tensor(labels, dtype=torch.int32),
-                    obj_id=int(text_obj_ids[0]),
+                    obj_id=obj_id,
                 ))
-            else:
-                log.warning(f"      Prompt '{prompt}': text prompt returned no objects; skipping point refinement.")
 
             if debug_vis_path:
                 _save_point_vis(frames_dir, coords_abs, labels, debug_vis_path)
@@ -364,70 +382,6 @@ def run_sam3_session(
 # Video rendering
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_annotated_video(
-    video_path: str,
-    rows_data: list[dict],
-    masks_dict: dict[str, np.ndarray],
-    prompt_label_colours: dict[str, tuple],  # prompt → (colour, label_str)
-    output_path: str,
-    fps: float,
-    video_W: int,
-    video_H: int,
-) -> None:
-    """
-    Render one annotated segment per row (in row order), concatenated into a
-    single MP4.  Each prompt overlay is drawn with its assigned colour and
-    labeled "{idx}. {prompt}" at the centroid of its mask.
-    """
-    log.info(f"    Rendering annotated video → {output_path}")
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(output_path, fourcc, fps, (video_W, video_H))
-
-    try:
-        for row_data in rows_data:
-            row_idx     = row_data["row_idx"]
-            start_frame = row_data["start_frame"]
-            end_frame   = row_data["end_frame"]
-
-            cap = cv2.VideoCapture(video_path)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-
-            for local_fi in tqdm(
-                range(end_frame - start_frame),
-                desc=f"  render row {row_idx}", leave=False, unit="f",
-            ):
-                ret, bgr = cap.read()
-                if not ret:
-                    break
-                global_fi = start_frame + local_fi
-
-                for pinfo in row_data.get("prompts", []):
-                    pname   = pinfo["prompt"]
-                    pidx    = prompt_idx_of(pinfo)
-                    entry   = prompt_label_colours.get((pname, pidx))
-                    if entry is None:
-                        continue
-                    colour, label_str = entry
-                    mask_key = mask_npz_key(row_idx, slugify(pname), global_fi)
-                    mask = masks_dict.get(mask_key)
-                    if mask is not None and mask.any():
-                        draw_mask_overlay(bgr, mask, colour)
-                        draw_prompt_label(bgr, mask, colour, label_str)
-
-                cv2.putText(
-                    bgr,
-                    f"row{row_idx} | {global_fi / fps:.2f}s | f{global_fi}",
-                    (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (220, 220, 220), 1, cv2.LINE_AA,
-                )
-                writer.write(bgr)
-
-            cap.release()
-    finally:
-        writer.release()
-
-    log.info("    Render complete.")
-
-
 def render_unified_video(
     video_path: str,
     rows_data: list[dict],
@@ -439,18 +393,22 @@ def render_unified_video(
     video_H: int,
 ) -> None:
     """
-    Render one continuous pass from the earliest start_frame to the latest
-    end_frame across all rows, overlaying every prompt's mask simultaneously
-    on each frame.  Use this instead of render_annotated_video when prompts
-    have overlapping time windows (e.g. datavyu CSV mode).
+    Render one continuous pass over the full source video (frame 0 through the
+    last frame), overlaying every prompt's mask simultaneously on each frame.
+    Frames outside any annotated row are still written, just without an
+    overlay.
     """
     if not rows_data or not masks_dict:
         log.warning("  No rows/masks — skipping unified render.")
         return
 
-    min_frame = min(r["start_frame"] for r in rows_data)
-    max_frame = max(r["end_frame"]   for r in rows_data)
-    log.info(f"    Unified render: frames {min_frame}–{max_frame - 1} → {output_path}")
+    probe = cv2.VideoCapture(video_path)
+    total_frames = int(probe.get(cv2.CAP_PROP_FRAME_COUNT))
+    probe.release()
+
+    min_frame = 0
+    max_frame = total_frames
+    log.info(f"    Unified render: full video, frames {min_frame}–{max_frame - 1} → {output_path}")
 
     # Build prefix → (colour, label) from rows_data so we can look up by mask key
     # Mask key format: "r{row_idx}_{prompt_slug}|{global_fi}"
@@ -521,17 +479,13 @@ def process_one_video(
     skip_existing: bool = False,
     render_only: bool = False,
     debug_points: bool = False,
-    unified_render: bool = False,
 ) -> None:
     """
     Annotate all temporal chunks (rows) for one video, writing a single set:
       frames.csv     — bounding boxes for all rows × prompts
       masks.npz      — boolean masks keyed "r{row_idx}_{prompt_slug}|{global_fi}"
-      annotated.mp4  — optional render
-
-    unified_render=True: render one continuous pass from min→max frame with all
-      masks overlaid simultaneously (correct for datavyu mode where prompts overlap).
-    unified_render=False: concatenate one clip per row (legacy behavior).
+      annotated.mp4  — optional render: one continuous pass over the full video
+        with all masks overlaid simultaneously.
     """
     print(f"Video path: {video_path}; Video W: {video_W}; Video H: {video_H}")
     video_stem = Path(video_path).stem.removesuffix("_stripped")
@@ -650,6 +604,7 @@ def process_one_video(
                             video_W=video_W,
                             video_H=video_H,
                             debug_vis_path=vis_path,
+                            prompt_idx=prompt_idx,
                         )
                         log.info(f"    sc {sci + 1}/{len(subchunks)}: {len(sc_out)}/{se - ss} frames.")
                         for sc_fi, out in sc_out.items():
@@ -717,19 +672,8 @@ def process_one_video(
     if render_video:
         if not all_masks_dict:
             log.warning(f"  No masks available for {video_stem} — skipping render.")
-        elif unified_render:
-            render_unified_video(
-                video_path           = video_path,
-                rows_data            = rows_data,
-                masks_dict           = all_masks_dict,
-                prompt_label_colours = prompt_label_colours,
-                output_path          = ann_path,
-                fps                  = fps,
-                video_W              = video_W,
-                video_H              = video_H,
-            )
         else:
-            render_annotated_video(
+            render_unified_video(
                 video_path           = video_path,
                 rows_data            = rows_data,
                 masks_dict           = all_masks_dict,
@@ -965,7 +909,6 @@ def main():
                     skip_existing  = args.skip_existing,
                     render_only    = args.render_only,
                     debug_points   = args.debug_points,
-                    unified_render = is_datavyu,
                 )
                 n_done += 1
             except Exception as e:
