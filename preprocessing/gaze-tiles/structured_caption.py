@@ -5,7 +5,7 @@ from vllm.sampling_params import StructuredOutputsParams
 MODEL_NAME = "Qwen/Qwen3.5-4B"
 IMAGE_PLACEHOLDER = "<|vision_start|><|image_pad|><|vision_end|>"
 
-CAPTION_REGEX = r"This is [^.\n]+ that is [^.\n]+ and could be [^.\n]+\.\n"
+CAPTION_REGEX = r"This is [^.?!\n]{1,40} that is [^.?!\n]{1,40} and could be [^.?!\n]{1,60}\.\n"
 
 CAPTIONING_QUESTION = (
     'Complete this sentence about the image: "This is ___ that is ___ and '
