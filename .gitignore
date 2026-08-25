@@ -28,3 +28,7 @@ stimuli/**/*.wav
 
 scripts/preprocessing/segmentation/sam3
 scripts/preprocessing/segmentation/output*
+
+# Local-only working folders, not version-controlled
+paper/
+meeting-notes/
