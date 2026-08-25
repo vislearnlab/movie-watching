@@ -41,8 +41,8 @@ from pathlib import Path
 
 import pandas as pd
 
-# Project root is two levels above this script (preprocessing/viz/ → root)
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# Project root is three levels above this script (scripts/preprocessing/viz/ → root)
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def find_any_trial_order(raw_dir: Path) -> Path | None:

@@ -17,7 +17,7 @@ library(forcats)
 qc_filename <- "qc_report_20260511.csv"  # <-- CHANGE THIS TO YOUR FILE
 
 # Load the data
-qc_data <- read_csv(here("data/qc_checks/", qc_filename)) |> filter(participant_id != "MW000")
+qc_data <- read_csv(here("reports/", qc_filename)) |> filter(participant_id != "MW000")
 
 # Quick look at the data
 glimpse(qc_data)
@@ -234,5 +234,5 @@ summary_data <- qc_data %>%
 summary_data |>
   knitr::kable()
 
-write.csv(summary_data, here("data/qc_checks/summary.csv"))
+write.csv(summary_data, here("reports/summary.csv"))
 ```

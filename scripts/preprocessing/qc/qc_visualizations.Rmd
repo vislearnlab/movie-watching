@@ -15,7 +15,7 @@ library(here)
 qc_filename <- "qc_report_20260309.csv"  # <-- CHANGE THIS TO YOUR FILE
 
 # Load the data
-qc_data <- read_csv(here("data/qc_checks/", qc_filename))
+qc_data <- read_csv(here("reports/", qc_filename))
 
 # Quick look at the data
 glimpse(qc_data)

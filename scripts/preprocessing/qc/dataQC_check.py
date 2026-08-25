@@ -11,7 +11,7 @@ HOW TO USE:
 1. Open Terminal
 2. Navigate to the folder containing this script
 3. Run: python dataQC_check.py /path/to/data
-4. Find your output in data/qc_checks/qc_report_YYYYMMDD.csv
+4. Find your output in reports/qc_report_YYYYMMDD.csv
 
 You can also specify a custom output path:
     python dataQC_check.py /path/to/data /path/to/output.csv
@@ -40,8 +40,8 @@ import pandas as pd         # for working with tabular data (like Excel in Pytho
 import numpy as np          # for numerical operations
 from pathlib import Path    # another way to work with file paths
 
-# Project root: two levels up from this script (preprocessing/qc/ -> project root)
-MAIN_DIR = Path(__file__).resolve().parents[2]
+# Project root: three levels up from this script (scripts/preprocessing/qc/ -> project root)
+MAIN_DIR = Path(__file__).resolve().parents[3]
 
 
 def resolve_path(p):
@@ -531,7 +531,7 @@ if __name__ == '__main__':
         "output_path",
         nargs="?",
         default=None,
-        help="Output CSV path. Defaults to data/qc_checks/qc_report_YYYYMMDD.csv.",
+        help="Output CSV path. Defaults to reports/qc_report_YYYYMMDD.csv.",
     )
     parser.add_argument(
         "--overwrite",
@@ -546,8 +546,8 @@ if __name__ == '__main__':
         print(f"Error: Data directory not found: {data_dir}")
         sys.exit(1)
 
-    # Default output goes to data/qc_checks/ relative to project root
-    qc_dir = str(MAIN_DIR / "data" / "qc_checks")
+    # Default output goes to reports/ relative to project root
+    qc_dir = str(MAIN_DIR / "reports")
     os.makedirs(qc_dir, exist_ok=True)
 
     if args.output_path:

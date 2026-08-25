@@ -122,7 +122,7 @@ from tqdm import tqdm
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 # ── defaults ───────────────────────────────────────────────────────────────────
 

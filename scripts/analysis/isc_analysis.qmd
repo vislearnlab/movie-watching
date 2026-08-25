@@ -23,7 +23,7 @@ library(here)
 SERVER_PATH <- "/Volumes/vislearnlab/experiments/movie-watching"
 data_dir         <- file.path(SERVER_PATH, "data/raw/")
 isc_pairwise_csv <- file.path(SERVER_PATH, "data/data_to_be_analyzed/isc_pairwise.csv")
-summary_csv      <- here("data/qc_checks/summary.csv")
+summary_csv      <- here("reports/summary.csv")
 
 # ── QC thresholds 
 min_valid_pct <- 50   # mean_validity % across trials

@@ -15,8 +15,10 @@
 # PARAMETERS — edit these before running
 # =============================================================================
 
-CSV_PATH    = "/Users/vislearnlab/Documents/movie-watching/data/segmentation/stimuli_prompts_round0.csv"   
-OUTPUT_DIR = "/Users/vislearnlab/Documents/movie-watching/preprocessing/segmentation/datavyu_segmentation"
+# Paths are relative to this script's location (scripts/preprocessing/segmentation/)
+REPO_ROOT   = File.expand_path("../../../..", __FILE__)
+CSV_PATH    = File.join(REPO_ROOT, "annotations", "stimuli_prompts_round0csv")
+OUTPUT_DIR  = File.join(REPO_ROOT, "scripts", "preprocessing", "segmentation", "datavyu_segmentation")
 
 require 'csv'
  

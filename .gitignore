@@ -15,12 +15,10 @@ __pycache__/
 # Raw per-participant data and computed results/outputs -- these stay on the
 # server, not in the repo (large, regenerable from data/raw, and some contain
 # participant-level info)
-data/raw
-data/results
-data/data_to_be_analyzed
-data/metadata
-analysis/results
-preprocessing/viz/heatmaps
+data/
+figures/
+scripts/analysis/results
+scripts/preprocessing/viz/heatmaps
 
 # Large stim files
 stimuli/**/*.mp4
@@ -28,5 +26,5 @@ stimuli/**/*.mp3
 stimuli/**/*.wav
 .Rproj.user
 
-preprocessing/segmentation/sam3
-preprocessing/segmentation/output*
+scripts/preprocessing/segmentation/sam3
+scripts/preprocessing/segmentation/output*

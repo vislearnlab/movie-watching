@@ -35,8 +35,8 @@ from scipy import stats
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-RAW_DIR    = os.path.join(os.path.dirname(__file__), "..", "data", "raw")
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "data_to_be_analyzed")
+RAW_DIR    = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "data_to_be_analyzed")
 BIN_MS     = 20 # we are using 250hz so this gives up 5 samples averaged per bin ?
 MIN_BINS   = 50 # minimum overlapping bins to compute ISC
 
