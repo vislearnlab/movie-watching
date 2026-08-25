@@ -1,6 +1,17 @@
 # Movie watching
 Stimuli, data, and analysis for a study measuring the kinds of information that children and adults look at while watching movies.
 
+## Repository structure
+
+- `experiment/` — the PsychoPy/Tobii experiment that collects raw gaze data
+- `scripts/analysis/` — ISC and gaze/face analysis code
+- `scripts/preprocessing/` — QC checks, segmentation/annotation pipeline, gaze/heatmap visualization, fixation detection
+- `annotations/` — Datavyu annotation CSVs and the stimulus-prompt files derived from them (output of `scripts/preprocessing/segmentation/`)
+- `reports/` — QC reports (output of `scripts/preprocessing/qc/`)
+- `documentation/` — data/event/experiment key dictionaries
+- `stimuli/` — experiment stimuli and calibration assets
+- `data/` and `figures/` are gitignored — raw per-participant data and generated results/figures stay on the lab server rather than in git, since they're large and some contain participant-level information
+
 ## Experiment
 The experiment folder contains the PsychoPy experiment, integrated with a Tobii eye tracker, to run the movie watching experiment. This code been tested with Python=3.10 and with a Tobii Fusion. Run the code below to test. Before running this code, replace the `stimuli` folder with the files within [this Google Drive folder](https://drive.google.com/drive/folders/1R2pX_tSUkch8JeJ90WEl-de1RUH0tiMu?usp=drive_link). More information about the key bindings you can use during the experiment is in `documentation/exp_dictionary.csv`
 
