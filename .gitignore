@@ -1,17 +1,26 @@
 # macOS
 **/*.DS_Store
+**/._*
 
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.venv/
 
 # Environment variables
 .env
 
-# Raw per-participant data
+# Raw per-participant data and computed results/outputs -- these stay on the
+# server, not in the repo (large, regenerable from data/raw, and some contain
+# participant-level info)
 data/raw
+data/results
+data/data_to_be_analyzed
+data/metadata
+analysis/results
+preprocessing/viz/heatmaps
 
 # Large stim files
 stimuli/**/*.mp4
