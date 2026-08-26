@@ -97,11 +97,29 @@ MAX_FRACINTERPED = 0.5
 # what I2MC ships as its own defaults -- there is no separate "infant-tuned"
 # preset in the tutorial. downsampFilter is turned off per the tutorial's
 # explicit note that the Chebyshev filter can ring on the hard edges typical
-# of eye-movement data. Revisit minFixDur/cutoffstd against real data once
-# fixations.csv exists -- these are a documented starting point, not final.
+# of eye-movement data. maxMergeDist/maxMergeTime kept at tutorial defaults --
+# 30px is ~0.7-1.2 degrees visual angle across plausible viewing distances for
+# this study's adult/kid/infant setups (no per-session screen geometry is
+# logged yet to compute this exactly), comfortably tighter than the 6-degree
+# calibration accuracy this pipeline already tolerates (MAX_CALIBRATION_DEG).
+# minFixDur raised from the tutorial default (40ms) to 80ms -- 40ms is too
+# permissive for this study (would keep noise-driven micro-fixations), but
+# full adult literature convention (100ms) risks discarding genuine short
+# fixations typical of dynamic movie-watching. windowtimeInterp lowered from
+# the tutorial default (100ms) to 60ms specifically to stay below minFixDur:
+# dur counts wall-clock time regardless of real vs. interpolated content, so
+# a gap allowed to interpolate up to (or past) minFixDur could single-
+# handedly manufacture a "fixation" out of a too-short real one sitting next
+# to it, while still passing max_fracinterped (e.g. 50ms real + 40ms
+# interpolated = 90ms dur, clears minFixDur; fracinterped=0.44, clears
+# max_fracinterped too). At 60ms, no single gap can supply enough duration
+# alone to rescue a sub-threshold real fixation. edgeSampInterp raised from
+# 2 to 3 samples so interpolation anchors on a slightly more stable local
+# average rather than single noisy edge samples. Still revisit cutoffstd
+# against real data.
 I2MC_OPTIONS = dict(
-    windowtimeInterp = 0.1,
-    edgeSampInterp   = 2,
+    windowtimeInterp = 0.06,   # AJ's recommended default: 60ms (I2MC/tutorial default: 100ms)
+    edgeSampInterp   = 3,      # AJ's recommended default: 3 samples (I2MC/tutorial default: 2)
     windowtime       = 0.2,
     steptime         = 0.02,
     downsamples      = [2, 5, 10],
@@ -109,9 +127,9 @@ I2MC_OPTIONS = dict(
     maxerrors        = 100,
     cutoffstd        = 2.0,
     onoffsetThresh   = 3.0,
-    maxMergeDist     = 30.0,
-    maxMergeTime     = 30.0,
-    minFixDur        = 40.0,
+    maxMergeDist     = 30.0,   # AJ's recommended default: 30px (kept at I2MC/tutorial default)
+    maxMergeTime     = 30.0,   # AJ's recommended default: 30ms (kept at I2MC/tutorial default)
+    minFixDur        = 80.0,   # AJ's recommended default: 80ms (I2MC/tutorial default: 40ms)
 )
 
 FIX_KEYS = [
