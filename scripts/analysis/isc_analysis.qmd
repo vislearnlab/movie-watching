@@ -18,11 +18,28 @@ library(glue)
 library(patchwork)
 library(zoo)
 library(here)
+library(ggthemes)
+
+# ── ISC source ────────────────────────────────────────────────────────────────
+# "gaze": isc_gaze.py output (raw continuous gaze) -- needs the QC filter in
+#         Part 1 below, since validity/trial-count screening hasn't happened
+#         upstream of that script.
+# "fixations": isc_fixations.py output (I2MC fixation-position ISC) -- Part 1
+#         is skipped, since trial-level exclusion (calibration accuracy,
+#         fraction of invalid samples) already happened during fixation
+#         detection itself (i2mc_fixations.py's max_calibration_deg /
+#         max_invalid_frac), before a pid/video pair could ever reach
+#         isc_fixation_pairwise.csv.
+isc_source <- "gaze"   # "gaze" or "fixations"
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 SERVER_PATH <- "/Volumes/vislearnlab/experiments/movie-watching"
 data_dir         <- file.path(SERVER_PATH, "data/raw/")
-isc_pairwise_csv <- file.path(SERVER_PATH, "data/results/isc/isc_pairwise.csv")
+isc_pairwise_csv <- file.path(
+  SERVER_PATH,
+  if (isc_source == "fixations") "data/results/isc/isc_fixation_pairwise.csv"
+  else                           "data/results/isc/isc_pairwise.csv"
+)
 summary_csv      <- here("reports/summary.csv")
 
 # ── QC thresholds 
@@ -32,36 +49,46 @@ min_trials    <- 6    # minimum usable trials (half of total trials)
 # ── Example time-series participants 
 # Two adults and one child used for the 10-second gaze trace plot.
 # Change these to any valid participant IDs in your dataset.
-ex_adult_1 <- "MW047"
-ex_adult_2 <- "MW048"
-ex_child   <- "MWK006"
+ex_adult_1 <- "MW046"
+ex_adult_2 <- "MW028"
+ex_child   <- "MWK012"
 
-example_video <- "sesameus_2"   # video shown in the time-series panel
+example_video <- "pixar_birds"   # video shown in the time-series panel
 ```
 
 ---
 
 # Part 1: QC Filtering
 
-We use the pre-computed `summary.csv` to identify which participants have
-sufficient data quality, then filter `isc_pairwise.csv` to only those pairs
-where **both** participants pass QC.
+`isc_source == "gaze"`: we use the pre-computed `summary.csv` to identify
+which participants have sufficient data quality, then filter
+`isc_pairwise.csv` to only those pairs where **both** participants pass QC.
+
+`isc_source == "fixations"`: skipped -- `isc_fixation_pairwise.csv` only
+ever contains pid/video pairs that already survived per-trial exclusion
+(calibration accuracy, fraction of invalid samples) during fixation
+detection, so there's nothing left to filter here.
 
 ```{r qc}
-summ <- read_csv(summary_csv, show_col_types = FALSE) |>
-  select(participant_id, n_trials, mean_validity)
+if (isc_source == "gaze") {
+  summ <- read_csv(summary_csv, show_col_types = FALSE) |>
+    select(participant_id, n_trials, mean_validity)
 
-passed_qc <- summ |>
-  filter(mean_validity >= min_valid_pct, n_trials >= min_trials) |>
-  filter(!startsWith(participant_id, "HMET")) |> #excluding infant participants for now
-  pull(participant_id)
+  passed_qc <- summ |>
+    filter(mean_validity >= min_valid_pct, n_trials >= min_trials) |>
+    filter(!startsWith(participant_id, "HMET")) |> #excluding infant participants for now
+    pull(participant_id)
 
-cat(glue("{length(passed_qc)} / {nrow(summ)} participants pass QC ",
-         "(≥{min_valid_pct}% valid, ≥{min_trials} trials)\n\n"))
+  cat(glue("{length(passed_qc)} / {nrow(summ)} participants pass QC ",
+           "(≥{min_valid_pct}% valid, ≥{min_trials} trials)\n\n"))
 
-summ |>
-  mutate(included = participant_id %in% passed_qc) |>
-  arrange(desc(included), desc(mean_validity))
+  summ |>
+    mutate(included = participant_id %in% passed_qc) |>
+    arrange(desc(included), desc(mean_validity))
+} else {
+  cat(glue("Skipping QC filtering -- isc_source = \"fixations\": trial-level ",
+           "exclusion already happened upstream during fixation detection.\n"))
+}
 ```
 
 ---
@@ -71,9 +98,15 @@ summ |>
 ```{r load-isc}
 isc_raw <- read_csv(isc_pairwise_csv, show_col_types = FALSE)
 
-# Keep only pairs where both participants passed QC
-isc <- isc_raw |>
-  filter(pid_a %in% passed_qc, pid_b %in% passed_qc) |>
+# Keep only pairs where both participants passed QC (isc_source == "gaze"
+# only -- for "fixations" every row already qualifies, see Part 1)
+isc_qc <- if (isc_source == "gaze") {
+  isc_raw |> filter(pid_a %in% passed_qc, pid_b %in% passed_qc)
+} else {
+  isc_raw
+}
+
+isc <- isc_qc |>
   # Use isc_xy (average of horizontal + vertical) as the primary ISC measure
   rename(isc = isc_xy) |>
   # Simplify comparison labels for plotting
@@ -341,7 +374,11 @@ subj_avg <- bind_rows(
 video_avg <- isc |>
   filter(pair_type %in% plot_comparisons) |>
   group_by(pair_type, video_name) |>
-  summarise(isc_mean = mean(isc, na.rm = TRUE), .groups = "drop") |>
+  summarise(
+    isc_mean = mean(isc, na.rm = TRUE),
+    se_isc   = sd(isc, na.rm = TRUE) / sqrt(sum(!is.na(isc))),
+    .groups  = "drop"
+  ) |>
   mutate(pair_type = factor(pair_type, levels = plot_comparisons))
 
 # ── Summary stats ─────────────────────────────────────────────────────────────
@@ -360,7 +397,7 @@ video_stats <- se_stats(video_avg)
 ```
 
 ```{r plot-theme}
-isc_theme <- theme_classic(base_size = 13) +
+isc_theme <- theme_few(base_size = 13) +
   theme(
     axis.text.x        = element_text(size = 11),
     legend.position    = "none",
@@ -370,7 +407,7 @@ isc_theme <- theme_classic(base_size = 13) +
 dot_plot <- function(stats_df, jitter_df, plot_title) {
   ggplot(stats_df, aes(x = pair_type, y = mean_isc)) +
     geom_jitter(data  = jitter_df, aes(y = isc_mean),
-                width = 0.12, size = 1.8, alpha = 0.5, colour = "grey55") +
+                width = 0.12, height = 0, size = 1.8, alpha = 0.5, colour = "grey55") +
     geom_errorbar(aes(ymin = mean_isc - se_isc, ymax = mean_isc + se_isc),
                   width = 0.12, linewidth = 0.8) +
     geom_point(size = 4) +
@@ -390,16 +427,100 @@ ggsave(here("figures/isc_subjects.png"))
 ## 5.2 Version B — jitter by video
 
 ```{r plot-video, fig.width=10, fig.height=10, dpi=300}
+  # Shared jitter position so each video's error line lines up with its dot
+  video_jit <- position_jitter(width = 0.12, height = 0, seed = 42)
+
   ggplot(video_stats, aes(x = pair_type, y = mean_isc)) +
+    geom_linerange(data = video_avg,
+                    aes(x = pair_type, y = isc_mean,
+                        ymin = isc_mean - se_isc, ymax = isc_mean + se_isc,
+                        color = video_name),
+                    position = video_jit, alpha = 0.5, inherit.aes = FALSE) +
     geom_jitter(data  = video_avg, aes(y = isc_mean, color=video_name),
-                width = 0.12, size = 4, alpha = 0.5) +
+                position = video_jit, size = 4, alpha = 0.5) +
     geom_errorbar(aes(ymin = mean_isc - se_isc, ymax = mean_isc + se_isc),
                   width = 0.12, linewidth = 0.8) +
     geom_point(size = 4) +
     #scale_color_viridis_d() +
     scale_y_continuous(breaks = seq(0, 1, 0.1)) +
-    labs(title = "ISC by pair type\n(dots = videos)", x = NULL, y = "ISC (Pearson r)")
+    labs(title = "ISC by pair type\n(dots = videos)", x = NULL, y = "ISC (Pearson r)") +
+    theme_few(base_size = 13) +
+    theme(axis.text.x = element_text(size = 11),
+          panel.grid.major.y = element_line(colour = "grey92"))
 ggsave(here("figures/isc_videos.png"))
+```
+
+## 5.3 Version C — bar plot by video category (Pixar vs. Slow)
+
+Same three pairings as above, but split by video category instead of
+averaged over all clips: **Pixar** (`pixar_birds`) vs. **Slow** (the four
+`slow_*` clips, averaged together). Bars show the mean across subjects;
+dots are individual participants' subject-level mean ISC for that category.
+
+```{r build-plot-data-cat}
+# ── Video → category lookup ────────────────────────────────────────────────
+video_category <- function(v) {
+  case_when(
+    v == "pixar_birds"       ~ "Pixar",
+    str_starts(v, "slow_")   ~ "Slow",
+    TRUE                     ~ NA_character_
+  )
+}
+
+isc_long_cat <- isc_long |>
+  mutate(video_category = video_category(video_name)) |>
+  filter(!is.na(video_category))
+
+# ── Per-subject mean ISC, by pair type × video category ───────────────────
+subj_avg_cat <- bind_rows(
+  isc_long_cat |>
+    filter(focal_group == "adults", partner_group == "adults") |>
+    group_by(focal, video_category) |>
+    summarise(isc_mean = mean(isc, na.rm = TRUE), .groups = "drop") |>
+    mutate(pair_type = "Adult–Adult"),
+
+  isc_long_cat |>
+    filter(focal_group == "kids", partner_group == "kids") |>
+    group_by(focal, video_category) |>
+    summarise(isc_mean = mean(isc, na.rm = TRUE), .groups = "drop") |>
+    mutate(pair_type = "Child–Child"),
+
+  isc_long_cat |>
+    filter(focal_group == "kids", partner_group == "adults") |>
+    group_by(focal, video_category) |>
+    summarise(isc_mean = mean(isc, na.rm = TRUE), .groups = "drop") |>
+    mutate(pair_type = "Child–Adult")
+) |>
+  mutate(pair_type = factor(pair_type, levels = plot_comparisons))
+
+# ── Bar heights: mean ± SE across subjects ─────────────────────────────────
+cat_stats <- subj_avg_cat |>
+  group_by(pair_type, video_category) |>
+  summarise(
+    mean_isc = mean(isc_mean, na.rm = TRUE),
+    se_isc   = sd(isc_mean, na.rm = TRUE) / sqrt(sum(!is.na(isc_mean))),
+    .groups  = "drop"
+  )
+```
+
+```{r plot-cat, fig.width=8, fig.height=6}
+dodge_w <- 0.8
+cat_jit <- position_jitterdodge(jitter.width = 0.15, dodge.width = dodge_w, seed = 42)
+
+ggplot(cat_stats, aes(x = pair_type, y = mean_isc, fill = video_category)) +
+  geom_col(position = position_dodge(width = dodge_w), width = 0.7, alpha = 0.8) +
+  geom_jitter(data = subj_avg_cat, aes(y = isc_mean, group = video_category),
+              position = cat_jit, size = 1.6, alpha = 0.5, colour = "grey25") +
+  geom_errorbar(aes(ymin = mean_isc - se_isc, ymax = mean_isc + se_isc),
+                position = position_dodge(width = dodge_w), width = 0.15, linewidth = 0.8) +
+  scale_fill_few() +
+  scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+  labs(title = "ISC by pair type and video category\n(dots = subjects)",
+       x = NULL, y = "ISC (Pearson r)", fill = "Video type") +
+  theme_few(base_size = 13) +
+  theme(axis.text.x = element_text(size = 11),
+        panel.grid.major.y = element_line(colour = "grey92"))
+ggsave(here("figures/isc_category.png"))
 ```
 
 ---
@@ -413,4 +534,4 @@ ggsave(here("figures/isc_videos.png"))
 | **Time-series** | Loaded raw gaze for `r paste(example_pids, collapse=", ")`; 10 s of `r example_video` |
 | **ISCw** | Each observer averaged with all same-age partners per video, then across videos |
 | **ISCa** | Each non-adult observer averaged with all adults per video, then across videos |
-| **Plots** | Two dot-plot versions: jitter by subject (Version A) and by video (Version B) |
+| **Plots** | Dot plots jittered by subject (Version A) and by video (Version B); bar plot by pair type × video category, Pixar vs. Slow (Version C) |
