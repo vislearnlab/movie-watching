@@ -37,6 +37,7 @@ Usage
     python preprocessing/fixations/i2mc_fixations.py --raw_dir data/raw --output_dir data/preprocessed/fixations
     python preprocessing/fixations/i2mc_fixations.py --overwrite   # recompute even if a pid/code file already exists
     python preprocessing/fixations/i2mc_fixations.py --seed 12345  # reproducibility check against a logged seed
+    python preprocessing/fixations/i2mc_fixations.py --groups adults --video pixar_birds
 """
 
 import argparse
@@ -352,16 +353,25 @@ def run_i2mc_on_trial(i2mc_df: pd.DataFrame, max_fracinterped: float, seed: int)
 
 def process_group(group_dir: str, group_label: str, group_output_dir: str, code: str,
                    overwrite: bool, max_invalid_frac: float, max_calibration_deg: float,
-                   max_fracinterped: float, base_seed: int) -> tuple[list[str], list[tuple[str, str, str, float]]]:
+                   max_fracinterped: float, base_seed: int,
+                   video_filter: str | None) -> tuple[list[str], list[tuple[str, str, str, float]], int]:
     """Write one {pid}_{video_name}_{code}.csv per participant per video.
     `code` here is whatever main() decided should appear in filenames (the
     plain param-hash, or that hash + "_REP" for a reproducibility run).
     Returns (pids that got at least one new file this run, [(pid, video_name,
     reason, value), ...] for trials excluded this run -- reason is
-    "invalid_frac" or "calibration_deg") -- both for the run log."""
+    "invalid_frac" or "calibration_deg", how many trial_order rows matched
+    video_filter across all participants -- lets main() warn if a --video
+    value never matched anything, e.g. a typo) -- all three for the run log
+    / CLI feedback."""
+    if not os.path.isdir(group_dir):
+        print(f"  [{group_label}] group directory not found: {group_dir} — skipping")
+        return [], [], 0
+
     os.makedirs(group_output_dir, exist_ok=True)
     processed_pids = set()
     exclusions = []
+    video_matches = 0
     pdirs = sorted(d for d in glob.glob(os.path.join(group_dir, "*")) if os.path.isdir(d))
 
     for pdir in pdirs:
@@ -386,6 +396,11 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
         pending = []
         for _, row in trial_order.iterrows():
             vname = row["video_name"]
+            if video_filter is not None and vname != video_filter:
+                continue
+            if video_filter is not None:
+                video_matches += 1
+
             cal_deg = block_calibration.get(row["block_index"])
             if cal_deg is not None and cal_deg > max_calibration_deg:
                 print(f"  [{group_label}] {pid}/{vname}: block {row['block_index']} calibration "
@@ -399,7 +414,8 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
             pending.append((row, out_path))
 
         if not pending:
-            print(f"  [{group_label}] {pid}: all {len(trial_order)} videos already processed or excluded — skipping")
+            n_considered = len(trial_order) if video_filter is None else (trial_order["video_name"] == video_filter).sum()
+            print(f"  [{group_label}] {pid}: all {n_considered} considered video(s) already processed, excluded, or not present — skipping")
             continue
 
         gaze_df = read_csv_multi_encoding(files["gaze"])
@@ -438,7 +454,7 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
             processed_pids.add(pid)
             print(f"  [{group_label}] {pid}/{vname}: {len(fix_df)} fixations → {os.path.basename(out_path)}")
 
-    return sorted(processed_pids), exclusions
+    return sorted(processed_pids), exclusions, video_matches
 
 
 # ── run log ─────────────────────────────────────────────────────────────────
@@ -498,6 +514,11 @@ def main():
                              "isn't a parameter of fixation identity) -- instead the filename/log code gets "
                              "a _REP suffix. Default: a fresh random seed each run, always logged so it can "
                              "be replayed later via --seed if needed.")
+    parser.add_argument("--groups", default="adults,infants,kids",
+                        help="Comma-separated list of groups to process")
+    parser.add_argument("--video", default=None,
+                        help="Only process this video_name (e.g. pixar_birds) for each participant, "
+                             "instead of every video in their trial order")
     args = parser.parse_args()
 
     params = full_param_set(args.max_invalid_frac, args.max_calibration_deg, args.max_fracinterped)
@@ -509,9 +530,10 @@ def main():
           + (f" (reproducibility run: files use {run_code}, seed={base_seed})" if is_repro
              else f" (seed={base_seed})"))
 
-    for group_label in ("adults", "infants", "kids"):
+    total_video_matches = 0
+    for group_label in (g.strip() for g in args.groups.split(",")):
         print(f"\nProcessing {group_label}...")
-        processed_pids, exclusions = process_group(
+        processed_pids, exclusions, video_matches = process_group(
             os.path.join(args.raw_dir, group_label),
             group_label,
             os.path.join(args.output_dir, group_label),
@@ -521,11 +543,17 @@ def main():
             args.max_calibration_deg,
             args.max_fracinterped,
             base_seed,
+            args.video,
         )
+        total_video_matches += video_matches
         if processed_pids or exclusions:
             write_run_log(args.log_dir, group_label, run_code, base_seed, params, processed_pids, exclusions)
         else:
             print(f"  [{group_label}] nothing new processed — no log row written")
+
+    if args.video is not None and total_video_matches == 0:
+        print(f"\nWarning: --video {args.video!r} matched 0 trials across all processed groups "
+              f"— check for a typo against the video_name values in trial_order.csv")
 
 
 if __name__ == "__main__":

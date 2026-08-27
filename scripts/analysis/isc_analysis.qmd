@@ -22,7 +22,7 @@ library(here)
 # ── Paths ─────────────────────────────────────────────────────────────────────
 SERVER_PATH <- "/Volumes/vislearnlab/experiments/movie-watching"
 data_dir         <- file.path(SERVER_PATH, "data/raw/")
-isc_pairwise_csv <- file.path(SERVER_PATH, "data/data_to_be_analyzed/isc_pairwise.csv")
+isc_pairwise_csv <- file.path(SERVER_PATH, "data/results/isc/isc_pairwise.csv")
 summary_csv      <- here("reports/summary.csv")
 
 # ── QC thresholds 

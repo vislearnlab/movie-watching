@@ -19,7 +19,7 @@ Outputs (written to --output_dir)
 Usage
 -----
     python analysis/isc_gaze.py
-    python analysis/isc_gaze.py --raw_dir data/raw --output_dir data/data_to_be_analyzed --bin_ms 20
+    python analysis/isc_gaze.py --raw_dir data/raw --output_dir data/results/isc --bin_ms 20
     python analysis/isc_gaze.py --overwrite   # recompute everything from scratch
 """
 
@@ -36,7 +36,7 @@ from scipy import stats
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 RAW_DIR    = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "data_to_be_analyzed")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "results", "isc")
 BIN_MS     = 20 # we are using 250hz so this gives up 5 samples averaged per bin ?
 MIN_BINS   = 50 # minimum overlapping bins to compute ISC
 
