@@ -46,9 +46,13 @@ import hashlib
 import os
 import re
 import secrets
+import sys
 import warnings
 from datetime import datetime
 
+# I2MC is vendored in scripts/I2MC (see that directory's README) rather than
+# pip-installed, so this needs scripts/ on sys.path before it can be imported.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import I2MC
 import numpy as np
 import pandas as pd
@@ -80,10 +84,11 @@ MAX_INVALID_FRAC = 0.8
 # averaged over left/right eye and the 5 validation points, from the last
 # validation attempt before that block started -- see compute_block_calibration)
 # exceeds this are excluded before I2MC runs, regardless of how good the gaze
-# data itself looks. Default matches later_validation.bad_threshold in
-# experiment/config.yaml, i.e. the same accuracy the live experiment already
-# treats as a failed calibration.
-MAX_CALIBRATION_DEG = 6.0
+# data itself looks. Tightened from 6.0 (later_validation.bad_threshold in
+# experiment/config.yaml, i.e. the accuracy the live experiment treats as a
+# failed calibration) to 2.0 for stricter fixation-quality screening -- no
+# longer matches the live experiment's own threshold.
+MAX_CALIBRATION_DEG = 2.0
 
 # Individual fixations more than this fraction interpolated (I2MC's
 # fracinterped -- see run_i2mc_on_trial) are dropped from the output CSV,
@@ -101,7 +106,7 @@ MAX_FRACINTERPED = 0.5
 # of eye-movement data. maxMergeDist/maxMergeTime kept at tutorial defaults --
 # 30px is ~0.7-1.2 degrees visual angle across plausible viewing distances for
 # this study's adult/kid/infant setups (no per-session screen geometry is
-# logged yet to compute this exactly), comfortably tighter than the 6-degree
+# logged yet to compute this exactly), comfortably tighter than the
 # calibration accuracy this pipeline already tolerates (MAX_CALIBRATION_DEG).
 # minFixDur raised from the tutorial default (40ms) to 80ms -- 40ms is too
 # permissive for this study (would keep noise-driven micro-fixations), but
@@ -383,11 +388,19 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
 
         trial_order = pd.read_csv(files["trial_order"])
 
+        # calibration_unknown covers the participant-level case: no
+        # validation_summary file at all, or it couldn't be read/parsed --
+        # every trial's calibration is unknown, not just a specific block's
+        # (see the per-block NaN case below for that). Both mean "we can't
+        # verify this participant meets max_calibration_deg" and are treated
+        # the same way: excluded, not silently let through.
         block_calibration = {}
+        calibration_unknown = True
         if files["validation_summary"] is not None:
             val_summary_df = read_csv_multi_encoding(files["validation_summary"])
             if val_summary_df is not None and "point" in val_summary_df.columns:
                 block_calibration = compute_block_calibration(trial_order, val_summary_df)
+                calibration_unknown = False
 
         # Skip trials whose output file already exists, without paying to
         # load this participant's (potentially large) gaze CSV at all. Also
@@ -402,10 +415,27 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
                 video_matches += 1
 
             cal_deg = block_calibration.get(row["block_index"])
-            if cal_deg is not None and cal_deg > max_calibration_deg:
-                print(f"  [{group_label}] {pid}/{vname}: block {row['block_index']} calibration "
-                      f"{cal_deg:.2f}° (> {max_calibration_deg:.2f}° threshold) — excluded, no file written")
-                exclusions.append((pid, vname, "calibration_deg", cal_deg))
+            # A NaN reading (a validation attempt exists for this block but its
+            # accuracy failed to compute -- e.g. an aborted/failed validation)
+            # is a genuine unknown, not a known-good calibration: `cal_deg >
+            # max_calibration_deg` alone would silently pass it through, since
+            # NaN comparisons are always False in Python. Treat NaN -- and
+            # calibration_unknown (no validation_summary at all for this
+            # participant, see above) -- the same as exceeding the threshold.
+            # A block with no matching validation within an otherwise-usable
+            # validation_summary (cal_deg is None) is unaffected -- still not
+            # excluded here.
+            if calibration_unknown or (cal_deg is not None and (pd.isna(cal_deg) or cal_deg > max_calibration_deg)):
+                if calibration_unknown:
+                    print(f"  [{group_label}] {pid}/{vname}: no validation_summary available — "
+                          f"calibration unknown, excluded, no file written")
+                elif pd.isna(cal_deg):
+                    print(f"  [{group_label}] {pid}/{vname}: block {row['block_index']} calibration "
+                          f"unknown (validation reading missing/NaN) — excluded, no file written")
+                else:
+                    print(f"  [{group_label}] {pid}/{vname}: block {row['block_index']} calibration "
+                          f"{cal_deg:.2f}° (> {max_calibration_deg:.2f}° threshold) — excluded, no file written")
+                exclusions.append((pid, vname, "calibration_deg", cal_deg if cal_deg is not None else float("nan")))
                 continue
 
             out_path = os.path.join(group_output_dir, f"{pid}_{vname}_{code}.csv")

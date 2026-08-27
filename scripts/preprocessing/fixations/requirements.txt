@@ -1,3 +1,4 @@
-I2MC==2.2.8
 numpy>=2.2.6
 pandas>=2.3.3
+scipy>=1.14.1
+matplotlib>=3.10.7
