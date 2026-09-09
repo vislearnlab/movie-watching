@@ -415,6 +415,13 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
                 video_matches += 1
 
             cal_deg = block_calibration.get(row["block_index"])
+            # Round to 2 decimal places before comparing against
+            # max_calibration_deg, so a value like 2.00135 (which prints/reads
+            # as "2.00°") is judged by what it displays as, not by
+            # sub-hundredth-of-a-degree noise past the precision anyone
+            # actually reads this at.
+            if cal_deg is not None and not pd.isna(cal_deg):
+                cal_deg = round(cal_deg, 2)
             # A NaN reading (a validation attempt exists for this block but its
             # accuracy failed to compute -- e.g. an aborted/failed validation)
             # is a genuine unknown, not a known-good calibration: `cal_deg >

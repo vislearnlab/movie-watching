@@ -30,7 +30,7 @@ library(ggthemes)
 #         detection itself (i2mc_fixations.py's max_calibration_deg /
 #         max_invalid_frac), before a pid/video pair could ever reach
 #         isc_fixation_pairwise.csv.
-isc_source <- "gaze"   # "gaze" or "fixations"
+isc_source <- "fixations"   # "gaze" or "fixations"
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 SERVER_PATH <- "/Volumes/vislearnlab/experiments/movie-watching"
@@ -430,6 +430,40 @@ ggsave(here("figures/isc_subjects.png"))
   # Shared jitter position so each video's error line lines up with its dot
   video_jit <- position_jitter(width = 0.12, height = 0, seed = 42)
 
+  # ── Category → color family, so clips from the same category (Pixar /
+  # Slow / Sesame) render as shades of the same hue instead of unrelated
+  # colors from the default discrete palette. Ramps run light -> dark
+  # within a category so individual clips stay distinguishable. ────────────
+  video_category_b <- function(v) {
+    case_when(
+      v == "pixar_birds"       ~ "Pixar",
+      str_starts(v, "slow_")   ~ "Slow",
+      str_starts(v, "sesame")  ~ "Sesame",
+      str_starts(v, "frank")   ~ "Frank",
+      TRUE                     ~ "Other"
+    )
+  }
+
+  family_ramp <- list(
+    Pixar  = colorRampPalette(c("#74c476", "#00441b")),  # greens
+    Slow   = colorRampPalette(c("#9ecae1", "#08306b")),  # blues
+    Sesame = colorRampPalette(c("#fa9fb5", "#7a0177")),  # pinks
+    Frank  = colorRampPalette(c("#fdae6b", "#8c2d04")),  # oranges
+    Other  = colorRampPalette(c("#cccccc", "#333333"))   # grey, fallback
+  )
+
+  video_color_df <- tibble(video_name = sort(unique(video_avg$video_name))) |>
+    mutate(category = video_category_b(video_name)) |>
+    arrange(category, video_name) |>
+    group_by(category) |>
+    mutate(shade_rank = row_number(), n_in_cat = n()) |>
+    ungroup() |>
+    rowwise() |>
+    mutate(color = family_ramp[[category]](n_in_cat)[shade_rank]) |>
+    ungroup()
+
+  video_color_pal <- setNames(video_color_df$color, video_color_df$video_name)
+
   ggplot(video_stats, aes(x = pair_type, y = mean_isc)) +
     geom_linerange(data = video_avg,
                     aes(x = pair_type, y = isc_mean,
@@ -441,7 +475,7 @@ ggsave(here("figures/isc_subjects.png"))
     geom_errorbar(aes(ymin = mean_isc - se_isc, ymax = mean_isc + se_isc),
                   width = 0.12, linewidth = 0.8) +
     geom_point(size = 4) +
-    #scale_color_viridis_d() +
+    scale_color_manual(values = video_color_pal) +
     scale_y_continuous(breaks = seq(0, 1, 0.1)) +
     labs(title = "ISC by pair type\n(dots = videos)", x = NULL, y = "ISC (Pearson r)") +
     theme_few(base_size = 13) +
@@ -450,12 +484,95 @@ ggsave(here("figures/isc_subjects.png"))
 ggsave(here("figures/isc_videos.png"))
 ```
 
-## 5.3 Version C — bar plot by video category (Pixar vs. Slow)
+## 5.2b Child–Child vs. Adult–Adult, by video
+
+Three stacked panels, all sharing the same video order (grouped by video
+category — Slow, Sesame, Frank, Pixar in that order — sorted ascending by
+the Child–Child minus Adult–Adult difference within each group) and the
+same per-video colors as 5.2 above. **Top**: Child–Child mean ISC.
+**Middle**: Adult–Adult mean ISC (shares the top panel's y-axis range, for
+direct comparison). **Bottom**: the difference between them. Error bars
+are ± 1 SE (top/middle: `se_isc`; bottom: `sqrt(cc_se^2 + aa_se^2)`, valid
+since the two groups are independent samples).
+
+```{r plot-cc-aa-diff, fig.width=9, fig.height=12}
+cc <- video_avg |>
+  filter(pair_type == "Child–Child") |>
+  select(video_name, cc_mean = isc_mean, cc_se = se_isc)
+
+aa <- video_avg |>
+  filter(pair_type == "Adult–Adult") |>
+  select(video_name, aa_mean = isc_mean, aa_se = se_isc)
+
+cat_order <- c("Slow", "Sesame", "Frank", "Pixar")
+
+cc_aa_diff <- inner_join(cc, aa, by = "video_name") |>
+  mutate(
+    diff     = cc_mean - aa_mean,
+    diff_se  = sqrt(cc_se^2 + aa_se^2),
+    category = factor(video_category_b(video_name), levels = cat_order)
+  ) |>
+  arrange(category, diff) |>
+  mutate(video_name = factor(video_name, levels = video_name))
+
+# Shared y-axis range for the top (Child–Child) and middle (Adult–Adult)
+# panels, so bar heights are visually comparable across panels.
+isc_ylim <- range(
+  c(cc_aa_diff$cc_mean - cc_aa_diff$cc_se, cc_aa_diff$cc_mean + cc_aa_diff$cc_se,
+    cc_aa_diff$aa_mean - cc_aa_diff$aa_se, cc_aa_diff$aa_mean + cc_aa_diff$aa_se),
+  na.rm = TRUE
+)
+isc_ylim <- c(0, isc_ylim[2] * 1.05)
+
+no_x_axis <- theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+p_cc <- ggplot(cc_aa_diff, aes(x = video_name, y = cc_mean, fill = video_name)) +
+  geom_col(width = 0.7, alpha = 0.9) +
+  geom_errorbar(aes(ymin = cc_mean - cc_se, ymax = cc_mean + cc_se),
+                width = 0.15, linewidth = 0.8) +
+  scale_fill_manual(values = video_color_pal) +
+  coord_cartesian(ylim = isc_ylim) +
+  labs(title = "Child–Child ISC", x = NULL, y = "ISC (Pearson r)") +
+  theme_few(base_size = 13) +
+  theme(legend.position = "none", panel.grid.major.y = element_line(colour = "grey92")) +
+  no_x_axis
+
+p_aa <- ggplot(cc_aa_diff, aes(x = video_name, y = aa_mean, fill = video_name)) +
+  geom_col(width = 0.7, alpha = 0.9) +
+  geom_errorbar(aes(ymin = aa_mean - aa_se, ymax = aa_mean + aa_se),
+                width = 0.15, linewidth = 0.8) +
+  scale_fill_manual(values = video_color_pal) +
+  coord_cartesian(ylim = isc_ylim) +
+  labs(title = "Adult–Adult ISC", x = NULL, y = "ISC (Pearson r)") +
+  theme_few(base_size = 13) +
+  theme(legend.position = "none", panel.grid.major.y = element_line(colour = "grey92")) +
+  no_x_axis
+
+p_diff <- ggplot(cc_aa_diff, aes(x = video_name, y = diff, fill = video_name)) +
+  geom_col(width = 0.7, alpha = 0.9) +
+  geom_errorbar(aes(ymin = diff - diff_se, ymax = diff + diff_se),
+                width = 0.15, linewidth = 0.8) +
+  geom_hline(yintercept = 0, linewidth = 0.4, colour = "grey40") +
+  scale_fill_manual(values = video_color_pal) +
+  labs(title = "Child–Child minus Adult–Adult ISC",
+       x = NULL, y = "ISC difference (Child–Child − Adult–Adult)") +
+  theme_few(base_size = 13) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 11),
+        legend.position = "none",
+        panel.grid.major.y = element_line(colour = "grey92"))
+
+p_cc / p_aa / p_diff
+ggsave(here("figures/isc_cc_minus_aa.png"), width = 9, height = 12, dpi = 300)
+```
+
+## 5.3 Version C — bar plot by video category (Pixar vs. Slow vs. Sesame vs. Frank)
 
 Same three pairings as above, but split by video category instead of
 averaged over all clips: **Pixar** (`pixar_birds`) vs. **Slow** (the four
-`slow_*` clips, averaged together). Bars show the mean across subjects;
-dots are individual participants' subject-level mean ISC for that category.
+`slow_*` clips, averaged together) vs. **Sesame** (the four `sesame*`
+clips, averaged together) vs. **Frank** (the three 'frank*' clips, averaged
+together). Bars show the mean across subjects; dots are
+individual participants' subject-level mean ISC for that category.
 
 ```{r build-plot-data-cat}
 # ── Video → category lookup ────────────────────────────────────────────────
@@ -463,6 +580,8 @@ video_category <- function(v) {
   case_when(
     v == "pixar_birds"       ~ "Pixar",
     str_starts(v, "slow_")   ~ "Slow",
+    str_starts(v, "sesame")  ~ "Sesame",
+    str_starts(v, "frank")   ~ "Frank",
     TRUE                     ~ NA_character_
   )
 }
@@ -507,20 +626,1075 @@ cat_stats <- subj_avg_cat |>
 dodge_w <- 0.8
 cat_jit <- position_jitterdodge(jitter.width = 0.15, dodge.width = dodge_w, seed = 42)
 
-ggplot(cat_stats, aes(x = pair_type, y = mean_isc, fill = video_category)) +
+ggplot(cat_stats, aes(x = video_category, y = mean_isc, fill = pair_type)) +
   geom_col(position = position_dodge(width = dodge_w), width = 0.7, alpha = 0.8) +
-  geom_jitter(data = subj_avg_cat, aes(y = isc_mean, group = video_category),
+  geom_jitter(data = subj_avg_cat, aes(y = isc_mean, group = pair_type),
               position = cat_jit, size = 1.6, alpha = 0.5, colour = "grey25") +
   geom_errorbar(aes(ymin = mean_isc - se_isc, ymax = mean_isc + se_isc),
                 position = position_dodge(width = dodge_w), width = 0.15, linewidth = 0.8) +
   scale_fill_few() +
   scale_y_continuous(breaks = seq(0, 1, 0.1)) +
-  labs(title = "ISC by pair type and video category\n(dots = subjects)",
-       x = NULL, y = "ISC (Pearson r)", fill = "Video type") +
+  labs(title = "ISC by video category and pair type\n(dots = subjects)",
+       x = NULL, y = "ISC (Pearson r)", fill = "Pair type") +
   theme_few(base_size = 13) +
   theme(axis.text.x = element_text(size = 11),
         panel.grid.major.y = element_line(colour = "grey92"))
 ggsave(here("figures/isc_category.png"))
+```
+
+---
+
+# Part 6: Calibration Accuracy vs. ISC
+
+Sanity-check plot: does calibration accuracy going into a block predict how
+well a participant correlates with their same-age partners on that block's
+videos? Calibration accuracy isn't stored anywhere alongside the ISC output
+(fixation detection uses it once, to decide inclusion, then discards it), so
+this recomputes it directly from each participant's own `trial_order.csv` /
+`validation_summary.csv` -- same block-calibration logic as
+`i2mc_fixations.py`'s `compute_block_calibration`, ported to R, including its
+"an unknown calibration is not a known-good one" handling: a missing
+`validation_summary.csv`, or a validation attempt whose accuracy failed to
+compute (NaN), both come back `NA` here rather than silently joining as if
+they'd passed.
+
+```{r calibration-helpers}
+# ── Per-participant calibration lookup (mirrors i2mc_fixations.py) ─────────────
+find_cal_files <- function(pid, group) {
+  pdir <- file.path(SERVER_PATH, "data/raw", group, pid)
+  files <- list.files(pdir, full.names = TRUE)
+  to <- files[str_detect(basename(files), "_trial_order\\.csv$")]
+  vs <- files[str_detect(basename(files), "_validation_summary\\.csv$")]
+  list(
+    trial_order        = if (length(to) > 0) to[1] else NA_character_,
+    validation_summary  = if (length(vs) > 0) vs[1] else NA_character_
+  )
+}
+
+# Mean calibration accuracy (degrees) per block_index, from the last
+# validation attempt before that block started -- same "last attempt by
+# number, not last successfully-computed attempt" semantics as the Python
+# version (see i2mc_fixations.py for why: a later attempt superseding an
+# earlier one is intentional, even if that later attempt came back NaN).
+compute_block_calibration_r <- function(trial_order_df, validation_summary_df) {
+  mean_rows <- validation_summary_df |> filter(point == "mean")
+  val_mean_deg <- setNames(
+    (mean_rows$Mean_accuracy_degrees_left + mean_rows$Mean_accuracy_degrees_right) / 2,
+    mean_rows$validation_step
+  )
+
+  first_trial_of_block <- trial_order_df |>
+    group_by(block_index) |>
+    summarise(first_trial = min(total_trial_index), .groups = "drop")
+
+  block_cal <- setNames(
+    rep(NA_real_, nrow(first_trial_of_block)),
+    as.character(first_trial_of_block$block_index)
+  )
+
+  for (i in seq_len(nrow(first_trial_of_block))) {
+    block_idx   <- first_trial_of_block$block_index[i]
+    first_trial <- first_trial_of_block$first_trial[i]
+    key <- as.character(block_idx)
+
+    if (block_idx == 0) {
+      pre_names <- sort(names(val_mean_deg)[str_starts(names(val_mean_deg), "pre_validation")])
+      if (length(pre_names) > 0) block_cal[key] <- val_mean_deg[[tail(pre_names, 1)]]
+      next
+    }
+
+    pat <- glue("^block_validation_trial{first_trial}_(\\d+)$")
+    hits <- names(val_mean_deg)[str_detect(names(val_mean_deg), pat)]
+    if (length(hits) > 0) {
+      attempt_n <- as.integer(str_match(hits, pat)[, 2])
+      block_cal[key] <- val_mean_deg[[hits[which.max(attempt_n)]]]
+    }
+  }
+  block_cal
+}
+
+# calibration_unknown case: no validation_summary at all, or it's missing the
+# expected columns -- NA, not "assume it passed" (matches the
+# i2mc_fixations.py fix, not the pre-fix behavior).
+get_block_calibration_deg <- function(pid, group, video_name) {
+  cf <- find_cal_files(pid, group)
+  if (is.na(cf$trial_order) || is.na(cf$validation_summary)) return(NA_real_)
+
+  trial_order  <- suppressMessages(read_csv(cf$trial_order, show_col_types = FALSE))
+  val_summary  <- suppressMessages(read_csv(cf$validation_summary, show_col_types = FALSE))
+  if (!"point" %in% names(val_summary)) return(NA_real_)
+
+  row <- trial_order |> filter(video_name == !!video_name)
+  if (nrow(row) == 0) return(NA_real_)
+  block_idx <- row$block_index[1]
+
+  block_cal <- compute_block_calibration_r(trial_order, val_summary)
+  key <- as.character(block_idx)
+  if (!key %in% names(block_cal)) return(NA_real_)
+  block_cal[[key]]
+}
+```
+
+```{r calibration-compute}
+# One representative video per (participant, video_category) -- any video
+# within a category maps to the same block, so any of the participant's
+# actual videos in isc_long_cat works to look up the block index.
+cal_lookup <- isc_long_cat |>
+  distinct(focal, focal_group, video_category, video_name) |>
+  group_by(focal, focal_group, video_category) |>
+  slice(1) |>
+  ungroup() |>
+  rowwise() |>
+  mutate(calibration_deg = get_block_calibration_deg(focal, focal_group, video_name)) |>
+  ungroup()
+
+# Join against each participant's own within-group mean ISC for that
+# category (Adult–Adult for adults, Child–Child for kids) -- same quantity
+# as ISCw, just split by video_category instead of averaged across all clips.
+same_group_isc <- subj_avg_cat |>
+  filter(pair_type %in% c("Adult–Adult", "Child–Child")) |>
+  mutate(focal_group = if_else(pair_type == "Adult–Adult", "adults", "kids"))
+
+cal_isc <- cal_lookup |>
+  inner_join(same_group_isc, by = c("focal", "focal_group", "video_category")) |>
+  filter(!is.na(calibration_deg))
+
+cat(glue("{nrow(cal_isc)} participant x category rows with a verified calibration reading ",
+         "({n_distinct(cal_lookup$focal) - n_distinct(cal_isc$focal)} participants dropped for ",
+         "unknown/unverifiable calibration)\n\n"))
+
+cal_isc |>
+  group_by(video_category, focal_group) |>
+  summarise(
+    r = round(cor(calibration_deg, isc_mean, use = "complete.obs"), 3),
+    n = n(),
+    .groups = "drop"
+  )
+```
+
+```{r plot-calibration, fig.width=9, fig.height=5}
+ggplot(cal_isc, aes(x = calibration_deg, y = isc_mean, colour = focal_group)) +
+  geom_point(size = 2, alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 0.8) +
+  facet_wrap(~video_category) +
+  scale_colour_few() +
+  labs(title = "Calibration accuracy vs. mean within-group ISC",
+       x = "Calibration accuracy (degrees, block for that video category)",
+       y = "Mean ISC with same-age partners",
+       colour = "Group") +
+  theme_few(base_size = 13)
+ggsave(here("figures/isc_calibration.png"))
+```
+
+---
+
+# Part 7: ISC Timecourse (`r example_video`)
+
+Sliding-window ISC over time for all three pairings, on `pixar_birds`. Unlike
+every plot above, this can't be built from `isc_fixation_pairwise.csv` --
+that file only has one aggregate ISC value per pair per video, no time
+resolution. So this section recomputes windowed correlations directly from
+each participant's fixation CSV: same overlap-weighted binning
+(`fixations_to_binned_series`) and vectorized sliding-window Pearson
+(`_pearson_matrix`) as `isc_fixations.py` / `run_all_clips.py`, ported to R.
+Only meaningful for `isc_source == "fixations"` (raw-gaze ISC has no
+equivalent per-fixation file to bin from block calibration).
+
+```{r timecourse-config}
+# Must match the fixation code that produced isc_pairwise_csv above --
+# not re-derived automatically, since the pairwise CSV doesn't carry it.
+FIX_DIR   <- file.path(SERVER_PATH, "data/preprocessed/fixations")
+FIX_CODE  <- "f329476c"
+BIN_MS    <- 20
+WINDOW_S  <- 2
+STEP_S    <- 0.25
+MIN_VALID <- 30   # bins required within a window for that pair's r to count
+```
+
+```{r timecourse-helpers}
+# ── overlap-weighted winner-take-all binning, ported from
+# isc_fixations.py's fixations_to_binned_series: each bin gets the position
+# of whichever fixation covers the largest share of that bin's duration, so
+# a bin straddling a fixation boundary is resolved by overlap instead of by
+# which fixation happened to be read last. ──────────────────────────────────
+fixations_to_binned_series_r <- function(fix_df, bin_ms) {
+  if (nrow(fix_df) == 0) return(list(x = numeric(0), y = numeric(0)))
+  n_bins <- as.integer(max(fix_df$endT) %/% bin_ms) + 1L
+  x <- rep(NA_real_, n_bins)
+  y <- rep(NA_real_, n_bins)
+  best_overlap <- rep(0, n_bins)
+
+  for (i in seq_len(nrow(fix_df))) {
+    startT <- fix_df$startT[i]; endT <- fix_df$endT[i]
+    b0 <- as.integer(startT %/% bin_ms); b1 <- as.integer(endT %/% bin_ms)
+    for (b in b0:b1) {
+      bin_start <- b * bin_ms; bin_end <- (b + 1) * bin_ms
+      overlap <- min(endT, bin_end) - max(startT, bin_start)
+      if (overlap > best_overlap[b + 1]) {
+        best_overlap[b + 1] <- overlap
+        x[b + 1] <- fix_df$xpos[i]
+        y[b + 1] <- fix_df$ypos[i]
+      }
+    }
+  }
+  list(x = x, y = y)
+}
+
+load_binned <- function(pid, group, video, code) {
+  path <- file.path(FIX_DIR, group, glue("{pid}_{video}_{code}.csv"))
+  if (!file.exists(path)) return(NULL)
+  fix_df <- suppressMessages(read_csv(path, show_col_types = FALSE))
+  fixations_to_binned_series_r(fix_df, BIN_MS)
+}
+
+# ── vectorized windowed Pearson r for N pairs simultaneously, ported from
+# run_all_clips.py's _pearson_matrix -- computes all pairs in one window in
+# a single matrix operation instead of looping pair-by-pair. ───────────────
+pearson_matrix <- function(mat_a, mat_b, min_valid = MIN_VALID) {
+  valid <- !is.na(mat_a) & !is.na(mat_b)
+  n <- rowSums(valid)
+  a <- ifelse(valid, mat_a, 0)
+  b <- ifelse(valid, mat_b, 0)
+  sum_a <- rowSums(a); sum_b <- rowSums(b)
+  sum_aa <- rowSums(a * a); sum_bb <- rowSums(b * b); sum_ab <- rowSums(a * b)
+  num <- n * sum_ab - sum_a * sum_b
+  denom <- sqrt(pmax((n * sum_aa - sum_a^2) * (n * sum_bb - sum_b^2), 0))
+  ok <- (n >= min_valid) & (denom > 1e-10)
+  ifelse(ok, num / denom, NA_real_)
+}
+```
+
+```{r timecourse-peak-fn}
+# ── Contiguous high-ISC periods, by comparison ─────────────────────────────
+# "Highest" = top 30% of that comparison's own windows (70th percentile
+# threshold on mean_r, computed separately per comparison -- adults' and
+# kids' thresholds are not the same r value); a period is a run of
+# consecutive 1s-step windows that all clear that threshold, kept only if
+# it spans >= 2s between the first and last qualifying window. 0.70 was
+# chosen empirically for Child–Child on pixar_birds -- it's the quantile in
+# a sweep from the 50th to 85th percentile that landed closest to the middle
+# of the ~7-10 periods wanted, using the boundary convention below (a
+# tighter convention needs a looser quantile to find the same number of
+# periods, since fewer runs are long enough to survive); the same quantile
+# is applied to every comparison and every video below as "the same
+# approach", not independently re-tuned per video to also land in 7-10.
+#
+# Boundary convention: end_s is the LAST qualifying window's own start_s,
+# not start_s + window_s. Adding window_s would extend the shaded region
+# past the last confirmed-high point into the next (non-qualifying, often
+# already-dropped) window's territory -- correct in the narrow sense that
+# a window covering [t, t+window_s] being high does say something about
+# ISC near t+window_s, but visually indefensible: it draws shading over a
+# stretch of the line that's often already visibly dropped, since the line
+# itself only has vertices at window_start_s and doesn't show that
+# reach. Keeping both edges anchored to actual qualifying vertices (same
+# convention start_s already used) makes the shading match what the line
+# actually shows, at the cost of a stricter effective duration filter
+# (duration is now (n-1)*STEP_S, not (n-1)*STEP_S + window_s -- a run needs
+# one more qualifying window to clear the same min_dur_s).
+PEAK_QUANTILE  <- 0.70
+PEAK_MIN_DUR_S <- 1.5
+
+find_high_isc_periods <- function(windowed_df, comparison_label, quantile = PEAK_QUANTILE,
+                                   min_dur_s = PEAK_MIN_DUR_S) {
+  series <- windowed_df |> filter(comparison == comparison_label) |> arrange(window_start_s)
+  threshold <- quantile(series$mean_r, quantile, na.rm = TRUE)
+
+  above <- series$mean_r >= threshold
+  run <- rle(above)
+  run_ends <- cumsum(run$lengths)
+  run_starts <- run_ends - run$lengths + 1
+
+  periods <- tibble(run_start_idx = run_starts, run_end_idx = run_ends, is_high = run$values) |>
+    filter(is_high) |>
+    mutate(
+      start_s  = series$window_start_s[run_start_idx],
+      end_s    = series$window_start_s[run_end_idx],
+      duration = end_s - start_s
+    ) |>
+    filter(duration >= min_dur_s) |>
+    select(start_s, end_s, duration)
+
+  attr(periods, "threshold") <- threshold
+  periods
+}
+```
+
+```{r timecourse-build-fn}
+# ── One function, any video: load fixation data for every adult/kid who has
+# it for `video`, compute windowed ISC for all three pairings, detect
+# high-ISC periods, build the plot. Used once below for `example_video` and
+# again, in a loop, for the four slow_* videos -- same pipeline either way,
+# just parameterized by video name instead of hardcoded to one.
+build_timecourse <- function(video_name, title = video_name, base_size = 13) {
+  pix <- isc_raw |> filter(video_name == !!video_name)
+  adults <- sort(unique(c(pix$pid_a[pix$group_a == "adults"], pix$pid_b[pix$group_b == "adults"])))
+  kids   <- sort(unique(c(pix$pid_a[pix$group_a == "kids"],   pix$pid_b[pix$group_b == "kids"])))
+
+  pids      <- c(adults, kids)
+  groups    <- c(rep("adults", length(adults)), rep("kids", length(kids)))
+  groups_of <- set_names(groups, pids)
+  idx_of    <- set_names(seq_along(pids), pids)
+
+  binned <- map2(pids, groups, load_binned, video = video_name, code = FIX_CODE)
+  names(binned) <- pids
+
+  # Median, not max, sizes the shared bin matrix -- a single participant
+  # whose trial data runs past the video's actual end (seen once so far:
+  # one kid's slow_hands file extends ~14s beyond the real ~60.7s video,
+  # while every other participant/video combination clusters within ~30ms
+  # of the median) would otherwise single-handedly stretch every panel's
+  # x-axis to match their bad data. Participants longer than the median are
+  # truncated to fit; this only discards time past where virtually everyone
+  # else's trial already ended, not real mid-video data.
+  bin_lengths <- map_int(binned, ~ length(.x$x))
+  n_bins <- as.integer(round(median(bin_lengths)))
+  X <- matrix(NA_real_, nrow = length(pids), ncol = n_bins)
+  Y <- matrix(NA_real_, nrow = length(pids), ncol = n_bins)
+  for (i in seq_along(pids)) {
+    b <- binned[[i]]
+    len_i <- min(length(b$x), n_bins)
+    X[i, seq_len(len_i)] <- b$x[seq_len(len_i)]
+    Y[i, seq_len(len_i)] <- b$y[seq_len(len_i)]
+  }
+
+  pair_group <- function(pairs, label_a, label_b) {
+    keep(pairs, function(p) {
+      ga <- groups_of[p[1]]; gb <- groups_of[p[2]]
+      (ga == label_a && gb == label_b) || (ga == label_b && gb == label_a)
+    })
+  }
+  all_pairs <- combn(pids, 2, simplify = FALSE)
+  aa_pairs <- pair_group(all_pairs, "adults", "adults")
+  kk_pairs <- pair_group(all_pairs, "kids", "kids")
+  ak_pairs <- pair_group(all_pairs, "adults", "kids")
+
+  window_bins <- as.integer(round(WINDOW_S * 1000 / BIN_MS))
+  step_bins   <- as.integer(round(STEP_S * 1000 / BIN_MS))
+  n_windows   <- max(0, (n_bins - window_bins) %/% step_bins + 1)
+
+  windowed_r_for_pairs <- function(pairs) {
+    ia <- map_int(pairs, ~ idx_of[[.x[1]]])
+    ib <- map_int(pairs, ~ idx_of[[.x[2]]])
+    out <- vector("list", n_windows)
+    for (w in seq_len(n_windows)) {
+      start <- (w - 1) * step_bins + 1
+      end <- start + window_bins - 1
+      r_x <- pearson_matrix(X[ia, start:end, drop = FALSE], X[ib, start:end, drop = FALSE])
+      r_y <- pearson_matrix(Y[ia, start:end, drop = FALSE], Y[ib, start:end, drop = FALSE])
+      r_avg <- rowMeans(cbind(r_x, r_y), na.rm = TRUE)
+      r_avg[is.nan(r_avg)] <- NA_real_
+      out[[w]] <- tibble(window_start_s = (start - 1) * BIN_MS / 1000, r = r_avg)
+    }
+    bind_rows(out)
+  }
+
+  windowed <- bind_rows(
+    windowed_r_for_pairs(aa_pairs) |> mutate(comparison = "Adult–Adult"),
+    windowed_r_for_pairs(kk_pairs) |> mutate(comparison = "Child–Child"),
+    windowed_r_for_pairs(ak_pairs) |> mutate(comparison = "Child–Adult")
+  ) |>
+    group_by(comparison, window_start_s) |>
+    summarise(mean_r = mean(r, na.rm = TRUE), n_pairs = sum(!is.na(r)), .groups = "drop")
+
+  kk_peaks <- find_high_isc_periods(windowed, "Child–Child")
+  aa_peaks <- find_high_isc_periods(windowed, "Adult–Adult")
+
+  p <- ggplot(windowed, aes(x = window_start_s, y = mean_r)) +
+    geom_rect(data = kk_peaks, aes(xmin = start_s, xmax = end_s, ymin = -Inf, ymax = Inf),
+              inherit.aes = FALSE, fill = "grey70", colour = NA, alpha = 0.4) +
+    geom_rect(data = aa_peaks, aes(xmin = start_s, xmax = end_s, ymin = -Inf, ymax = Inf),
+              inherit.aes = FALSE, fill = NA, colour = "black", linewidth = 0.5) +
+    geom_line(aes(colour = comparison), linewidth = 0.8) +
+    scale_colour_few() +
+    scale_x_continuous(breaks = seq(0, max(windowed$window_start_s), by = 5),
+                        minor_breaks = seq(0, max(windowed$window_start_s), by = 1),
+                        guide = guide_axis(minor.ticks = TRUE)) +
+    labs(title = title, x = "Time (s)", y = "Mean ISC (r)", colour = "Comparison") +
+    theme_few(base_size = base_size) +
+    theme(panel.grid.minor.x = element_blank(),
+          axis.minor.ticks.x.bottom = element_line(colour = "grey30", linewidth = 0.3),
+          axis.minor.ticks.length = unit(3, "pt"))
+
+  list(plot = p, windowed = windowed, kk_peaks = kk_peaks, aa_peaks = aa_peaks,
+       n_adults = length(adults), n_kids = length(kids), n_bins = n_bins)
+}
+```
+
+```{r plot-timecourse, fig.width=18, fig.height=3}
+tc_pixar <- build_timecourse(
+  example_video,
+  title = glue("Fixation-position ISC over time — {example_video}")
+)
+cat(glue("{tc_pixar$n_adults} adults, {tc_pixar$n_kids} kids, {tc_pixar$n_bins} bins ",
+         "({round(tc_pixar$n_bins * BIN_MS / 1000, 1)}s) at {BIN_MS}ms resolution\n"))
+cat(glue("{nrow(tc_pixar$kk_peaks)} high-Child–Child-ISC periods (threshold r >= ",
+         "{round(attr(tc_pixar$kk_peaks, 'threshold'), 3)}); ",
+         "{nrow(tc_pixar$aa_peaks)} high-Adult–Adult-ISC periods (threshold r >= ",
+         "{round(attr(tc_pixar$aa_peaks, 'threshold'), 3)})\n"))
+
+tc_pixar$plot +
+  labs(subtitle = glue("{WINDOW_S}s sliding window, {STEP_S}s step, {BIN_MS}ms bins — shaded: top ",
+                        "{round((1 - PEAK_QUANTILE) * 100)}% periods, >= {PEAK_MIN_DUR_S}s ",
+                        "(grey fill = Child–Child, black border = Adult–Adult)"))
+ggsave(here("figures/isc_timecourse.png"), width = 18, height = 3)
+```
+
+---
+
+# Part 7b: ISC Timecourse — `slow_*` videos
+
+Same pipeline as Part 7, run once per `slow_*` video and stacked into one
+4-panel figure (one row per video) instead of four separate plots -- makes
+it easy to see that these four clips behave quite differently from each
+other (recall `slow_people` had much higher whole-trial ISC than
+`slow_inanimate`/`slow_animals` in the Version C bar plot above).
+
+```{r timecourse-slow-build}
+slow_videos <- c("slow_animals", "slow_hands", "slow_inanimate", "slow_people")
+
+slow_results <- map(slow_videos, ~ build_timecourse(.x, title = .x, base_size = 11))
+names(slow_results) <- slow_videos
+
+walk(slow_videos, function(v) {
+  r <- slow_results[[v]]
+  cat(glue("{v}: {r$n_adults} adults, {r$n_kids} kids -- ",
+           "{nrow(r$kk_peaks)} Child–Child / {nrow(r$aa_peaks)} Adult–Adult high-ISC periods\n"))
+})
+```
+
+```{r plot-timecourse-slow, fig.width=9, fig.height=10}
+slow_plots <- map(slow_results, "plot")
+wrap_plots(slow_plots, ncol = 1) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "Fixation-position ISC over time — slow_* videos",
+    subtitle = glue("{WINDOW_S}s sliding window, {STEP_S}s step, {BIN_MS}ms bins — shaded: top ",
+                     "{round((1 - PEAK_QUANTILE) * 100)}% periods, >= {PEAK_MIN_DUR_S}s ",
+                     "(grey fill = Child–Child, black border = Adult–Adult)")
+  )
+ggsave(here("figures/isc_timecourse_slow.png"), width = 9, height = 10)
+```
+
+---
+
+# Part 8: ISC Timecourse Shaded by Shot Scale (All Videos)
+
+Same windowed fixation-position ISC as Part 7 (2s window, 0.25s step, all
+three pairings) -- reuses `build_timecourse()`'s `windowed` output directly,
+no recomputation -- but instead of shading/bordering just the high-ISC
+periods, the *entire* plot background is shaded continuously by shot scale
+(ECS/CS/MFS/LS -- see `analysis/stage1_shot_scale.py` and
+`annotations/shot_scale/` for how these were produced: VideoMAE shot-scale
+classifier, 0.667s non-overlapping tiles, three-crop majority/median
+resolution). This is a pure visual overlay -- the shot-scale tiles (0.667s
+wide) and the ISC windows (2s wide) sit on two independent time grids here;
+nothing is resampled or jointly resolved onto a shared grid for this plot,
+that's a separate question for actual analysis, not visualization.
+
+Covers all 12 stimulus videos (Part 7/7b covered only `pixar_birds` and the
+`slow_*` clips).
+
+```{r shotscale-setup}
+SHOTSCALE_DIR    <- here("annotations/shot_scale")
+SHOTSCALE_LEVELS <- c("ECS", "CS", "MFS", "LS")
+
+# Sequential ramp (ordinal scale, close -> far), kept pale throughout so the
+# ISC lines and gridlines stay legible drawn on top.
+SHOTSCALE_COLORS <- setNames(
+  colorRampPalette(c("#f7fbff", "#6baed6"))(length(SHOTSCALE_LEVELS)),
+  SHOTSCALE_LEVELS
+)
+
+read_shotscale <- function(video_name) {
+  path <- Sys.glob(here(glue("annotations/shot_scale/{video_name}_shotscale_0-*s.csv")))[1]
+  read_csv(path, show_col_types = FALSE) |>
+    mutate(resolved_class = factor(resolved_class, levels = SHOTSCALE_LEVELS))
+}
+```
+
+```{r shotscale-build-fn}
+# Takes a precomputed `windowed` df (from build_timecourse(video_name)$windowed)
+# rather than recomputing it -- the caller loops over all 12 videos, and Part 9
+# needs the same per-video windowed timecourses again, so both reuse one shared
+# cache instead of each independently paying for 12 calls to build_timecourse().
+build_timecourse_shotscale <- function(video_name, windowed, title = video_name, base_size = 13) {
+  shot <- read_shotscale(video_name)
+
+  ggplot() +
+    geom_rect(data = shot, aes(xmin = start_s, xmax = end_s, ymin = -Inf, ymax = Inf, fill = resolved_class),
+              inherit.aes = FALSE, alpha = 0.9) +
+    scale_fill_manual(values = SHOTSCALE_COLORS, name = "Shot scale", drop = FALSE) +
+    geom_line(data = windowed, aes(x = window_start_s, y = mean_r, colour = comparison), linewidth = 0.8) +
+    scale_colour_few() +
+    scale_x_continuous(breaks = seq(0, max(windowed$window_start_s), by = 5),
+                        minor_breaks = seq(0, max(windowed$window_start_s), by = 1),
+                        guide = guide_axis(minor.ticks = TRUE)) +
+    labs(title = title, x = "Time (s)", y = "Mean ISC (r)", colour = "Comparison") +
+    theme_few(base_size = base_size) +
+    theme(panel.grid.minor.x = element_blank(),
+          axis.minor.ticks.x.bottom = element_line(colour = "grey30", linewidth = 0.3),
+          axis.minor.ticks.length = unit(3, "pt"))
+}
+```
+
+```{r shotscale-plot-all, fig.width=18, fig.height=3}
+all_video_names <- sort(unique(isc$video_name))
+
+# Computed once here, reused by Part 9 below -- avoids recomputing
+# build_timecourse() (the expensive step) a second time for all 12 videos.
+windowed_cache <- set_names(map(all_video_names, ~ build_timecourse(.x)$windowed), all_video_names)
+
+for (v in all_video_names) {
+  cat(glue("Building shot-scale-shaded timecourse for {v}...\n"))
+  p <- build_timecourse_shotscale(v, windowed_cache[[v]], title = glue("Fixation-position ISC over time, shaded by shot scale — {v}"))
+  print(p)
+  ggsave(here(glue("figures/isc_timecourse_shotscale_{v}.png")), plot = p, width = 18, height = 3)
+}
+```
+
+---
+
+# Part 9: Mean ISC by Shot Scale
+
+Reconciles the two independent time grids from Part 8 (2s/0.25s ISC windows
+vs. 0.667s shot-scale tiles) so each ISC window can be pooled into one of
+the four shot-scale bins. Broken out by comparison (Adult–Adult / Child–Adult
+/ Child–Child) -- three bars per shot-scale class -- and, from here on, kept
+**per video rather than pooled/scaled across videos**: one facet per video,
+raw `mean_r`, no min-max rescaling. Pooling videos together (with or without
+per-video scaling) was useful for a first look, but a shot-scale effect that
+actually depends on video-specific content is exactly what pooling would
+wash out, so this is the more conservative default going forward.
+
+**Reconciliation rule**: each ISC window is assigned the shot-scale class of
+whichever tile has the largest time-overlap with that window -- the same
+"largest overlap wins" convention `fixations_to_binned_series` already uses
+elsewhere in this file for an analogous binning problem, not a new ad hoc
+rule.
+
+```{r shotscale-reconcile}
+# Adult–Adult / Child–Adult / Child–Child, in that order so Child–Adult --
+# the comparison of most interest -- lands in the middle of each 3-bar
+# dodge cluster.
+COMPARISON_LEVELS <- c("Adult–Adult", "Child–Adult", "Child–Child")
+
+# Vectorized per video: an n_windows x n_tiles overlap matrix, take
+# whichever tile has the largest overlap for each window.
+assign_shotscale_video <- function(window_starts, shot_df, window_s = WINDOW_S) {
+  window_ends <- window_starts + window_s
+  overlap <- outer(window_ends, shot_df$end_s, pmin) - outer(window_starts, shot_df$start_s, pmax)
+  overlap[overlap < 0] <- 0
+  best_tile <- apply(overlap, 1, which.max)
+  best_overlap <- apply(overlap, 1, max)
+  cls <- as.character(shot_df$resolved_class[best_tile])
+  cls[best_overlap <= 0] <- NA_character_  # window has no overlapping tile at all
+  cls
+}
+
+# Reuses the windowed timecourses Part 8 already computed (windowed_cache)
+# instead of calling build_timecourse() again for all 12 videos.
+windowed_shotscale <- map_dfr(all_video_names, function(v) {
+  windowed <- windowed_cache[[v]]
+  shot <- read_shotscale(v)
+  windowed$shot_class <- assign_shotscale_video(windowed$window_start_s, shot)
+  windowed$video_name <- v
+  windowed
+})
+
+cat(glue("{sum(is.na(windowed_shotscale$shot_class))} / {nrow(windowed_shotscale)} ",
+         "windows had no overlapping shot-scale tile (dropped from analysis below)\n"))
+```
+
+```{r shotscale-aggregate}
+# Mean raw ISC per (video, shot_class, comparison) -- no cross-video pooling,
+# no scaling.
+video_class <- windowed_shotscale |>
+  filter(!is.na(shot_class)) |>
+  mutate(shot_class = factor(shot_class, levels = SHOTSCALE_LEVELS),
+         comparison = factor(comparison, levels = COMPARISON_LEVELS)) |>
+  group_by(video_name, shot_class, comparison) |>
+  summarise(mean_raw = mean(mean_r, na.rm = TRUE), .groups = "drop")
+
+print(video_class, n = Inf)
+```
+
+```{r plot-shotscale-bar, fig.width=18, fig.height=12}
+ggplot(video_class, aes(x = shot_class, y = mean_raw, fill = comparison)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.65, alpha = 0.85) +
+  scale_fill_few(name = "Comparison") +
+  facet_wrap(~video_name, ncol = 4) +
+  labs(title = "Mean ISC by shot scale, by video",
+       subtitle = "Raw, unscaled -- one panel per video, no cross-video pooling",
+       x = "Shot scale", y = "Mean ISC (raw r)") +
+  theme_few(base_size = 12) +
+  theme(panel.grid.major.y = element_line(colour = "grey92"))
+ggsave(here("figures/isc_by_shotscale.png"), width = 18, height = 12)
+```
+
+---
+
+# Part 10: Fixation-Location Entropy by Shot Scale (data build)
+
+The windowed ISC in Parts 7-9 turned out to need a long time series within
+each window to detect a real effect (confirmed by comparing whole-trial ISC
+against 2s-windowed ISC on the `slow_*` videos: pooled Adult-Adult 0.369 vs.
+Child-Child 0.296 at the whole-trial level, vs. 0.150 vs. 0.149 -- basically
+gone -- once windowed into 2s chunks). Shannon entropy of *where* fixations
+land doesn't have that problem: it's a snapshot statistic over pooled
+fixation locations, not a time-series correlation, so a short 0.667s
+shot-scale tile is enough data to compute it from, as long as enough
+fixations get pooled into it.
+
+**No duration weighting.** This is a purely spatial analysis (dispersion of
+*where* people looked, not *how long*); weighting by fixation duration would
+reintroduce a temporal question this section is deliberately sidestepping.
+Each fixation counts as one point.
+
+**Tile assignment**: for each participant, each shot-scale tile gets that
+participant's single fixation with the largest time-overlap with the tile --
+the same "largest overlap wins" rule used everywhere else in this notebook
+for this exact kind of boundary problem (`assign_shotscale_video`,
+`fixations_to_binned_series_r`). A participant contributes no point to a
+tile if none of their fixations overlap it at all.
+
+**Grid**: 4x2 cells over the 1920x1080 display (480x540 px each), giving a
+max possible entropy of log2(8) = 3 bits. Conceptually the same computation
+as MATLAB's `entropy()` -- Shannon entropy of a normalized histogram -- just
+applied directly to a 2D histogram of fixation coordinates instead of an
+image's pixel-intensity histogram, so there's no rendering/smoothing/
+quantization step in between the raw data and the number. Off-screen
+fixations (coordinates outside the display) are excluded rather than
+clamped to an edge cell, so eye-tracker overshoot doesn't inflate edge-cell
+counts.
+
+**Kids vs. adults, not three pairings.** Entropy is a within-group spatial
+statistic, not a pairwise one, so there's no Child-Adult analog here --
+just an adults series and a kids series per shot-scale tile.
+
+**Rarefaction**: kids are the smaller group in every video (12-14 vs. up to
+44 adults), so kid entropy is computed directly from all of that tile's
+available kid points, unweighted. Adults are repeatedly subsampled down to
+that video's kid count (500 draws without replacement, or fewer if fewer
+adult points are actually available in that tile), with entropy recomputed
+each draw; both the mean and SD across draws are kept, so the rarefaction
+noise itself is visible rather than hidden behind a single arbitrary draw.
+
+**Minimum count floor**: below 5 pooled points (post-matching), entropy is
+too close to the degenerate "one point per bin" regime to trust, and that
+cell is left `NA` rather than plotted as if it were a real estimate.
+
+This section only builds and saves the long-format table -- one row per
+(video, group, tile) -- deliberately without pooling across videos or
+picking a plot yet, so those decisions can be made later by reading
+`data/preprocessed/entropy_by_time.csv` directly instead of rerunning this
+whole notebook.
+
+```{r entropy-config}
+ENTROPY_GRID_NX <- 4
+ENTROPY_GRID_NY <- 2
+SCREEN_W <- 1920
+SCREEN_H <- 1080
+ENTROPY_MIN_N   <- 5    # below this many pooled points, entropy for that (video, group, tile) is unreliable -> NA
+ENTROPY_N_DRAWS <- 500  # rarefaction draws for adults, subsampled down to that video's kid N
+set.seed(42)             # reproducible rarefaction, same convention as the I2MC k-means seed elsewhere in this project
+```
+
+```{r entropy-helpers}
+# One (x, y) point per participant per tile: whichever of that participant's
+# raw fixations has the largest time-overlap with the tile. Same convention
+# as assign_shotscale_video() and fixations_to_binned_series_r() above --
+# "largest overlap wins" is the one rule this notebook uses everywhere a
+# fixation/window has to be assigned to a single bin.
+assign_fixations_to_tiles <- function(fix_df, tile_start_s, tile_end_s) {
+  if (nrow(fix_df) == 0) {
+    return(tibble(tile_start_s = tile_start_s, tile_end_s = tile_end_s,
+                  x = NA_real_, y = NA_real_))
+  }
+  fs <- fix_df$startT / 1000
+  fe <- fix_df$endT / 1000
+  overlap <- outer(tile_end_s, fe, pmin) - outer(tile_start_s, fs, pmax)
+  overlap[overlap < 0] <- 0
+  best_fix <- apply(overlap, 1, which.max)
+  best_overlap <- apply(overlap, 1, max)
+  x <- fix_df$xpos[best_fix]
+  y <- fix_df$ypos[best_fix]
+  x[best_overlap <= 0] <- NA_real_
+  y[best_overlap <= 0] <- NA_real_
+  tibble(tile_start_s = tile_start_s, tile_end_s = tile_end_s, x = x, y = y)
+}
+
+load_tile_points <- function(pid, group, video, tile_start_s, tile_end_s, code = FIX_CODE) {
+  path <- file.path(FIX_DIR, group, glue("{pid}_{video}_{code}.csv"))
+  if (!file.exists(path)) {
+    return(tibble(tile_start_s = tile_start_s, tile_end_s = tile_end_s, x = NA_real_, y = NA_real_))
+  }
+  fix_df <- suppressMessages(read_csv(path, show_col_types = FALSE))
+  assign_fixations_to_tiles(fix_df, tile_start_s, tile_end_s)
+}
+
+# Shannon entropy (bits) of a set of (x, y) points over a fixed grid --
+# conceptually the same computation as MATLAB's entropy(), just on a 2D
+# histogram of raw fixation coordinates instead of an image's pixel
+# intensities. Off-screen points are dropped, not clamped to an edge cell.
+shannon_entropy_bits <- function(x, y, nx = ENTROPY_GRID_NX, ny = ENTROPY_GRID_NY,
+                                  screen_w = SCREEN_W, screen_h = SCREEN_H) {
+  ok <- !is.na(x) & !is.na(y) & x >= 0 & x <= screen_w & y >= 0 & y <= screen_h
+  x <- x[ok]; y <- y[ok]
+  if (length(x) == 0) return(NA_real_)
+  cx <- pmin(nx, floor(x / (screen_w / nx)) + 1)
+  cy <- pmin(ny, floor(y / (screen_h / ny)) + 1)
+  counts <- tabulate((cy - 1) * nx + cx, nbins = nx * ny)
+  p <- counts[counts > 0] / sum(counts)
+  -sum(p * log2(p))
+}
+```
+
+```{r entropy-build}
+tile_points <- map_dfr(all_video_names, function(v) {
+  shot <- read_shotscale(v)
+  pix <- isc_raw |> filter(video_name == !!v)
+  adults <- sort(unique(c(pix$pid_a[pix$group_a == "adults"], pix$pid_b[pix$group_b == "adults"])))
+  kids   <- sort(unique(c(pix$pid_a[pix$group_a == "kids"],   pix$pid_b[pix$group_b == "kids"])))
+
+  participant_points <- function(pid, group) {
+    load_tile_points(pid, group, v, shot$start_s, shot$end_s) |>
+      mutate(pid = pid, group = group)
+  }
+
+  bind_rows(
+    map_dfr(adults, participant_points, group = "adults"),
+    map_dfr(kids,   participant_points, group = "kids")
+  ) |>
+    mutate(video_name = v, kid_n_video = length(kids)) |>
+    left_join(shot |> select(start_s, end_s, resolved_class),
+              by = c("tile_start_s" = "start_s", "tile_end_s" = "end_s")) |>
+    rename(shot_class = resolved_class)
+})
+
+cat(glue("{sum(!is.na(tile_points$x))} / {nrow(tile_points)} participant x tile points had a valid overlapping fixation\n"))
+```
+
+```{r entropy-compute}
+# Kids: deterministic entropy from ALL of that tile's available kid points --
+# no subsampling, since kids are already the smaller group.
+entropy_kids <- tile_points |>
+  filter(group == "kids") |>
+  group_by(video_name, tile_start_s, tile_end_s, shot_class) |>
+  summarise(n_available = sum(!is.na(x)),
+            n_used = n_available,
+            entropy_bits = if_else(n_used >= ENTROPY_MIN_N,
+                                    shannon_entropy_bits(x, y), NA_real_),
+            entropy_sd_bits = NA_real_, n_draws = NA_integer_,
+            .groups = "drop") |>
+  mutate(group = "kids")
+
+# Adults: rarefied -- repeatedly subsample down to that video's kid N (or
+# however many adult points are actually available in this tile, if that's
+# smaller), recompute entropy each draw, report the mean and SD across
+# draws so the rarefaction noise itself is visible rather than hidden in a
+# single arbitrary draw.
+entropy_adults <- tile_points |>
+  filter(group == "adults") |>
+  group_by(video_name, tile_start_s, tile_end_s, shot_class, kid_n_video) |>
+  group_modify(function(df, keys) {
+    ok <- !is.na(df$x) & !is.na(df$y)
+    xa <- df$x[ok]; ya <- df$y[ok]
+    n_available <- length(xa)
+    n_used <- min(keys$kid_n_video, n_available)
+    if (n_used < ENTROPY_MIN_N) {
+      return(tibble(n_available = n_available, n_used = n_used,
+                     entropy_bits = NA_real_, entropy_sd_bits = NA_real_,
+                     n_draws = NA_integer_))
+    }
+    draws <- replicate(ENTROPY_N_DRAWS, {
+      idx <- sample.int(n_available, n_used, replace = FALSE)
+      shannon_entropy_bits(xa[idx], ya[idx])
+    })
+    tibble(n_available = n_available, n_used = n_used,
+           entropy_bits = mean(draws), entropy_sd_bits = sd(draws),
+           n_draws = ENTROPY_N_DRAWS)
+  }) |>
+  ungroup() |>
+  select(-kid_n_video) |>
+  mutate(group = "adults")
+
+entropy_long <- bind_rows(entropy_kids, entropy_adults) |>
+  mutate(shot_class = factor(shot_class, levels = SHOTSCALE_LEVELS),
+         group = factor(group, levels = c("adults", "kids"))) |>
+  select(video_name, group, tile_start_s, tile_end_s, shot_class,
+         n_available, n_used, entropy_bits, entropy_sd_bits, n_draws)
+
+cat(glue("{sum(is.na(entropy_long$entropy_bits))} / {nrow(entropy_long)} ",
+         "(video, group, tile) cells excluded -- fewer than {ENTROPY_MIN_N} points available\n"))
+
+write_csv(entropy_long, here("data/preprocessed/entropy_by_time.csv"))
+cat(glue("Saved -> data/preprocessed/entropy_by_time.csv ({nrow(entropy_long)} rows)\n"))
+```
+
+---
+
+# Part 11: Entropy by Shot Scale, by Video
+
+Reads `data/preprocessed/entropy_by_time.csv` directly rather than
+recomputing Part 10 -- the entire point of saving that table. Mirrors the
+Part 9 ISC-by-shot-scale-by-video layout: one facet per video, raw
+(unscaled) means, no cross-video pooling. The one structural difference is
+the bars themselves -- two groups (adults, kids) instead of three pairwise
+comparisons, since entropy is a within-group statistic.
+
+```{r entropy-plot-load}
+entropy_long_plot <- read_csv(here("data/preprocessed/entropy_by_time.csv"), show_col_types = FALSE) |>
+  mutate(shot_class = factor(shot_class, levels = SHOTSCALE_LEVELS),
+         group = factor(group, levels = c("adults", "kids")))
+
+cat(glue("{sum(is.na(entropy_long_plot$entropy_bits))} / {nrow(entropy_long_plot)} tiles excluded (NA entropy)\n"))
+
+entropy_by_class <- entropy_long_plot |>
+  filter(!is.na(entropy_bits)) |>
+  group_by(video_name, shot_class, group) |>
+  summarise(mean_entropy = mean(entropy_bits, na.rm = TRUE), n_tiles = n(), .groups = "drop")
+```
+
+```{r plot-entropy-shotscale, fig.width=18, fig.height=12}
+ENTROPY_MAX_BITS <- log2(ENTROPY_GRID_NX * ENTROPY_GRID_NY)
+
+ggplot(entropy_by_class, aes(x = shot_class, y = mean_entropy, fill = group)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.65, alpha = 0.85) +
+  geom_hline(yintercept = ENTROPY_MAX_BITS, linetype = "dashed", colour = "grey50", linewidth = 0.4) +
+  scale_fill_few(name = "Group") +
+  facet_wrap(~video_name, ncol = 4) +
+  labs(title = "Fixation-location entropy by shot scale, by video",
+       subtitle = glue("4x2 grid, tile-level (0.667s); dashed line = max possible entropy ({round(ENTROPY_MAX_BITS,2)} bits)"),
+       x = "Shot scale", y = "Mean entropy (bits)") +
+  theme_few(base_size = 12) +
+  theme(panel.grid.major.y = element_line(colour = "grey92"))
+ggsave(here("figures/entropy_by_shotscale.png"), width = 18, height = 12)
+```
+
+---
+
+# Part 12: Entropy by Shot Scale, by Block
+
+Same source table and same logic as Part 11, pooled one level up: by block
+(Pixar / Frank / Sesame / Slow, via the `video_category()` function defined
+in Part 5) instead of by individual video. Reuses `entropy_long_plot` from
+Part 11 rather than re-reading the CSV.
+
+```{r entropy-block-aggregate}
+entropy_by_block <- entropy_long_plot |>
+  filter(!is.na(entropy_bits)) |>
+  mutate(block = video_category(video_name)) |>
+  group_by(block, shot_class, group) |>
+  summarise(mean_entropy = mean(entropy_bits, na.rm = TRUE),
+            n_tiles = n(), n_videos = n_distinct(video_name), .groups = "drop")
+
+print(entropy_by_block, n = Inf)
+```
+
+```{r plot-entropy-block, fig.width=10, fig.height=8}
+ggplot(entropy_by_block, aes(x = shot_class, y = mean_entropy, fill = group)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.65, alpha = 0.85) +
+  geom_hline(yintercept = ENTROPY_MAX_BITS, linetype = "dashed", colour = "grey50", linewidth = 0.4) +
+  scale_fill_few(name = "Group") +
+  facet_wrap(~block, ncol = 2) +
+  labs(title = "Fixation-location entropy by shot scale, by block",
+       subtitle = glue("4x2 grid, tile-level (0.667s), pooled across videos within block; ",
+                        "dashed line = max possible entropy ({round(ENTROPY_MAX_BITS,2)} bits)"),
+       x = "Shot scale", y = "Mean entropy (bits)") +
+  theme_few(base_size = 13) +
+  theme(panel.grid.major.y = element_line(colour = "grey92"))
+ggsave(here("figures/entropy_by_shotscale_block.png"), width = 10, height = 8)
+```
+
+---
+
+# Part 13: Entropy by Shot Scale, All Videos Averaged
+
+One level further than Part 12: no block or video faceting at all, one pair
+of bars per shot-scale class, each bar the unweighted mean across all 12
+videos' own per-(shot_class, group) means (same "average of per-video
+means, not weighted by time/tiles" convention as every other pooled bar in
+this notebook). Individual videos are overlaid as jittered points, coloured
+by block, so the spread each bar is averaging over stays visible instead of
+disappearing into a single number.
+
+```{r entropy-pooled-aggregate}
+bar_stats_entropy <- entropy_by_class |>
+  mutate(block = video_category(video_name)) |>
+  group_by(shot_class, group) |>
+  summarise(mean_entropy = mean(mean_entropy, na.rm = TRUE), n_videos = n(), .groups = "drop")
+
+print(bar_stats_entropy, n = Inf)
+```
+
+```{r plot-entropy-pooled, fig.width=11, fig.height=7}
+dodge_w <- 0.7
+entropy_jit <- position_jitterdodge(jitter.width = 0.12, dodge.width = dodge_w, seed = 42)
+
+ggplot(bar_stats_entropy, aes(x = shot_class, y = mean_entropy, fill = group)) +
+  geom_col(position = position_dodge(width = dodge_w), width = 0.65, alpha = 0.7) +
+  geom_point(data = entropy_by_class |> mutate(block = video_category(video_name)),
+             aes(y = mean_entropy, colour = block, group = group),
+             position = entropy_jit, size = 2.2, alpha = 0.85) +
+  geom_hline(yintercept = ENTROPY_MAX_BITS, linetype = "dashed", colour = "grey50", linewidth = 0.4) +
+  scale_fill_few(name = "Group") +
+  scale_colour_few(name = "Block") +
+  labs(title = "Fixation-location entropy by shot scale, all videos averaged",
+       subtitle = "Bars = unweighted mean of per-video means; points = individual videos by block",
+       x = "Shot scale", y = "Mean entropy (bits)") +
+  theme_few(base_size = 13) +
+  theme(panel.grid.major.y = element_line(colour = "grey92"))
+ggsave(here("figures/entropy_by_shotscale_pooled.png"), width = 11, height = 7)
+```
+
+---
+
+# Part 14: ISC vs. Entropy Timecourse (`r example_video`)
+
+Stacks the windowed ISC timecourse (Part 7/8's 2s-window, 0.25s-step
+correlation, reused from `windowed_cache` rather than recomputed) directly
+above the tile-level entropy timecourse (0.667s, non-overlapping, from Part
+10's saved table), same time axis, to see whether the two measures move
+together moment to moment. Entropy is plotted on its own natural scale, not
+inverted -- **lower entropy means MORE concentrated/shared gaze**, the
+opposite direction from ISC, so a visually concordant pair of signals would
+show entropy dipping where ISC peaks, not the two lines tracking each other
+directly.
+
+One asymmetry worth keeping in mind when eyeballing the two panels: ISC's
+window overlaps 87.5% with its neighbor (2s window, 0.25s step), so it's
+smoothed by construction; entropy's tiles are back-to-back with zero
+overlap, so it has no such smoothing and will always look jumpier even if
+the underlying construct were identical.
+
+```{r isc-entropy-compare-load}
+isc_windowed_example <- windowed_cache[[example_video]]
+
+entropy_video <- read_csv(here("data/preprocessed/entropy_by_time.csv"), show_col_types = FALSE) |>
+  filter(video_name == example_video, !is.na(entropy_bits)) |>
+  mutate(group_label = if_else(group == "adults", "Adult", "Child"))
+
+cat(glue("ISC windows: {nrow(isc_windowed_example)}, entropy tiles: {nrow(entropy_video)}\n"))
+```
+
+```{r plot-isc-entropy-compare, fig.width=16, fig.height=8}
+p_isc <- ggplot(isc_windowed_example, aes(x = window_start_s, y = mean_r, colour = comparison)) +
+  geom_line(linewidth = 0.7) +
+  scale_colour_few() +
+  labs(y = "Mean ISC (r)", colour = "Comparison", x = NULL,
+       title = glue("ISC vs. entropy over time -- {example_video}")) +
+  theme_few(base_size = 13) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+p_entropy <- ggplot(entropy_video, aes(x = tile_start_s, y = entropy_bits, colour = group_label)) +
+  geom_line(linewidth = 0.7) +
+  scale_colour_few() +
+  labs(y = "Entropy (bits)", colour = "Group", x = NULL,
+       subtitle = "Note: LOWER entropy = MORE concentrated/shared gaze -- opposite direction from ISC above") +
+  theme_few(base_size = 13) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+# Adult minus Child entropy, one line -- positive means adults were MORE
+# spread out than kids at that moment, negative means kids were more spread
+# out. Tile boundaries are identical across groups for a given video by
+# construction, so this is a plain join, not another overlap reconciliation.
+entropy_diff <- entropy_video |>
+  select(tile_start_s, group_label, entropy_bits) |>
+  pivot_wider(names_from = group_label, values_from = entropy_bits) |>
+  mutate(diff = Adult - Child)
+
+p_diff <- ggplot(entropy_diff, aes(x = tile_start_s, y = diff)) +
+  geom_hline(yintercept = 0, colour = "grey60", linewidth = 0.4) +
+  geom_line(linewidth = 0.6, colour = "grey20") +
+  labs(y = "Entropy diff\n(Adult - Child, bits)", x = "Time (s)") +
+  theme_few(base_size = 13)
+
+p_isc / p_entropy / p_diff + plot_layout(heights = c(1, 1, 0.7))
+ggsave(here(glue("figures/isc_vs_entropy_timecourse_{example_video}.png")), width = 16, height = 10)
+```
+
+**Quantifying the moment-to-moment agreement**: each ISC window is matched
+to whichever entropy tile has the largest time-overlap (same "largest
+overlap wins" rule reused throughout this notebook), then correlated within
+matched group -- Adult-Adult ISC against Adult entropy, Child-Child ISC
+against Child entropy (Child-Adult ISC has no single-group entropy analog,
+so it's left out of this comparison).
+
+```{r isc-entropy-correlate}
+assign_to_tiles <- function(window_starts, window_s, tile_start_s, tile_end_s) {
+  window_ends <- window_starts + window_s
+  overlap <- outer(window_ends, tile_end_s, pmin) - outer(window_starts, tile_start_s, pmax)
+  overlap[overlap < 0] <- 0
+  best <- apply(overlap, 1, which.max)
+  best_ov <- apply(overlap, 1, max)
+  out <- tile_start_s[best]
+  out[best_ov <= 0] <- NA_real_
+  out
+}
+
+aa_entropy <- entropy_video |> filter(group == "adults") |> select(tile_start_s, entropy_bits)
+cc_entropy <- entropy_video |> filter(group == "kids")   |> select(tile_start_s, entropy_bits)
+
+aa_isc <- isc_windowed_example |> filter(comparison == "Adult–Adult") |>
+  mutate(tile_start_s = assign_to_tiles(window_start_s, WINDOW_S, aa_entropy$tile_start_s,
+                                          aa_entropy$tile_start_s + 0.667)) |>
+  inner_join(aa_entropy, by = "tile_start_s")
+
+cc_isc <- isc_windowed_example |> filter(comparison == "Child–Child") |>
+  mutate(tile_start_s = assign_to_tiles(window_start_s, WINDOW_S, cc_entropy$tile_start_s,
+                                          cc_entropy$tile_start_s + 0.667)) |>
+  inner_join(cc_entropy, by = "tile_start_s")
+
+cor_aa <- cor(aa_isc$mean_r, aa_isc$entropy_bits, use = "complete.obs")
+cor_cc <- cor(cc_isc$mean_r, cc_isc$entropy_bits, use = "complete.obs")
+
+cat(glue("Adult-Adult ISC vs Adult entropy: r = {round(cor_aa, 3)} (n = {sum(complete.cases(aa_isc))})\n"))
+cat(glue("Child-Child ISC vs Child entropy: r = {round(cor_cc, 3)} (n = {sum(complete.cases(cc_isc))})\n"))
+cat("(negative r here = concordant: high ISC / low entropy both mean 'more shared gaze')\n")
+```
+
+---
+
+# Part 15: Entropy Difference by Shot Scale, All Timepoints Pooled
+
+A different, simpler pooling than Parts 11-13's "unweighted mean of
+per-video means": every (video, tile) with a valid entropy value for both
+groups gets one Adult-minus-Child diff (same sign convention as Part 14's
+diff panel), and the bar is the literal mean over every pooled timepoint --
+so a shot-scale class built from more tiles (across all 12 videos combined)
+contributes proportionally more, unlike the earlier per-video-then-averaged
+bars.
+
+```{r entropy-diff-shotscale-aggregate}
+# Tile boundaries are identical across groups for a given video by
+# construction, so this is a plain wide-pivot, not another overlap
+# reconciliation.
+entropy_diff_tiles <- entropy_long_plot |>
+  filter(!is.na(entropy_bits)) |>
+  select(video_name, tile_start_s, shot_class, group, entropy_bits) |>
+  pivot_wider(names_from = group, values_from = entropy_bits) |>
+  filter(!is.na(adults), !is.na(kids)) |>
+  mutate(diff = adults - kids)
+
+bar_stats_diff <- entropy_diff_tiles |>
+  group_by(shot_class) |>
+  summarise(mean_diff = mean(diff), se_diff = sd(diff) / sqrt(n()), n_tiles = n(), .groups = "drop")
+
+print(bar_stats_diff, n = Inf)
+```
+
+```{r plot-entropy-diff-shotscale, fig.width=9, fig.height=6}
+ggplot(bar_stats_diff, aes(x = shot_class, y = mean_diff)) +
+  geom_hline(yintercept = 0, colour = "grey60", linewidth = 0.4) +
+  geom_col(fill = "#4292c6", width = 0.6, alpha = 0.85) +
+  geom_errorbar(aes(ymin = mean_diff - se_diff, ymax = mean_diff + se_diff), width = 0.15, linewidth = 0.7) +
+  labs(title = "Entropy difference by shot scale, all timepoints pooled",
+       subtitle = "Mean (Adult - Child) entropy per tile, all 12 videos' tiles pooled; error bars = SE",
+       x = "Shot scale", y = "Mean entropy diff (Adult - Child, bits)") +
+  theme_few(base_size = 13) +
+  theme(panel.grid.major.y = element_line(colour = "grey92"))
+ggsave(here("figures/entropy_diff_by_shotscale.png"), width = 9, height = 6)
 ```
 
 ---
@@ -534,4 +1708,4 @@ ggsave(here("figures/isc_category.png"))
 | **Time-series** | Loaded raw gaze for `r paste(example_pids, collapse=", ")`; 10 s of `r example_video` |
 | **ISCw** | Each observer averaged with all same-age partners per video, then across videos |
 | **ISCa** | Each non-adult observer averaged with all adults per video, then across videos |
-| **Plots** | Dot plots jittered by subject (Version A) and by video (Version B); bar plot by pair type × video category, Pixar vs. Slow (Version C) |
+| **Plots** | Dot plots jittered by subject (Version A) and by video (Version B); bar plot by pair type × video category, Pixar vs. Slow vs. Sesame vs. Frank (Version C); calibration accuracy vs. within-group ISC by category (Part 6); sliding-window ISC timecourse for all three pairings (Part 7, `pixar_birds` + `slow_*`); same timecourse shaded by shot scale instead of high-ISC periods, all 12 videos (Part 8) |
