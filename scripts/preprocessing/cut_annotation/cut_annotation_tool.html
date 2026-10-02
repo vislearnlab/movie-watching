@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cut annotation tool</title>
+<style>
+  :root {
+    --bg: #fafaf9; --panel: #ffffff; --border: #e2e2df; --text: #0b0b0b; --muted: #6b6a66;
+    --accent: #2a78d6; --accent-ink: #ffffff; --danger: #c23b3b; --tick: #eb6834;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; line-height: 1.5; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px; margin-bottom: 16px;
+  }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  label { font-size: 13px; color: var(--muted); }
+  select, input[type=number], input[type=text] {
+    font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: #fff; color: var(--text);
+  }
+  button {
+    font-size: 13px; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); cursor: pointer;
+  }
+  button:hover { background: #f3f3f1; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.primary:hover { filter: brightness(1.08); }
+  button.danger { color: var(--danger); }
+  video { width: 100%; border-radius: 8px; background: #000; display: block; }
+  .timeline {
+    position: relative; height: 34px; background: #f0efec; border: 1px solid var(--border);
+    border-radius: 6px; margin-top: 10px; cursor: pointer;
+  }
+  .timeline .playhead {
+    position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); pointer-events: none;
+  }
+  .timeline .tick {
+    position: absolute; top: 0; bottom: 0; width: 2px; background: var(--tick);
+  }
+  .timeline .tick:hover { width: 3px; }
+  .kbd { display: inline-block; font-family: ui-monospace, monospace; font-size: 11px;
+    border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px;
+    padding: 1px 6px; background: #f6f6f4; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tr:hover { background: #f8f8f6; }
+  .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+  .count-badge {
+    display: inline-block; background: #eef2f7; color: var(--accent); border-radius: 999px;
+    padding: 1px 9px; font-size: 12px; font-weight: 600; margin-left: 6px;
+  }
+  .warn { font-size: 12px; color: #8a6400; background: #fff8e6; border: 1px solid #f0dca0;
+    border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+  .spacer { flex: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cut annotation tool</h1>
+  <p class="sub">
+    Mark the timestamps where a cut/scene-transition happens in each stimulus clip. Pick a clip,
+    scrub/play to a cut, hit <span class="kbd">C</span> (or the button) at the moment it happens,
+    and export a CSV when you're done with a clip (or all of them).
+  </p>
+
+  <div class="panel">
+    <div class="row">
+      <label for="videoSelect">Clip</label>
+      <select id="videoSelect"></select>
+      <span class="spacer"></span>
+      <label for="rateSelect">Speed</label>
+      <select id="rateSelect">
+        <option value="0.1">0.1x</option>
+        <option value="0.25">0.25x</option>
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1x</option>
+      </select>
+    </div>
+
+    <video id="player" controls preload="metadata"></video>
+    <div class="timeline" id="timeline"></div>
+
+    <div class="row" style="margin-top: 12px;">
+      <button class="primary" id="markBtn">Mark cut here (C)</button>
+      <button id="stepBack">&laquo; frame (,)</button>
+      <button id="stepFwd">frame &raquo; (.)</button>
+      <span class="spacer"></span>
+      <label for="jumpInput">Jump to (s)</label>
+      <input type="number" id="jumpInput" step="0.01" style="width: 90px;">
+      <button id="jumpBtn">Go</button>
+    </div>
+
+    <div id="videoWarning" class="warn" style="display:none;"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <strong>Cuts for this clip</strong>
+      <span class="count-badge" id="cutCount">0</span>
+      <span class="spacer"></span>
+      <button id="exportCurrentBtn">Download CSV (this clip)</button>
+      <button id="exportAllBtn">Download CSV (all clips)</button>
+      <button id="saveSessionBtn">Save session (JSON)</button>
+      <button id="importBtn">Load saved session…</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none;">
+    </div>
+    <table>
+      <thead><tr><th style="width:120px;">Time</th><th>Seconds</th><th style="width:60px;"></th></tr></thead>
+      <tbody id="cutTableBody"></tbody>
+    </table>
+    <div class="empty" id="emptyMsg">No cuts marked yet for this clip.</div>
+  </div>
+
+  <div class="panel">
+    <strong>Notes</strong>
+    <p class="sub" style="margin-bottom:0;">
+      <strong>Open this file directly (<code>file://</code> &mdash; double-click it, or drag it
+      into a browser tab). Do NOT serve it with <code>python3 -m http.server</code></strong>:
+      Python's built-in http.server doesn't support HTTP Range requests (confirmed by testing --
+      it returns the whole file regardless of the requested range), which breaks video seeking
+      entirely over that route. Local <code>file://</code> playback doesn't have this problem,
+      since the browser reads the file directly rather than negotiating byte ranges over HTTP.
+      <br><br>
+      Progress is auto-saved to this browser's local storage as you go, but that storage is NOT
+      reliable for <code>file://</code> pages in some browsers &mdash; for safety, click
+      <strong>Download CSV</strong> or <strong>Save session (JSON)</strong> whenever you finish a
+      clip, and don't rely solely on auto-save. If you want reliable auto-save AND working
+      seeking, serve this folder with a Range-supporting server (e.g. Node's
+      <code>npx http-server</code>), not Python's http.server.
+    </p>
+  </div>
+</div>
+
+<script>
+// Exact duration/fps per clip, from outputs/stimulus_inventory.csv (2026-09-25 full run) --
+// used for the timeline scale and frame-step size. Update here if the inventory is re-run and
+// values change.
+const CLIPS = {
+  frank_complex:   { duration: 60.320,  fps: 25.000 },
+  frank_objects:   { duration: 60.120,  fps: 25.000 },
+  frank_play:      { duration: 60.920,  fps: 25.000 },
+  pixar_birds:     { duration: 150.150, fps: 23.976 },
+  sesameindia_1:   { duration: 60.000,  fps: 25.000 },
+  sesameindia_2:   { duration: 60.840,  fps: 25.000 },
+  sesameus_1:      { duration: 60.560,  fps: 29.970 },
+  sesameus_2:      { duration: 60.827,  fps: 29.970 },
+  slow_animals:    { duration: 60.727,  fps: 23.976 },
+  slow_hands:      { duration: 60.720,  fps: 25.000 },
+  slow_inanimate:  { duration: 60.727,  fps: 23.976 },
+  slow_people:     { duration: 60.761,  fps: 29.970 },
+};
+// Relative to this file's location (scripts/preprocessing/cut_annotation/) -> repo root -> stimuli/main_blocks.
+const VIDEO_DIR = "../../../stimuli/main_blocks/";
+const STORAGE_KEY = "cut_annotation_tool_v1";
+
+const videoSelect = document.getElementById("videoSelect");
+const player = document.getElementById("player");
+const timeline = document.getElementById("timeline");
+const rateSelect = document.getElementById("rateSelect");
+const markBtn = document.getElementById("markBtn");
+const stepBack = document.getElementById("stepBack");
+const stepFwd = document.getElementById("stepFwd");
+const jumpInput = document.getElementById("jumpInput");
+const jumpBtn = document.getElementById("jumpBtn");
+const cutTableBody = document.getElementById("cutTableBody");
+const cutCount = document.getElementById("cutCount");
+const emptyMsg = document.getElementById("emptyMsg");
+const videoWarning = document.getElementById("videoWarning");
+const exportCurrentBtn = document.getElementById("exportCurrentBtn");
+const exportAllBtn = document.getElementById("exportAllBtn");
+const importBtn = document.getElementById("importBtn");
+const importFile = document.getElementById("importFile");
+
+// { video_name: [cut_time_s, ...] }
+let state = {};
+let currentVideo = Object.keys(CLIPS)[0];
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) state = JSON.parse(raw);
+  } catch (e) {
+    console.warn("localStorage unavailable (expected for file:// in some browsers):", e);
+  }
+  for (const name of Object.keys(CLIPS)) if (!state[name]) state[name] = [];
+}
+
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  catch (e) { /* best-effort only -- see on-page warning */ }
+}
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  const sec = (s - m * 60).toFixed(3);
+  return `${m}:${sec.padStart(6, "0")}`;
+}
+
+function populateVideoSelect() {
+  for (const name of Object.keys(CLIPS)) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    videoSelect.appendChild(opt);
+  }
+  videoSelect.value = currentVideo;
+}
+
+function loadVideo(name) {
+  currentVideo = name;
+  player.src = VIDEO_DIR + name + "_stripped.mp4";
+  player.load();
+  videoWarning.style.display = "none";
+  renderCuts();
+  renderTimeline();
+}
+
+function renderCuts() {
+  const cuts = [...state[currentVideo]].sort((a, b) => a - b);
+  cutTableBody.innerHTML = "";
+  cutCount.textContent = cuts.length;
+  emptyMsg.style.display = cuts.length ? "none" : "block";
+  cuts.forEach((t) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${fmtTime(t)}</td><td>${t.toFixed(3)}</td><td></td>`;
+    const delBtn = document.createElement("button");
+    delBtn.textContent = "Remove";
+    delBtn.className = "danger";
+    delBtn.onclick = () => {
+      state[currentVideo] = state[currentVideo].filter((x) => x !== t);
+      saveState();
+      renderCuts();
+      renderTimeline();
+    };
+    tr.children[2].appendChild(delBtn);
+    cutTableBody.appendChild(tr);
+  });
+  renderTimeline();
+}
+
+function renderTimeline() {
+  timeline.innerHTML = "";
+  const duration = CLIPS[currentVideo].duration;
+  for (const t of state[currentVideo]) {
+    const tick = document.createElement("div");
+    tick.className = "tick";
+    tick.style.left = `${(t / duration) * 100}%`;
+    tick.title = fmtTime(t);
+    tick.onclick = (e) => { e.stopPropagation(); player.currentTime = t; };
+    timeline.appendChild(tick);
+  }
+  const playhead = document.createElement("div");
+  playhead.className = "playhead";
+  const frac = duration ? (player.currentTime || 0) / duration : 0;
+  playhead.style.left = `${frac * 100}%`;
+  timeline.appendChild(playhead);
+}
+
+function markCutHere() {
+  const t = Math.round(player.currentTime * 1000) / 1000;
+  if (!state[currentVideo].includes(t)) {
+    state[currentVideo].push(t);
+    saveState();
+    renderCuts();
+  }
+}
+
+function stepFrame(dir) {
+  const fps = CLIPS[currentVideo].fps;
+  player.currentTime = Math.max(0, player.currentTime + dir * (1 / fps));
+}
+
+function downloadBlob(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function saveSession() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  downloadBlob(`cut_annotation_session_${stamp}.json`, JSON.stringify(state, null, 2), "application/json");
+}
+
+function exportCurrent() {
+  const rows = ["video_name,cut_time_s"];
+  for (const t of [...state[currentVideo]].sort((a, b) => a - b)) {
+    rows.push(`${currentVideo},${t.toFixed(3)}`);
+  }
+  downloadBlob(`${currentVideo}_cuts.csv`, rows.join("\n"));
+}
+
+function exportAll() {
+  const rows = ["video_name,cut_time_s"];
+  for (const name of Object.keys(CLIPS)) {
+    for (const t of [...state[name]].sort((a, b) => a - b)) {
+      rows.push(`${name},${t.toFixed(3)}`);
+    }
+  }
+  downloadBlob("all_clips_cuts.csv", rows.join("\n"));
+}
+
+// Event wiring
+videoSelect.addEventListener("change", (e) => loadVideo(e.target.value));
+rateSelect.addEventListener("change", (e) => { player.playbackRate = parseFloat(e.target.value); });
+markBtn.addEventListener("click", markCutHere);
+stepBack.addEventListener("click", () => stepFrame(-1));
+stepFwd.addEventListener("click", () => stepFrame(1));
+jumpBtn.addEventListener("click", () => {
+  const v = parseFloat(jumpInput.value);
+  if (!isNaN(v)) player.currentTime = v;
+});
+timeline.addEventListener("click", (e) => {
+  const rect = timeline.getBoundingClientRect();
+  const frac = (e.clientX - rect.left) / rect.width;
+  player.currentTime = frac * CLIPS[currentVideo].duration;
+});
+player.addEventListener("timeupdate", renderTimeline);
+player.addEventListener("error", () => {
+  videoWarning.style.display = "block";
+  videoWarning.textContent = `Could not load ${VIDEO_DIR}${currentVideo}_stripped.mp4 -- ` +
+    `check that this file is opened from inside the repo (scripts/preprocessing/cut_annotation/) ` +
+    `and that stimuli/main_blocks/ contains the stripped mp4 files.`;
+});
+
+exportCurrentBtn.addEventListener("click", exportCurrent);
+exportAllBtn.addEventListener("click", exportAll);
+document.getElementById("saveSessionBtn").addEventListener("click", saveSession);
+importBtn.addEventListener("click", () => importFile.click());
+importFile.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const loaded = JSON.parse(reader.result);
+      for (const name of Object.keys(CLIPS)) {
+        if (Array.isArray(loaded[name])) state[name] = loaded[name];
+      }
+      saveState();
+      renderCuts();
+      renderTimeline();
+    } catch (err) {
+      alert("Could not parse that file as a saved session (expects the JSON export format).");
+    }
+  };
+  reader.readAsText(file);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+  if (e.key === "c" || e.key === "C") { e.preventDefault(); markCutHere(); }
+  else if (e.key === ",") { e.preventDefault(); stepFrame(-1); }
+  else if (e.key === ".") { e.preventDefault(); stepFrame(1); }
+});
+
+loadState();
+populateVideoSelect();
+loadVideo(currentVideo);
+</script>
+</body>
+</html>
