@@ -20,8 +20,9 @@ data": never point this at the live server mount.
 
 Output
 ------
-outputs/patch_fixation_counts.csv (row, col, center_x, center_y, n_fixations)
-outputs/checks/fixation_density_by_patch.png -- the current grid's circular patches,
+data/results/stimulus_prep/patch_fixation_counts.csv (row, col, center_x, center_y,
+    n_fixations) -- NOTE: data/ is a symlink to the mounted lab server in this repo.
+figures/checks/fixation_density_by_patch.png -- the current grid's circular patches,
     filled by fixation count.
 
 Usage
@@ -144,7 +145,11 @@ def main():
                          help="LOCAL COPY of participant_summary.csv.")
     parser.add_argument("--param_code", required=True,
                          help="I2MC parameter code suffix on the fixation CSV filenames (e.g. f329476c).")
-    parser.add_argument("--output_dir", default=None, help="Output directory (default: outputs/).")
+    parser.add_argument("--results_dir", default=None,
+                        help="Output directory for the CSV (default: data/results/stimulus_prep/ -- "
+                             "NOTE: data/ is a symlink to the mounted lab server in this repo).")
+    parser.add_argument("--checks_dir", default=None,
+                        help="Output directory for the check figure (default: figures/checks/).")
     parser.add_argument("--display_width", type=int, default=1920)
     parser.add_argument("--display_height", type=int, default=1080)
     parser.add_argument("--patch_diameter_px", type=float, default=180,
@@ -156,8 +161,9 @@ def main():
     args = parser.parse_args()
 
     project_root = vu.project_root()
-    output_dir = Path(args.output_dir) if args.output_dir else project_root / "outputs"
-    checks_dir = output_dir / "checks"
+    results_dir = Path(args.results_dir) if args.results_dir else project_root / "data" / "results" / "stimulus_prep"
+    checks_dir = Path(args.checks_dir) if args.checks_dir else project_root / "figures" / "checks"
+    results_dir.mkdir(parents=True, exist_ok=True)
     checks_dir.mkdir(parents=True, exist_ok=True)
 
     fix_df = load_adult_fixations(Path(args.fixation_dir), args.param_code, Path(args.participant_summary_path))
@@ -172,7 +178,7 @@ def main():
     membership = compute_patch_fixation_membership(fix_df, patch_centers_df, args.display_height, radius_px)
     patch_centers_df["n_fixations"] = membership.sum(axis=0)
 
-    patch_counts_path = output_dir / "patch_fixation_counts.csv"
+    patch_counts_path = results_dir / "patch_fixation_counts.csv"
     patch_centers_df.to_csv(patch_counts_path, index=False)
 
     total = len(fix_df)

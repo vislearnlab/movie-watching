@@ -21,10 +21,10 @@ library(here)
 library(ggthemes)
 
 # ── ISC source ────────────────────────────────────────────────────────────────
-# "gaze": isc_gaze.py output (raw continuous gaze) -- needs the QC filter in
+# "gaze": calc_isc_rawgaze.py output (raw continuous gaze) -- needs the QC filter in
 #         Part 1 below, since validity/trial-count screening hasn't happened
 #         upstream of that script.
-# "fixations": isc_fixations.py output (I2MC fixation-position ISC) -- Part 1
+# "fixations": calc_isc_fixations.py output (I2MC fixation-position ISC) -- Part 1
 #         is skipped, since trial-level exclusion (calibration accuracy,
 #         fraction of invalid samples) already happened during fixation
 #         detection itself (i2mc_fixations.py's max_calibration_deg /
@@ -796,7 +796,7 @@ that file only has one aggregate ISC value per pair per video, no time
 resolution. So this section recomputes windowed correlations directly from
 each participant's fixation CSV: same overlap-weighted binning
 (`fixations_to_binned_series`) and vectorized sliding-window Pearson
-(`_pearson_matrix`) as `isc_fixations.py` / `run_all_clips.py`, ported to R.
+(`_pearson_matrix`) as `calc_isc_fixations.py` / `run_all_clips.py`, ported to R.
 Only meaningful for `isc_source == "fixations"` (raw-gaze ISC has no
 equivalent per-fixation file to bin from block calibration).
 
@@ -813,7 +813,7 @@ MIN_VALID <- 30   # bins required within a window for that pair's r to count
 
 ```{r timecourse-helpers}
 # ── overlap-weighted winner-take-all binning, ported from
-# isc_fixations.py's fixations_to_binned_series: each bin gets the position
+# calc_isc_fixations.py's fixations_to_binned_series: each bin gets the position
 # of whichever fixation covers the largest share of that bin's duration, so
 # a bin straddling a fixation boundary is resolved by overlap instead of by
 # which fixation happened to be read last. ──────────────────────────────────
@@ -840,11 +840,11 @@ fixations_to_binned_series_r <- function(fix_df, bin_ms) {
   list(x = x, y = y)
 }
 
-load_binned <- function(pid, group, video, code) {
+load_binned <- function(pid, group, video, code, bin_ms = BIN_MS) {
   path <- file.path(FIX_DIR, group, glue("{pid}_{video}_{code}.csv"))
   if (!file.exists(path)) return(NULL)
   fix_df <- suppressMessages(read_csv(path, show_col_types = FALSE))
-  fixations_to_binned_series_r(fix_df, BIN_MS)
+  fixations_to_binned_series_r(fix_df, bin_ms)
 }
 
 # ── vectorized windowed Pearson r for N pairs simultaneously, ported from
@@ -926,9 +926,16 @@ find_high_isc_periods <- function(windowed_df, comparison_label, quantile = PEAK
 # high-ISC periods, build the plot. Used once below for `example_video` and
 # again, in a loop, for the four slow_* videos -- same pipeline either way,
 # just parameterized by video name instead of hardcoded to one.
-build_timecourse <- function(video_name, title = video_name, base_size = 13) {
+## bin_ms/window_s/step_s/min_valid/valid_adult_pids default to the globals configured
+## above, so every EXISTING call site (build_timecourse(.x), build_timecourse(example_video,
+## title=...)) is completely unaffected -- these params exist only for the
+## concordance-comparison export in "Part 7c" below, which calls this with different values.
+build_timecourse <- function(video_name, title = video_name, base_size = 13,
+                              bin_ms = BIN_MS, window_s = WINDOW_S, step_s = STEP_S,
+                              min_valid = MIN_VALID, valid_adult_pids = NULL) {
   pix <- isc_raw |> filter(video_name == !!video_name)
   adults <- sort(unique(c(pix$pid_a[pix$group_a == "adults"], pix$pid_b[pix$group_b == "adults"])))
+  if (!is.null(valid_adult_pids)) adults <- intersect(adults, valid_adult_pids)
   kids   <- sort(unique(c(pix$pid_a[pix$group_a == "kids"],   pix$pid_b[pix$group_b == "kids"])))
 
   pids      <- c(adults, kids)
@@ -936,7 +943,7 @@ build_timecourse <- function(video_name, title = video_name, base_size = 13) {
   groups_of <- set_names(groups, pids)
   idx_of    <- set_names(seq_along(pids), pids)
 
-  binned <- map2(pids, groups, load_binned, video = video_name, code = FIX_CODE)
+  binned <- map2(pids, groups, load_binned, video = video_name, code = FIX_CODE, bin_ms = bin_ms)
   names(binned) <- pids
 
   # Median, not max, sizes the shared bin matrix -- a single participant
@@ -969,8 +976,8 @@ build_timecourse <- function(video_name, title = video_name, base_size = 13) {
   kk_pairs <- pair_group(all_pairs, "kids", "kids")
   ak_pairs <- pair_group(all_pairs, "adults", "kids")
 
-  window_bins <- as.integer(round(WINDOW_S * 1000 / BIN_MS))
-  step_bins   <- as.integer(round(STEP_S * 1000 / BIN_MS))
+  window_bins <- as.integer(round(window_s * 1000 / bin_ms))
+  step_bins   <- as.integer(round(step_s * 1000 / bin_ms))
   n_windows   <- max(0, (n_bins - window_bins) %/% step_bins + 1)
 
   windowed_r_for_pairs <- function(pairs) {
@@ -980,11 +987,11 @@ build_timecourse <- function(video_name, title = video_name, base_size = 13) {
     for (w in seq_len(n_windows)) {
       start <- (w - 1) * step_bins + 1
       end <- start + window_bins - 1
-      r_x <- pearson_matrix(X[ia, start:end, drop = FALSE], X[ib, start:end, drop = FALSE])
-      r_y <- pearson_matrix(Y[ia, start:end, drop = FALSE], Y[ib, start:end, drop = FALSE])
+      r_x <- pearson_matrix(X[ia, start:end, drop = FALSE], X[ib, start:end, drop = FALSE], min_valid = min_valid)
+      r_y <- pearson_matrix(Y[ia, start:end, drop = FALSE], Y[ib, start:end, drop = FALSE], min_valid = min_valid)
       r_avg <- rowMeans(cbind(r_x, r_y), na.rm = TRUE)
       r_avg[is.nan(r_avg)] <- NA_real_
-      out[[w]] <- tibble(window_start_s = (start - 1) * BIN_MS / 1000, r = r_avg)
+      out[[w]] <- tibble(window_start_s = (start - 1) * bin_ms / 1000, r = r_avg)
     }
     bind_rows(out)
   }
@@ -1151,6 +1158,74 @@ for (v in all_video_names) {
   print(p)
   ggsave(here(glue("figures/isc_timecourse_shotscale_{v}.png")), plot = p, width = 18, height = 3)
 }
+```
+
+---
+
+# Part 8b: Export Windowed ISC for Concordance Comparison
+
+Writes a CSV of the windowed Adult–Adult (and Child–Child / Child–Adult) ISC for every
+clip, so it can be read by the fixation-density-concordance R scripts/notebook
+(`calc_concordance_group.R`, `calc_concordance_pairwise.R`,
+`plot_concordance_isc_timecourses.qmd`) without re-deriving ISC from scratch in Python. This
+supersedes `calc_isc_timecourse.py`/`isc_fixation_timecourse_1s.csv`, the earlier
+Python port that existed only because this notebook didn't export a CSV yet.
+
+Computed at DIFFERENT parameters than Part 7/7b/8/9's own `BIN_MS=20, WINDOW_S=2` (those
+stay exactly as they were, untouched, via `build_timecourse`'s new params defaulting back
+to the existing globals) -- concordance uses a 1.0s window, and `BIN_MS=25` instead of 20
+here specifically because 20 doesn't divide 250ms evenly (rounds to a 240ms step, silently
+misaligning this export's grid against concordance's exact 250ms grid -- see
+METHODS_DECISIONS.md, 2026-10-01/02, for the full story of that bug and this fix).
+
+**Participant population, matched to concordance (METHODS_DECISIONS.md, 2026-10-02):**
+`isc_raw`'s own adult/pid list for a video (whoever has a row in the pre-computed
+`isc_fixation_pairwise.csv`) does NOT equal the `valid_data==TRUE` population
+`calc_concordance_group.R` uses (confirmed by testing: 44 vs. 41 adults for
+`pixar_birds`, a 3/7-person mismatch in each direction) -- `isc_fixation_pairwise.csv`'s
+own inclusion rule is just "has a fixation file for this code", with no `valid_data` QC
+step. Filtering to `valid_adult_pids` here is REQUIRED for this export to be a fair
+comparison against concordance, not optional.
+
+```{r export-config}
+EXPORT_BIN_MS    <- 25     # divides 250ms evenly (10 bins); BIN_MS=20 does not (rounds to 240ms)
+EXPORT_WINDOW_S  <- 1.0    # matches calc_concordance_group.R's WINDOW_S
+EXPORT_STEP_S    <- 0.25   # matches calc_concordance_group.R's STEP_S
+EXPORT_MIN_VALID <- 30     # same bin-validity gate as Part 7's MIN_VALID; concordance has
+                           # no equivalent minimum-data gate by design (METHODS_DECISIONS.md)
+
+participant_summary <- read_csv(here("data", "local_cache", "participant_summary.csv"), show_col_types = FALSE)
+valid_adult_pids <- participant_summary |>
+  filter(participant_type == "adults", valid_data == TRUE) |>
+  pull(participant_id)
+cat(glue("{length(valid_adult_pids)} valid adults (matches concordance's population)\n"))
+```
+
+```{r export-compute}
+export_cache <- set_names(
+  map(all_video_names, ~ build_timecourse(
+    .x,
+    bin_ms = EXPORT_BIN_MS, window_s = EXPORT_WINDOW_S, step_s = EXPORT_STEP_S,
+    min_valid = EXPORT_MIN_VALID, valid_adult_pids = valid_adult_pids
+  )$windowed),
+  all_video_names
+)
+
+isc_timecourse_export <- map_dfr(all_video_names, function(v) {
+  export_cache[[v]] |>
+    arrange(comparison, window_start_s) |>
+    group_by(comparison) |>
+    mutate(window_idx = row_number() - 1L,
+           window_end_s = round(window_start_s + EXPORT_WINDOW_S, 3)) |>
+    ungroup() |>
+    mutate(video_name = v, window_start_s = round(window_start_s, 3)) |>
+    select(video_name, comparison, window_idx, window_start_s, window_end_s, mean_r, n_pairs)
+})
+
+write_csv(isc_timecourse_export, here("data", "results", "concordance", "isc_fixation_timecourse.csv"))
+cat(glue("Wrote {nrow(isc_timecourse_export)} rows ({length(all_video_names)} videos) to ",
+         "data/results/concordance/isc_fixation_timecourse.csv\n"))
+isc_timecourse_export |> filter(comparison == "Adult–Adult") |> count(video_name, name = "n_windows")
 ```
 
 ---

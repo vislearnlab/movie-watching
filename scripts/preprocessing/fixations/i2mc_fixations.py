@@ -64,7 +64,7 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "
 LOG_DIR    = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "preprocessed", "log-files")
 
 # Tracker/display setup (experiment/moviewatching.py: DISPSIZE = (1920, 1080);
-# 250 Hz Tobii Fusion, per analysis/isc_gaze.py). Viewing distance and physical
+# 250 Hz Tobii Fusion, per analysis/calc_isc_rawgaze.py). Viewing distance and physical
 # screen size are calibrated per-session from the Tobii display area and are
 # not currently logged to the per-trial CSVs, so noise measures (RMSxy, BCEA)
 # are reported in pixels rather than degrees. Pass --scr_width_cm/--dist_cm
@@ -172,7 +172,7 @@ def compute_param_code(params: dict) -> str:
     canonical = ",".join(f"{k}={params[k]}" for k in sorted(params))
     return hashlib.sha256(canonical.encode()).hexdigest()[:8]
 
-# ── file helpers (mirrors analysis/isc_gaze.py) ────────────────────────────────
+# ── file helpers (mirrors analysis/calc_isc_rawgaze.py) ────────────────────────────────
 
 def find_participant_files(pdir: str) -> dict:
     csvs = glob.glob(os.path.join(pdir, "*.csv"))

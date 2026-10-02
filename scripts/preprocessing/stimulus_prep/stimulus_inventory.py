@@ -17,8 +17,10 @@ once RA/undergrad involvement was dropped from the project -- see METHODS_DECISI
 
 Output
 ------
-outputs/stimulus_inventory.csv (or outputs/stimulus_inventory.quicktest.csv with --quick)
-outputs/checks/stimulus_inventory_thumbnails.png -- one mid-clip thumbnail per clip,
+data/results/stimulus_prep/stimulus_inventory.csv (or .quicktest.csv with --quick) --
+    NOTE: data/ is a symlink to the mounted lab server in this repo, so this writes
+    through to shared storage, not just the local checkout.
+figures/checks/stimulus_inventory_thumbnails.png -- one mid-clip thumbnail per clip,
     with a red rectangle outlining the detected video content area. Red flags: the
     red outline not matching the actual picture edge, real letterbox/pillarbox bars
     with no outline drawn inside them, or an outline drawn where there are no bars.
@@ -123,7 +125,7 @@ def save_check_figure(inventory_df: pd.DataFrame, project_root: Path, checks_dir
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Build outputs/stimulus_inventory.csv from stimuli/main_blocks/*_stripped.mp4.",
+        description="Build data/results/stimulus_prep/stimulus_inventory.csv from stimuli/main_blocks/*_stripped.mp4.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--quick", action="store_true",
@@ -131,8 +133,11 @@ def main():
                              "Writes to stimulus_inventory.quicktest.csv instead of the canonical file.")
     parser.add_argument("--stimuli_dir", default=None,
                         help="Directory containing *_stripped.mp4 files (default: stimuli/main_blocks).")
-    parser.add_argument("--output_dir", default=None,
-                        help="Output directory for the CSV and checks/ (default: outputs/).")
+    parser.add_argument("--results_dir", default=None,
+                        help="Output directory for the CSV (default: data/results/stimulus_prep/ -- "
+                             "NOTE: data/ is a symlink to the mounted lab server in this repo).")
+    parser.add_argument("--checks_dir", default=None,
+                        help="Output directory for the check figure (default: figures/checks/).")
     parser.add_argument("--letterbox_bar_frac_threshold", type=float, default=0.01,
                         help="A side counts as a 'bar' if darker than cropdetect_limit for "
                              "more than this fraction of that dimension.")
@@ -147,8 +152,9 @@ def main():
     vu.check_ffmpeg_available()
     project_root = vu.project_root()
     stimuli_dir = Path(args.stimuli_dir) if args.stimuli_dir else project_root / "stimuli" / "main_blocks"
-    output_dir = Path(args.output_dir) if args.output_dir else project_root / "outputs"
-    checks_dir = output_dir / "checks"
+    results_dir = Path(args.results_dir) if args.results_dir else project_root / "data" / "results" / "stimulus_prep"
+    checks_dir = Path(args.checks_dir) if args.checks_dir else project_root / "figures" / "checks"
+    results_dir.mkdir(parents=True, exist_ok=True)
     checks_dir.mkdir(parents=True, exist_ok=True)
 
     if args.quick:
@@ -176,7 +182,7 @@ def main():
     else:
         print("All clips are full-screen (no letterbox/pillarbox bars detected).")
 
-    inventory_out = output_dir / ("stimulus_inventory.quicktest.csv" if args.quick else "stimulus_inventory.csv")
+    inventory_out = results_dir / ("stimulus_inventory.quicktest.csv" if args.quick else "stimulus_inventory.csv")
     inventory_df.to_csv(inventory_out, index=False)
     print(f"\nWrote {len(inventory_df)} rows to {inventory_out}")
 

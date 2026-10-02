@@ -14,21 +14,25 @@ close to a real cut (content-jump check) -- see `find_valid_local_time` below an
 METHODS_DECISIONS.md, 2026-09-25 ("Added a content-jump check", "Added a blown-out/white-frame
 check") for how those thresholds were calibrated.
 
-Reads: outputs/stimulus_inventory.csv (the full, non-quick stimulus_inventory.py run --
-this script asserts that file exists rather than re-deriving it from stimuli/ directly).
+Reads: data/results/stimulus_prep/stimulus_inventory.csv (the full, non-quick
+stimulus_inventory.py run -- this script asserts that file exists rather than re-deriving
+it from stimuli/ directly).
 
 Part of the pipeline described in stimulus_inventory.py's docstring; see METHODS_DECISIONS.md at
 the project root for the full assumptions/decisions log.
 
 Output
 ------
-outputs/representative_frames.csv (or .quicktest.csv with --quick) + one PNG per frame
-    at display resolution, in outputs/representative_frames/ (or _quicktest/).
-outputs/checks/representative_frames_timeline.png -- one timeline per block: clip
+data/results/stimulus_prep/representative_frames.csv (or .quicktest.csv with --quick) +
+    one PNG per frame at display resolution, in
+    data/results/stimulus_prep/representative_frames/ (or _quicktest/). NOTE: data/ is a
+    symlink to the mounted lab server in this repo, so this writes through to shared
+    storage, not just the local checkout.
+figures/checks/representative_frames_timeline.png -- one timeline per block: clip
     boundaries, each target time (open circle) and chosen time (filled circle), with an
     arrow where a frame was moved. Red flags: an arrow crossing a clip boundary (shouldn't
     happen -- the search is clamped to one clip), or chosen times clustering suspiciously.
-outputs/checks/representative_frames_contact_sheet.png -- every chosen frame, labeled.
+figures/checks/representative_frames_contact_sheet.png -- every chosen frame, labeled.
     Red flags: transition frames, fades, or blurry frames -- the all-black/white check only
     catches fully black/white frames, not partial fades or motion blur, so eyeball these.
 
@@ -233,14 +237,18 @@ def save_contact_sheet(rep_frames_df: pd.DataFrame, project_root: Path, checks_d
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Sample representative frames per block from outputs/stimulus_inventory.csv.",
+        description="Sample representative frames per block from data/results/stimulus_prep/stimulus_inventory.csv.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--quick", action="store_true",
                         help="Fast iteration mode: 1 block, 2 frames. Writes to the .quicktest "
                              "CSV/PNG dir instead of the canonical ones.")
-    parser.add_argument("--output_dir", default=None,
-                        help="Output directory for the CSV, frame PNGs, and checks/ (default: outputs/).")
+    parser.add_argument("--results_dir", default=None,
+                        help="Output directory for the CSV and frame PNGs, and where "
+                             "stimulus_inventory.csv is read from (default: data/results/stimulus_prep/ -- "
+                             "NOTE: data/ is a symlink to the mounted lab server in this repo).")
+    parser.add_argument("--checks_dir", default=None,
+                        help="Output directory for the check figures (default: figures/checks/).")
     parser.add_argument("--n_per_block", type=int, default=6,
                         help="Representative frames sampled per block.")
     parser.add_argument("--n_total", type=int, default=24,
@@ -265,11 +273,12 @@ def main():
 
     vu.check_ffmpeg_available()
     project_root = vu.project_root()
-    output_dir = Path(args.output_dir) if args.output_dir else project_root / "outputs"
-    checks_dir = output_dir / "checks"
+    results_dir = Path(args.results_dir) if args.results_dir else project_root / "data" / "results" / "stimulus_prep"
+    checks_dir = Path(args.checks_dir) if args.checks_dir else project_root / "figures" / "checks"
+    results_dir.mkdir(parents=True, exist_ok=True)
     checks_dir.mkdir(parents=True, exist_ok=True)
 
-    inventory_path = output_dir / "stimulus_inventory.csv"
+    inventory_path = results_dir / "stimulus_inventory.csv"
     if not inventory_path.exists():
         sys.exit(f"ERROR: {inventory_path} not found -- run stimulus_inventory.py (without --quick) first.")
     full_inventory_df = pd.read_csv(inventory_path)
@@ -287,7 +296,7 @@ def main():
             "check --n_per_block/--n_total or the block list."
         )
 
-    frame_dir = output_dir / ("representative_frames_quicktest" if args.quick else "representative_frames")
+    frame_dir = results_dir / ("representative_frames_quicktest" if args.quick else "representative_frames")
     frame_dir.mkdir(parents=True, exist_ok=True)
 
     block_timelines = {}
@@ -335,7 +344,7 @@ def main():
     else:
         print("No frames needed to move (none landed on a black, white, or too-close-to-a-cut frame).")
 
-    csv_out = output_dir / ("representative_frames.quicktest.csv" if args.quick else "representative_frames.csv")
+    csv_out = results_dir / ("representative_frames.quicktest.csv" if args.quick else "representative_frames.csv")
     rep_frames_df.to_csv(csv_out, index=False)
     print(f"\nWrote {len(rep_frames_df)} rows to {csv_out}")
 

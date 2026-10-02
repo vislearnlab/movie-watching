@@ -4,7 +4,7 @@ that participant's real fixation duration -- red = kids, blue = adults.
 
 Replaces visualize_fixation_diff.py's duration-weighted, calibration-blurred
 density-map approach. That approach doesn't match how this project's ISC
-analysis actually treats fixations (isc_fixations.py / isc_analysis.qmd
+analysis actually treats fixations (calc_isc_fixations.py / isc_analysis.qmd
 correlate raw fixation positions, not smoothed density), so this script
 shows the same underlying data the ISC numbers are computed from: discrete
 points, no blur, no duration weighting, no windowing.

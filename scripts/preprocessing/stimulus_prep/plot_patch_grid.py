@@ -13,7 +13,8 @@ This script only previews the grid overlay on the representative frames -- it is
 the rest of Task 5 (per-frame patch PNGs, patch_index.csv, neighbor table, coverage
 checks), which has not been built yet.
 
-Reads: all PNGs in outputs/representative_frames/ (expects 24, from representative_frames.py).
+Reads: all PNGs in data/results/stimulus_prep/representative_frames/ (expects 24, from
+representative_frames.py).
 
 Part of the pipeline described in stimulus_inventory.py's docstring; see METHODS_DECISIONS.md at
 the project root for the full assumptions/decisions log, including why the screen
@@ -22,7 +23,7 @@ unconfirmed estimate rather than a measured constant.
 
 Output
 ------
-outputs/checks/patch_grid_preview/{frame_id}_patch_grid.png -- the grid (green circles +
+figures/checks/patch_grid_preview/{frame_id}_patch_grid.png -- the grid (green circles +
     red '+' markers) overlaid on each representative frame, with the display boundary
     outlined in yellow. Confirm visually that the outermost circles touch (not cross) the
     yellow boundary.
@@ -99,9 +100,12 @@ def main():
         description="Overlay the confirmed patch grid on all representative frames.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--output_dir", default=None,
-                        help="Output directory to read representative_frames/ from and write checks/ to "
-                             "(default: outputs/).")
+    parser.add_argument("--results_dir", default=None,
+                        help="Directory to read representative_frames/ from (default: "
+                             "data/results/stimulus_prep/ -- NOTE: data/ is a symlink to the mounted "
+                             "lab server in this repo).")
+    parser.add_argument("--checks_dir", default=None,
+                        help="Output directory for the check figures (default: figures/checks/).")
     parser.add_argument("--patch_diameter_px", type=float, default=180,
                         help="Patch circle diameter in pixels. FINAL value confirmed 2026-09-29 -- see METHODS_DECISIONS.md.")
     parser.add_argument("--patch_n_cols", type=int, default=15,
@@ -117,8 +121,8 @@ def main():
     args = parser.parse_args()
 
     project_root = vu.project_root()
-    output_dir = Path(args.output_dir) if args.output_dir else project_root / "outputs"
-    checks_dir = output_dir / "checks"
+    results_dir = Path(args.results_dir) if args.results_dir else project_root / "data" / "results" / "stimulus_prep"
+    checks_dir = Path(args.checks_dir) if args.checks_dir else project_root / "figures" / "checks"
 
     grid_df, grid_info = compute_patch_grid(args.patch_diameter_px, args.patch_n_cols,
                                              args.display_width, args.display_height)
@@ -130,7 +134,7 @@ def main():
     print(f"n_rows={grid_info['n_rows']}  spacing_y={grid_info['spacing_y']:.2f}px  ratio_y={grid_info['ratio_y']:.3f}")
     print(f"n_patches={len(grid_df)}")
 
-    rep_frames_dir = output_dir / "representative_frames"
+    rep_frames_dir = results_dir / "representative_frames"
     frame_paths = sorted(p for p in rep_frames_dir.glob("*.png") if not p.name.startswith("_"))
     if not frame_paths:
         sys.exit(f"ERROR: No representative frames found in {rep_frames_dir} -- run representative_frames.py first.")

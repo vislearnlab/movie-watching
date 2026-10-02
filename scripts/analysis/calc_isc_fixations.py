@@ -1,16 +1,16 @@
 """
 ISC (Inter-Subject Correlation) of fixation position across age groups.
 
-Same pairwise Pearson-r-on-a-binned-time-series approach as isc_gaze.py, but
+Same pairwise Pearson-r-on-a-binned-time-series approach as calc_isc_rawgaze.py, but
 computed on I2MC fixation output (preprocessing/fixations/i2mc_fixations.py)
 instead of raw gaze samples: each bin gets the (xpos, ypos) of whichever
 fixation covers the largest share of that bin's duration, so a bin that
 straddles a fixation boundary is assigned by overlap, not by which fixation
 happened to be processed last, and a bin that falls entirely within a
 saccade/gap between fixations is NaN rather than averaged across the
-transition (isc_gaze.py's raw-sample bins average through saccades instead).
+transition (calc_isc_rawgaze.py's raw-sample bins average through saccades instead).
 This measures "did two people fixate the same place", not continuous
-gaze-trajectory similarity -- a different quantity from isc_gaze.py, not a
+gaze-trajectory similarity -- a different quantity from calc_isc_rawgaze.py, not a
 drop-in replacement for it.
 
 Comparison groups
@@ -35,9 +35,9 @@ more recently than another.
 
 Usage
 -----
-    python analysis/isc_fixations.py --code 036667f5
-    python analysis/isc_fixations.py --code 036667f5 --raw_dir data/raw --fixation_dir data/preprocessed/fixations --output_dir data/results/isc --bin_ms 20
-    python analysis/isc_fixations.py --code 036667f5 --overwrite   # recompute everything from scratch
+    python analysis/calc_isc_fixations.py --code 036667f5
+    python analysis/calc_isc_fixations.py --code 036667f5 --raw_dir data/raw --fixation_dir data/preprocessed/fixations --output_dir data/results/isc --bin_ms 20
+    python analysis/calc_isc_fixations.py --code 036667f5 --overwrite   # recompute everything from scratch
 """
 
 import argparse
@@ -52,12 +52,12 @@ import pandas as pd
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 sys.path.insert(0, os.path.dirname(__file__))
-from isc_gaze import compute_pairwise_isc, aggregate_by_block, aggregate_summary
+from calc_isc_rawgaze import compute_pairwise_isc, aggregate_by_block, aggregate_summary
 
 RAW_DIR      = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw")
 FIXATION_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "preprocessed", "fixations")
 OUTPUT_DIR   = os.path.join(os.path.dirname(__file__), "..", "..", "data", "results", "isc")
-BIN_MS       = 20  # matches isc_gaze.py's default so results stay comparable at defaults
+BIN_MS       = 20  # matches calc_isc_rawgaze.py's default so results stay comparable at defaults
 
 # ── file helpers ──────────────────────────────────────────────────────────────
 
@@ -88,7 +88,7 @@ def fixations_to_binned_series(fix_df: pd.DataFrame, bin_ms: float) -> pd.DataFr
     whichever fixation is processed later when a bin straddles a fixation
     boundary (end of one fixation, saccade, start of the next). A bin
     touched by no fixation at all (fully within a saccade/gap) is NaN,
-    same convention as isc_gaze.py's gaze_to_binned_series invalid-sample
+    same convention as calc_isc_rawgaze.py's gaze_to_binned_series invalid-sample
     NaNs.
 
     Returns DataFrame with columns [bin, gaze_x, gaze_y] -- same shape as

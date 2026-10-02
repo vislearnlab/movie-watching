@@ -18,9 +18,9 @@ Outputs (written to --output_dir)
 
 Usage
 -----
-    python analysis/isc_gaze.py
-    python analysis/isc_gaze.py --raw_dir data/raw --output_dir data/results/isc --bin_ms 20
-    python analysis/isc_gaze.py --overwrite   # recompute everything from scratch
+    python analysis/calc_isc_rawgaze.py
+    python analysis/calc_isc_rawgaze.py --raw_dir data/raw --output_dir data/results/isc --bin_ms 20
+    python analysis/calc_isc_rawgaze.py --overwrite   # recompute everything from scratch
 """
 
 import argparse

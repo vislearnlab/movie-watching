@@ -1,0 +1,301 @@
+---
+title: "Fixation Density Concordance vs. ISC — Timecourses & Cut-Locked Analysis"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    theme: cosmo
+    highlight-style: github
+---
+
+# Setup
+
+Reads the three canonical CSVs computed elsewhere (not recomputed here -- this notebook is
+plotting only). NOTE: `data/` is a symlink to the mounted lab server in this repo.
+
+- `data/results/concordance/fixation_density_concordance.csv` -- individual vs.
+  leave-one-out group, written by `calc_concordance_group.R`.
+- `data/results/concordance/fixation_density_concordance_pairwise.csv` -- every pair of
+  participants, written by `calc_concordance_pairwise.R`.
+- `data/results/concordance/isc_fixation_timecourse.csv` -- windowed
+  Adult-Adult/Child-Child/Child-Adult ISC, written by `isc_analysis.qmd`'s "Part 8b" export
+  (population-matched to concordance's `valid_data==TRUE` adults -- see
+  METHODS_DECISIONS.md, 2026-10-02, for why that match matters and how it was verified).
+- `annotations/scene-cuts/all_clips_cuts.csv` -- manually annotated cut timestamps.
+
+Saves figures to `figures/concordance/` (these are real analysis-result figures, not
+sanity/parameter-decision checks -- those go in `figures/checks/` instead, e.g. from
+`diagnostic_concordance.py`).
+
+"Concordance" here is never "ISC" -- see `calc_concordance_group.R`'s header for the
+naming rule (ISC is reserved for the Franchak-style x/y time-series analysis).
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggthemes)
+library(glue)
+library(here)
+
+CONCORDANCE_GROUP_PATH    <- here("data", "results", "concordance", "fixation_density_concordance.csv")
+CONCORDANCE_PAIRWISE_PATH <- here("data", "results", "concordance", "fixation_density_concordance_pairwise.csv")
+ISC_PATH                  <- here("data", "results", "concordance", "isc_fixation_timecourse.csv")
+CUTS_PATH                 <- here("annotations", "scene-cuts", "all_clips_cuts.csv")
+FIGURES_DIR               <- here("figures", "concordance")
+dir.create(FIGURES_DIR, showWarnings = FALSE, recursive = TRUE)
+
+# Fixed categorical colors, matching the Python-generated figures from this same analysis
+# (figures/concordance/*.png) -- NOT ggthemes::scale_colour_few(), which is reserved
+# for the Adult-Adult/Child-Child/Child-Adult comparisons elsewhere in isc_analysis.qmd.
+GROUP_COLOR    <- "#2a78d6"  # concordance, vs. leave-one-out group
+ISC_COLOR      <- "#eb6834"  # ISC, pairwise
+PAIRWISE_COLOR <- "#1baf7a"  # concordance, pairwise
+
+BLOCKS <- list(
+  frank  = c("frank_complex", "frank_objects", "frank_play"),
+  sesame = c("sesameus_1", "sesameus_2", "sesameindia_1", "sesameindia_2"),
+  slow   = c("slow_animals", "slow_hands", "slow_inanimate", "slow_people"),
+  pixar  = c("pixar_birds")
+)
+
+concordance_group_raw    <- read_csv(CONCORDANCE_GROUP_PATH, show_col_types = FALSE)
+concordance_pairwise_raw <- read_csv(CONCORDANCE_PAIRWISE_PATH, show_col_types = FALSE)
+isc_raw_tc               <- read_csv(ISC_PATH, show_col_types = FALSE)
+cuts_raw                 <- read_csv(CUTS_PATH, show_col_types = FALSE)
+
+isc_theme <- theme_few(base_size = 13) +
+  theme(panel.grid.minor.x = element_blank(),
+        axis.minor.ticks.x.bottom = element_line(colour = "grey30", linewidth = 0.3),
+        axis.minor.ticks.length = unit(3, "pt"))
+```
+
+```{r helpers}
+# One row per (video, window) for a single metric: concordance-group is averaged across
+# participants first (its raw file has one row per participant per window); the other two
+# are already one row per window.
+get_concordance_group <- function(video) {
+  concordance_group_raw |>
+    filter(video_name == video) |>
+    group_by(window_start_s) |>
+    summarise(value = mean(r, na.rm = TRUE), .groups = "drop") |>
+    arrange(window_start_s)
+}
+
+get_concordance_pairwise <- function(video) {
+  concordance_pairwise_raw |>
+    filter(video_name == video) |>
+    transmute(window_start_s, value = mean_r) |>
+    arrange(window_start_s)
+}
+
+get_isc <- function(video, comparison = "Adult–Adult") {
+  isc_raw_tc |>
+    filter(video_name == video, comparison == !!comparison) |>
+    transmute(window_start_s, value = mean_r) |>
+    arrange(window_start_s)
+}
+
+get_cuts <- function(video) {
+  sort(cuts_raw$cut_time_s[cuts_raw$video_name == video])
+}
+```
+
+---
+
+# Part 1: Single-Metric Timecourse
+
+```{r plot-single}
+plot_single_timecourse <- function(df, color, title, ylab = "r") {
+  ggplot(df, aes(x = window_start_s, y = value)) +
+    geom_line(colour = color, linewidth = 0.9) +
+    scale_x_continuous(breaks = seq(0, max(df$window_start_s), by = 5),
+                        minor_breaks = seq(0, max(df$window_start_s), by = 1),
+                        guide = guide_axis(minor.ticks = TRUE)) +
+    labs(title = title, x = "Time (s)", y = ylab) +
+    isc_theme
+}
+
+p1 <- plot_single_timecourse(get_concordance_group("pixar_birds"), GROUP_COLOR,
+                        "Concordance (vs. leave-one-out group) — pixar_birds")
+p1
+ggsave(file.path(FIGURES_DIR, "fixation_density_concordance_timecourse.png"), p1, width = 12, height = 4)
+```
+
+---
+
+# Part 2: Concordance vs. ISC Overlay
+
+```{r plot-overlay}
+plot_overlay <- function(video, metrics) {
+  # metrics: named list of (df, color) pairs, e.g. list(Concordance = list(df=..., colour=...))
+  combined <- map_dfr(names(metrics), function(name) {
+    metrics[[name]]$df |> mutate(series = name)
+  })
+  colors <- set_names(map_chr(metrics, "colour"), names(metrics))
+
+  ggplot(combined, aes(x = window_start_s, y = value, colour = series)) +
+    geom_line(linewidth = 0.9) +
+    scale_colour_manual(values = colors) +
+    scale_x_continuous(breaks = seq(0, max(combined$window_start_s), by = 5),
+                        minor_breaks = seq(0, max(combined$window_start_s), by = 1),
+                        guide = guide_axis(minor.ticks = TRUE)) +
+    labs(title = glue("Concordance vs. ISC — {video}"), x = "Time (s)", y = "r", colour = NULL) +
+    isc_theme + theme(legend.position = "top")
+}
+
+p2 <- plot_overlay("pixar_birds", list(
+  "Concordance (group)" = list(df = get_concordance_group("pixar_birds"), colour = GROUP_COLOR),
+  "ISC (pairwise)"      = list(df = get_isc("pixar_birds"), colour = ISC_COLOR)
+))
+p2
+ggsave(file.path(FIGURES_DIR, "concordance_vs_isc_timecourse.png"), p2, width = 12, height = 4)
+```
+
+---
+
+# Part 3: Three-Way Comparison, with Cuts
+
+```{r plot-three-way}
+plot_three_way_with_cuts <- function(video) {
+  metrics <- list(
+    "ISC (pairwise)"                       = list(df = get_isc(video), colour = ISC_COLOR),
+    "Concordance (vs. leave-one-out group)" = list(df = get_concordance_group(video), colour = GROUP_COLOR),
+    "Concordance (pairwise)"               = list(df = get_concordance_pairwise(video), colour = PAIRWISE_COLOR)
+  )
+  cuts <- get_cuts(video)
+
+  plots <- imap(metrics, function(m, name) {
+    ggplot(m$df, aes(x = window_start_s, y = value)) +
+      geom_vline(xintercept = cuts, colour = "grey60", linewidth = 0.4, linetype = "dashed") +
+      geom_line(colour = m$colour, linewidth = 0.9) +
+      labs(title = NULL, x = NULL, y = name) +
+      isc_theme
+  })
+
+  patchwork::wrap_plots(plots, ncol = 1) +
+    patchwork::plot_annotation(
+      title = glue("ISC / concordance (group) / concordance (pairwise) vs. cuts — {video}"),
+      subtitle = glue("{length(cuts)} cuts (dashed lines)")
+    )
+}
+
+p3 <- plot_three_way_with_cuts("pixar_birds")
+p3
+ggsave(file.path(FIGURES_DIR, "concordance_isc_vs_cuts_pixar_birds.png"), p3, width = 12, height = 9)
+```
+
+---
+
+# Part 4: Cut-Locked Timecourse
+
+Realigns each metric to time-since-most-recent-cut instead of absolute stimulus time,
+pooling across every cut (and, for a block, every clip in that block), with a shaded
+mean ± SEM band (binning relative time, truncating once too few cuts contribute a bin,
+etc.) -- ported from an earlier Python exploration script (since deleted, see
+METHODS_DECISIONS.md, 2026-10-02, "No Python plotting scripts for this analysis").
+
+```{r cut-locked-helpers}
+# Raw (unbinned) relative-time samples for ONE clip: for each window, time since the most
+# recent cut in THIS SAME clip. Windows before the first cut have no reference cut and are
+# dropped.
+relative_time_samples <- function(df, cuts) {
+  if (length(cuts) == 0) return(tibble(rel_time = numeric(0), value = numeric(0)))
+  cut_idx <- findInterval(df$window_start_s, cuts)  # 0 = before first cut
+  keep <- cut_idx > 0
+  tibble(rel_time = df$window_start_s[keep] - cuts[cut_idx[keep]], value = df$value[keep])
+}
+
+# Bins (possibly pooled across multiple clips) relative-time samples; truncates to bins
+# with at least min_n contributing samples.
+bin_stats <- function(samples, bin_s, min_n) {
+  samples |>
+    mutate(rel_bin = round(rel_time / bin_s) * bin_s) |>
+    group_by(rel_bin) |>
+    summarise(n = n(), mean = mean(value), sd = sd(value), .groups = "drop") |>
+    mutate(sem = sd / sqrt(n)) |>
+    filter(n >= min_n) |>
+    arrange(rel_bin)
+}
+
+# video_timecourses: list of (df, cuts) pairs -- one per clip in scope (a single clip, or
+# every clip in a block). Relative time is computed per-clip, pooled before binning.
+cut_locked_stats <- function(video_timecourses, bin_s = 0.25, min_n = 5) {
+  samples <- map_dfr(video_timecourses, ~ relative_time_samples(.x$df, .x$cuts))
+  bin_stats(samples, bin_s, min_n)
+}
+```
+
+```{r cut-locked-plot-fn}
+# scope: either a single video name, or a block name from BLOCKS (pools every clip in it).
+build_video_timecourses <- function(scope, metric_fn) {
+  videos <- if (scope %in% names(BLOCKS)) BLOCKS[[scope]] else scope
+  map(videos, function(v) list(df = metric_fn(v), cuts = get_cuts(v)))
+}
+
+plot_cut_locked <- function(scope, bin_s = 0.25, min_n = 5, mode = c("indexed", "raw")) {
+  mode <- match.arg(mode)
+  metrics <- list(
+    "ISC (pairwise)"                       = list(metric_fn = get_isc, colour = ISC_COLOR),
+    "Concordance (vs. leave-one-out group)" = list(metric_fn = get_concordance_group, colour = GROUP_COLOR),
+    "Concordance (pairwise)"               = list(metric_fn = get_concordance_pairwise, colour = PAIRWISE_COLOR)
+  )
+
+  stats_list <- imap(metrics, function(m, name) {
+    tcs <- build_video_timecourses(scope, m$metric_fn)
+    stats <- cut_locked_stats(tcs, bin_s, min_n)
+    t0 <- stats$mean[stats$rel_bin == 0][1]
+    if (mode == "indexed") {
+      stats <- stats |> mutate(y = mean / t0, y_lo = (mean - sem) / t0, y_hi = (mean + sem) / t0)
+    } else {
+      stats <- stats |> mutate(y = mean, y_lo = mean - sem, y_hi = mean + sem)
+    }
+    stats |> mutate(series = name)
+  })
+  combined <- bind_rows(stats_list)
+  colors <- set_names(map_chr(metrics, "colour"), names(metrics))
+
+  n_cuts <- sum(map_int(build_video_timecourses(scope, get_isc), ~ length(.x$cuts)))
+
+  p <- ggplot(combined, aes(x = rel_bin, y = y, colour = series, fill = series)) +
+    geom_vline(xintercept = 0, colour = "grey50", linewidth = 0.6, linetype = "dashed") +
+    geom_ribbon(aes(ymin = y_lo, ymax = y_hi), alpha = 0.18, colour = NA) +
+    geom_line(linewidth = 0.9) +
+    scale_colour_manual(values = colors) +
+    scale_fill_manual(values = colors) +
+    labs(x = "Time since most recent cut (s)",
+         y = if (mode == "indexed") "Ratio to value at t=0 (cut onset)" else "r",
+         colour = NULL, fill = NULL,
+         title = glue("Cut-locked ISC / concordance — {scope}"),
+         subtitle = glue("mean ± SEM across {n_cuts} cuts, truncated where fewer than {min_n} cuts contribute",
+                          if (mode == "indexed") "; each series indexed to its own t=0 value" else "")) +
+    isc_theme + theme(legend.position = "top")
+
+  if (mode == "indexed") p <- p + geom_hline(yintercept = 1, colour = "grey70", linewidth = 0.5, linetype = "dotted")
+  p
+}
+
+p4_pixar <- plot_cut_locked("pixar_birds", mode = "indexed")
+p4_pixar
+ggsave(file.path(FIGURES_DIR, "concordance_isc_cut_locked_pixar_birds_combined.png"), p4_pixar, width = 10, height = 5)
+```
+
+```{r cut-locked-by-block, fig.height=5}
+p4_frank <- plot_cut_locked("frank", mode = "indexed")
+p4_frank
+ggsave(file.path(FIGURES_DIR, "concordance_isc_cut_locked_frank_combined.png"), p4_frank, width = 10, height = 5)
+
+p4_sesame <- plot_cut_locked("sesame", mode = "indexed")
+p4_sesame
+ggsave(file.path(FIGURES_DIR, "concordance_isc_cut_locked_sesame_combined.png"), p4_sesame, width = 10, height = 5)
+
+p4_slow <- plot_cut_locked("slow", mode = "indexed")
+p4_slow
+ggsave(file.path(FIGURES_DIR, "concordance_isc_cut_locked_slow_combined.png"), p4_slow, width = 10, height = 5)
+```
+
+```{r cut-locked-raw, fig.height=5}
+p4_raw <- plot_cut_locked("pixar_birds", mode = "raw")
+p4_raw
+ggsave(file.path(FIGURES_DIR, "concordance_isc_cut_locked_pixar_birds_combined_raw.png"), p4_raw, width = 10, height = 5)
+```
