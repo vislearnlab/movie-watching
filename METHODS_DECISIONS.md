@@ -898,3 +898,62 @@ display edge rather than overshooting it (as the earlier 200px/144-patch grid di
   with filenames matching the figures they functionally replace. Fixed a stale reference
   in that notebook's Part 4 intro to `plot_concordance_isc_cut_locked.py`, a Python script
   deleted in an earlier entry today.
+
+## 2026-10-14 — Entropy of group fixation density, as a second lens on concordance/ISC
+
+- **New metric, not a replacement for concordance**: Shannon entropy (bits) of the pooled
+  group fixation density, normalized across the 120 scene tiles, per analysis window --
+  measures how SPREAD OUT the group's collective attention is (low = everyone converges on
+  one spot; high = attention genuinely split across several simultaneously salient things).
+  Same 120-tile grid (diameter=180px, 15x8) as the concordance work throughout, not a
+  separate grid.
+- **Checked whether "unique tiles touched" (a cruder, non-entropy proxy used first) agreed
+  with true entropy** -- it mostly did, but entropy caught a real block-level difference
+  (frank/sesame higher entropy than slow/pixar, ~0.35 bits) that the cruder measure
+  understated. User's point: unique-tile-count treats a tile the same whether it got 1% or
+  40% of the mass, so it isn't a substitute for entropy and shouldn't be read as one.
+- **Fixed-N rarefaction**, to rule out fixation-count as a confound: raw entropy correlates
+  with how many fixations happen to land in a window (pooled r=0.33), so a block or clip
+  with more fixations could show inflated entropy for a reason that has nothing to do with
+  where people actually looked. Fix: for each window, randomly subsample a FIXED number of
+  pooled fixations (no replacement), rebuild the density from just those, repeat across many
+  draws, average -- the standard rarefaction fix for sample-size bias in diversity/entropy
+  indices. Confirmed on the by-block comparison that this barely moves the numbers (every
+  block shifted down by a similar amount), i.e. the original block pattern wasn't a
+  fixation-count artifact -- but that check doesn't carry over automatically to a
+  per-segment breakdown, so the per-segment export (below) gets its own rarefaction pass
+  rather than assuming the block-level result generalizes.
+- **Rarefaction parameters, chosen deliberately, not just "reasonable round numbers"**:
+  `N_FIX_FIXED=75` fixations/window, `N_DRAWS=100` random draws averaged per window
+  (`scripts/analysis/calc_entropy_by_segment.py`). An earlier pass used N=60/draws=40 with
+  no stated reason to prefer those specific values over other numbers in the same ballpark,
+  called out directly by the user as inadequately justified. Revised:
+  - `N_FIX_FIXED=75`: the pooled per-window fixation-count distribution across all 12 clips
+    has p5=78, p25=94, median=109, p75=124, p95=144. 75 sits just under that p5, so only a
+    small minority of windows (2.8%, up from 0.5% at N=60 -- expected, since 75 is closer to
+    the actual cutoff) lack enough fixations to rarefy and are left NaN rather than silently
+    dropped (tracked per-row via `n_windows_dropped_low_fix`).
+  - `N_DRAWS=100`: reduces Monte Carlo noise in the rarefied estimate more than the earlier
+    40-draw pass did. Not independently proven sufficient either -- no formal convergence
+    check (e.g. 100 vs. 200+ draws) has been run -- but a deliberate, documented choice
+    rather than one picked for runtime convenience with no check at all.
+- **Segment-level export**: `data/results/entropy_by_segment/entropy_by_segment.csv`, one
+  row per (video, cut-to-cut segment) across all 12 clips (184 rows) --
+  `video, block, segment_idx, seg_start_s, seg_end_s, seg_dur_s, n_windows,
+  n_windows_dropped_low_fix, mean_entropy_rarefied`. Segment boundaries come from
+  `annotations/scene-cuts/all_clips_cuts.csv`; exact clip durations via `ffprobe`, not the
+  rounded estimates (e.g. 60.3 vs. the true 60.32) used earlier in this exploration, which
+  had produced a negative-duration trailing segment for `frank_complex`.
+- **Video/montage spot-checks** (`figures/checks/entropy_montage_{lowest,highest}16.png`,
+  `entropy_segments_{lowest,highest}/*.mp4`, built via new
+  `scripts/preprocessing/viz/visualize_concordance_video.py`-derived tooling) confirmed low-
+  and high-entropy windows look exactly like the metric's definition predicts: low-entropy
+  montage is tight single-target convergence (faces, a lone bird, hands on a card trick);
+  high-entropy montage is genuinely scattered multi-target scenes (group play, a marble run
+  with several moving balls). Caught and fixed a real rendering bug in the process: cut
+  annotations in `all_clips_cuts.csv` are accurate to roughly a frame, not sub-frame, and
+  without a safety margin a segment's rendered video could include a frame from the
+  adjacent scene. Fixed via `--start_margin_frames`/`--end_margin_frames` (now 2 frames by
+  default, confirmed via `ffmpeg showinfo` on two real cases -- one with a ~5ms annotation
+  error, one with a ~33ms/one-frame error -- that 1 frame of margin wasn't always enough but
+  2 was, for both).
