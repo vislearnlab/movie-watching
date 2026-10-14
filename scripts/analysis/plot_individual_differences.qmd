@@ -1,0 +1,210 @@
+---
+title: "Individual Differences — ISC vs. Concordance"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    theme: cosmo
+    highlight-style: github
+---
+
+# Setup
+
+Two questions this notebook answers, both at the level of *people*, not timecourses
+(see `plot_concordance_isc_timecourses.qmd` for the time-resolved comparisons):
+
+1. **Does a person's ISC level predict their concordance level?** Each adult's own
+   leave-one-out-style ISC (their average pairwise ISC across everyone else) vs. their
+   leave-one-out-style concordance (same averaging, over the PAIRWISE concordance file --
+   not the group-vs-individual metric -- so both axes are built identically), correlated
+   across people, per block.
+2. **Which metric's "who is most/least similar to whom" pattern is trait-like, i.e.
+   reproducible across blocks?** Builds a participant x participant similarity matrix per
+   block per pairwise metric, then correlates the *same dyads'* values between every pair
+   of blocks. A metric where pair A-B stays relatively high (or low) across different
+   blocks has more individual-differences signal than one that's just noise each time.
+
+Both parts use the two PAIRWISE/dyadic metrics only (concordance pairwise, ISC pairwise),
+never the group-vs-individual concordance metric -- that one has no dyad identity by
+construction, so it can't answer either "individual differences between specific people"
+question here. See `plot_concordance_isc_timecourses.qmd` for analyses that do use it.
+
+Reads, not recomputes:
+
+- `data/results/concordance/fixation_density_concordance_dyadic.csv` -- one row per
+  (video, pid_a, pid_b), each pair's r averaged across that video's windows; written by
+  `calc_concordance_pairwise.R` (added alongside its existing window-level output
+  specifically to support this notebook -- see that script's header).
+- `data/results/isc/isc_fixation_pairwise.csv` -- pre-existing per-dyad, per-clip ISC
+  (adults-adults/adults-kids/kids-kids), not windowed.
+- `data/local_cache/participant_summary.csv` -- used to restrict ISC's own (larger) adult
+  population down to concordance's `valid_data==TRUE` adults, same reasoning as
+  `isc_analysis.qmd`'s Part 8b export (see METHODS_DECISIONS.md, 2026-10-02).
+
+NOTE: `data/` is a symlink to the mounted lab server in this repo. Saves figures to
+`figures/concordance/` (same topic as the timecourse notebook).
+
+"Concordance" here is never "ISC" -- see `calc_concordance_group.R`'s header for the
+naming rule.
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggthemes)
+library(glue)
+library(here)
+
+CONCORDANCE_DYADIC_PATH <- here("data", "results", "concordance", "fixation_density_concordance_dyadic.csv")
+ISC_PAIRWISE_PATH       <- here("data", "results", "isc", "isc_fixation_pairwise.csv")
+PARTICIPANT_SUMMARY_PATH <- here("data", "local_cache", "participant_summary.csv")
+FIGURES_DIR             <- here("figures", "concordance")
+dir.create(FIGURES_DIR, showWarnings = FALSE, recursive = TRUE)
+
+ISC_COLOR      <- "#eb6834"
+PAIRWISE_COLOR <- "#1baf7a"
+
+BLOCKS <- list(
+  frank  = c("frank_complex", "frank_objects", "frank_play"),
+  sesame = c("sesameus_1", "sesameus_2", "sesameindia_1", "sesameindia_2"),
+  slow   = c("slow_animals", "slow_hands", "slow_inanimate", "slow_people"),
+  pixar  = c("pixar_birds")
+)
+video_to_block <- enframe(BLOCKS, name = "block", value = "video_name") |> unnest(video_name)
+
+concordance_dyadic_raw <- read_csv(CONCORDANCE_DYADIC_PATH, show_col_types = FALSE)
+isc_pairwise_raw_all   <- read_csv(ISC_PAIRWISE_PATH, show_col_types = FALSE)
+participant_summary    <- read_csv(PARTICIPANT_SUMMARY_PATH, show_col_types = FALSE)
+
+valid_adult_pids <- participant_summary |>
+  filter(participant_type == "adults", valid_data == TRUE) |>
+  pull(participant_id)
+
+# Population-match ISC's own (larger) adult list down to concordance's population.
+isc_pairwise_raw <- isc_pairwise_raw_all |>
+  filter(comparison == "adults-adults", pid_a %in% valid_adult_pids, pid_b %in% valid_adult_pids)
+
+isc_theme <- theme_few(base_size = 13) +
+  theme(panel.grid.minor.x = element_blank())
+```
+
+---
+
+# Part A: Does a Person's ISC Predict Their Concordance?
+
+```{r person-level-build}
+# Leave-one-out-style per-person value for a dyadic metric: average this person's pairwise
+# value across every dyad they're in (pid appears as either pid_a or pid_b, so stack both).
+# Used identically for both metrics below so the two axes are built the same way.
+person_level_from_dyads <- function(dyadic_df, value_col, out_col) {
+  bind_rows(
+    dyadic_df |> transmute(pid = pid_a, video_name, value = .data[[value_col]]),
+    dyadic_df |> transmute(pid = pid_b, video_name, value = .data[[value_col]])
+  ) |>
+    group_by(pid, video_name) |>
+    summarise(value = mean(value, na.rm = TRUE), .groups = "drop") |>
+    left_join(video_to_block, by = "video_name") |>
+    group_by(pid, block) |>
+    summarise(!!out_col := mean(value, na.rm = TRUE), .groups = "drop")
+}
+
+person_concordance <- person_level_from_dyads(concordance_dyadic_raw, "mean_r", "concordance")
+person_isc         <- person_level_from_dyads(isc_pairwise_raw, "isc_xy", "isc")
+
+person_level <- inner_join(person_concordance, person_isc, by = c("pid", "block")) |>
+  mutate(block = factor(block, levels = names(BLOCKS)))
+
+block_cors <- person_level |>
+  group_by(block) |>
+  summarise(r = cor(isc, concordance, use = "complete.obs"), n = n(), .groups = "drop")
+
+overall_r <- cor(person_level$isc, person_level$concordance, use = "complete.obs")
+```
+
+```{r person-level-plot, fig.height=7}
+pA <- ggplot(person_level, aes(x = isc, y = concordance)) +
+  geom_point(alpha = 0.7, colour = PAIRWISE_COLOR, size = 2) +
+  geom_smooth(method = "lm", se = TRUE, colour = "grey30", linewidth = 0.7) +
+  geom_text(data = block_cors, aes(label = glue("r = {round(r, 2)}  (n={n})")),
+            x = -Inf, y = Inf, hjust = -0.08, vjust = 1.5, inherit.aes = FALSE, size = 4) +
+  facet_wrap(~block, scales = "free") +
+  labs(title = "Person-level ISC vs. concordance, by block (both pairwise)",
+       subtitle = glue("Overall pooled r = {round(overall_r, 2)} (n={nrow(person_level)} person-block observations)"),
+       x = "Person's mean ISC (avg. across their dyads, adults-adults)",
+       y = "Person's mean concordance (avg. across their dyads, pairwise)") +
+  isc_theme
+
+pA
+ggsave(file.path(FIGURES_DIR, "person_isc_vs_concordance_by_block.png"), pA, width = 10, height = 8)
+```
+
+---
+
+# Part B: Cross-Block Reliability of Dyadic Similarity
+
+For each pairwise metric, collapse each dyad to one value per block (averaging across
+that block's clips), then correlate the *same dyads'* values between every pair of
+blocks. A metric with higher cross-block r has a more trait-like, reproducible
+individual-differences signal -- i.e. knowing A and B were unusually similar in one
+block tells you something about whether they'll be similar in another.
+
+(The group concordance metric -- individual vs. leave-one-out-group -- has no dyad
+identity by construction, so it's excluded from this part; only the two pairwise
+metrics apply.)
+
+```{r dyadic-reliability-build}
+canonicalize_pairs <- function(df, value_col) {
+  df |>
+    mutate(pid_lo = pmin(pid_a, pid_b), pid_hi = pmax(pid_a, pid_b)) |>
+    left_join(video_to_block, by = "video_name") |>
+    group_by(block, pid_lo, pid_hi) |>
+    summarise(value = mean(.data[[value_col]], na.rm = TRUE), n_clips = n(), .groups = "drop")
+}
+
+concordance_dyad_block <- canonicalize_pairs(concordance_dyadic_raw, "mean_r")
+isc_dyad_block         <- canonicalize_pairs(isc_pairwise_raw, "isc_xy")
+
+block_pair_reliability <- function(dyad_block_df, metric_name) {
+  blocks <- names(BLOCKS)
+  combn(blocks, 2, simplify = FALSE) |>
+    map_dfr(function(pair) {
+      b1 <- pair[1]; b2 <- pair[2]
+      d1 <- dyad_block_df |> filter(block == b1) |> select(pid_lo, pid_hi, value1 = value)
+      d2 <- dyad_block_df |> filter(block == b2) |> select(pid_lo, pid_hi, value2 = value)
+      joined <- inner_join(d1, d2, by = c("pid_lo", "pid_hi"))
+      tibble(metric = metric_name, block_a = b1, block_b = b2,
+             r = cor(joined$value1, joined$value2, use = "complete.obs"),
+             n_dyads = nrow(joined))
+    })
+}
+
+reliability_all <- bind_rows(
+  block_pair_reliability(concordance_dyad_block, "Concordance (pairwise)"),
+  block_pair_reliability(isc_dyad_block, "ISC (pairwise)")
+) |>
+  mutate(pair_label = glue("{block_a} x {block_b}"))
+
+reliability_summary <- reliability_all |>
+  group_by(metric) |>
+  summarise(mean_r = mean(r), min_r = min(r), max_r = max(r), .groups = "drop")
+```
+
+```{r dyadic-reliability-plot, fig.height=5.5}
+colors_b <- c("ISC (pairwise)" = ISC_COLOR, "Concordance (pairwise)" = PAIRWISE_COLOR)
+
+pB <- ggplot(reliability_all, aes(x = pair_label, y = r, fill = metric)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
+  scale_fill_manual(values = colors_b) +
+  labs(title = "Cross-block reliability of dyadic similarity",
+       subtitle = str_wrap("Pearson r between the SAME participant pairs' metric values in two different blocks -- higher means who's-similar-to-whom carries over, i.e. more trait-like individual differences", width = 95),
+       x = NULL, y = "Cross-block r (same dyads)", fill = NULL) +
+  isc_theme + theme(legend.position = "top", axis.text.x = element_text(angle = 20, hjust = 1))
+
+pB
+ggsave(file.path(FIGURES_DIR, "dyadic_reliability_across_blocks.png"), pB, width = 10, height = 6)
+```
+
+```{r dyadic-reliability-summary}
+reliability_summary
+```

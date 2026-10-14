@@ -19,8 +19,15 @@
 ##
 ## Loops over every clip in VIDEOS (default: all 12) in one run.
 ##
-## Output: data/results/concordance/fixation_density_concordance_pairwise.csv -- one row per (video, window):
-##   video_name, window_idx, window_start_s, window_end_s, mean_r, n_pairs
+## Output 1: data/results/concordance/fixation_density_concordance_pairwise.csv -- one row
+##   per (video, window): video_name, window_idx, window_start_s, window_end_s, mean_r, n_pairs
+## Output 2: data/results/concordance/fixation_density_concordance_dyadic.csv -- one row per
+##   (video, pid_a, pid_b): video_name, pid_a, pid_b, mean_r, n_windows -- each pair's own r
+##   averaged across all of that video's windows (identity-preserving companion to Output 1,
+##   which only keeps the cross-pair mean; parallel in granularity to the pre-existing
+##   isc_fixation_pairwise.csv). For individual-differences work: which pairs of people are
+##   most/least similar, and whether that pattern holds up across blocks -- see
+##   plot_individual_differences.qmd.
 
 library(dplyr)
 library(readr)
@@ -34,6 +41,7 @@ PARAM_CODE <- "f329476c"
 ## NOTE: data/ is a symlink to the mounted lab server in this repo, so this writes
 ## through to shared storage, not just the local checkout.
 OUTPUT_PATH <- here("data", "results", "concordance", "fixation_density_concordance_pairwise.csv")
+DYADIC_OUTPUT_PATH <- here("data", "results", "concordance", "fixation_density_concordance_dyadic.csv")
 
 DISPLAY_W <- 1920
 DISPLAY_H <- 1080
@@ -119,8 +127,14 @@ run_one_video <- function(video, duration_s) {
               video, n_pids, n_possible_pairs, n_windows))
 
   upper_idx <- which(upper.tri(matrix(0, n_pids, n_pids)))
+  ## Same linear order as upper_idx (both from upper.tri() on an n_pids x n_pids matrix),
+  ## so pair_a[i]/pair_b[i] identify the pair behind pair_r[i] / dyad_r_mat[, i] below.
+  pair_rc <- which(upper.tri(matrix(0, n_pids, n_pids)), arr.ind = TRUE)
+  pair_a <- pids[pair_rc[, "row"]]
+  pair_b <- pids[pair_rc[, "col"]]
 
   rows <- vector("list", n_windows)
+  dyad_r_mat <- matrix(NA_real_, nrow = n_windows, ncol = length(upper_idx))
   for (w in 0:(n_windows - 1)) {
     start_s <- w * STEP_S
     end_s <- start_s + WINDOW_S
@@ -136,6 +150,7 @@ run_one_video <- function(video, duration_s) {
 
     corr_matrix <- suppressWarnings(cor(vecs))  # n_pids x n_pids, NA for zero-variance columns
     pair_r <- corr_matrix[upper_idx]
+    dyad_r_mat[w + 1, ] <- pair_r
     valid <- !is.na(pair_r)
     mean_r <- if (any(valid)) mean(pair_r[valid]) else NA_real_
 
@@ -147,18 +162,29 @@ run_one_video <- function(video, duration_s) {
   out_df <- bind_rows(rows)
   cat(sprintf("  -> %d rows, mean_r=%.3f, NaN rate %.1f%%\n\n",
               nrow(out_df), mean(out_df$mean_r, na.rm = TRUE), 100 * mean(is.na(out_df$mean_r))))
-  out_df
+
+  ## Per-dyad summary: each pair's own r averaged across all windows of this video (NA
+  ## windows for that pair excluded) -- a single whole-clip value per pair, for
+  ## individual-differences analyses that need pair identity rather than the cross-pair mean.
+  dyad_df <- tibble(video_name = video, pid_a = pair_a, pid_b = pair_b,
+                     mean_r = colMeans(dyad_r_mat, na.rm = TRUE),
+                     n_windows = colSums(!is.na(dyad_r_mat)))
+
+  list(windows = out_df, dyads = dyad_df)
 }
 
-## ---- Run all videos, write combined CSV -----------------------------------------
+## ---- Run all videos, write combined CSVs -----------------------------------------
 main <- function() {
   t0 <- Sys.time()
   all_results <- imap(VIDEOS, ~ run_one_video(.y, .x))  # imap passes (value, name); run_one_video wants (video, duration)
-  combined <- bind_rows(all_results)
+  combined <- bind_rows(map(all_results, "windows"))
+  dyadic <- bind_rows(map(all_results, "dyads"))
   write_csv(combined, OUTPUT_PATH)
+  write_csv(dyadic, DYADIC_OUTPUT_PATH)
   cat(sprintf("Wrote %d rows (%d videos) to %s (%.1fs total)\n",
               nrow(combined), length(VIDEOS), OUTPUT_PATH,
               as.numeric(Sys.time() - t0, units = "secs")))
+  cat(sprintf("Wrote %d rows (dyadic) to %s\n", nrow(dyadic), DYADIC_OUTPUT_PATH))
 }
 
 if (sys.nframe() == 0) main()
