@@ -1,25 +1,18 @@
 """
-Segment-level entropy across a window-size sweep and a grid-size sweep, for the two
-robustness checks behind the "pixar is less entropic than frank/sesame" headline (see
-METHODS_DECISIONS.md and calc_entropy_by_segment.py for the base metric/rarefaction).
+Segment-level entropy across a window-size and grid-size sweep -- robustness checks for
+"pixar is less entropic than frank/sesame" (METHODS_DECISIONS.md, calc_entropy_by_segment.py).
 
-Window-size sweep: WINDOW_S in [0.5, 1.0, 1.5, 2.0]s, fixed 120-tile grid. N_FIX_FIXED is
-chosen per window size as floor(p5) of that window size's own pooled fixation-count
-distribution (53/78/105/132) -- NOT a single fixed N for all window sizes, which would
-under-power short windows and over-power long ones (see chat, 2026-10-15).
+Window sweep: WINDOW_S in [0.5,1.0,1.5,2.0]s, 120-tile grid. N_FIX_FIXED = floor(p5) of
+each window size's own fixation-count distribution (53/78/105/132), not one fixed N.
 
-Grid-size sweep: n_tiles in [6, 15, 66, 120], fixed WINDOW_S=1.0s. Diameters (806/510/243/180px)
-are chosen so each grid's overlap ratio (diameter/spacing_x) matches the 120-tile grid's
-~1.448, not just its tile count -- an earlier pass used mismatched ratios and produced a
-spuriously null result at 6 tiles. 66 tiles (not exactly 60) is the closest tile count
-achievable at this exact ratio for an 11-column grid.
+Grid sweep: n_tiles in [6,15,66,120], WINDOW_S=1.0s. Diameters (806/510/243/180px) matched
+to the 120-tile grid's overlap ratio (~1.448) -- mismatched ratios gave a spurious null at
+6 tiles in an earlier pass.
 
-Both sweeps share one condition (WINDOW_S=1.0, 120 tiles, N=78) -- included in both outputs,
-tagged by `sweep`, so it doubles as the "headline 1" baseline.
+Shared condition (WINDOW_S=1.0, 120 tiles, N=78) tagged by `sweep` in both outputs.
 
-Output: data/results/entropy_by_segment/entropy_sensitivity_sweep.csv -- one row per
-(sweep, condition, video, segment): sweep, window_s, n_tiles, diameter_px, n_fix_fixed,
-video, block, segment_idx, mean_entropy.
+Output: entropy_sensitivity_sweep.csv -- sweep, window_s, n_tiles, diameter_px,
+n_fix_fixed, video, block, segment_idx, mean_entropy.
 """
 
 import sys

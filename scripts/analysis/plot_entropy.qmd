@@ -92,11 +92,8 @@ h1_stats
 ```
 
 ```{r claim1-plot, fig.height=6}
-# Axis starts at 2 bits, not 0 -- below that is indistinguishable from pure calibration
-# noise (median tracker calibration error alone produces ~2.1 bits; see chat/scratch sim).
-# Points, not bars, below a non-zero baseline: a bar's LENGTH conventionally encodes
-# magnitude, so truncating a bar's baseline visually exaggerates relative differences --
-# points don't carry that convention, so a non-zero floor isn't misleading here.
+# Axis starts at 2 bits (calibration-noise floor, not 0) -- points, not bars, since a
+# bar's length implies magnitude and a non-zero baseline would distort that; points don't.
 set.seed(0)
 p1 <- ggplot(entropy_by_segment, aes(x = block, y = mean_entropy_rarefied)) +
   geom_jitter(width = 0.18, alpha = 0.35, size = 1.6, colour = "grey60") +
@@ -170,11 +167,8 @@ leave-one-out range as a crossbar (and the number, since the eye can't resolve i
 second, zoomed plot shows the same values on their own scale, against the actual gap size.
 
 ```{r claim4}
-# entropy_drop (from the CSV) = baseline - excluded, i.e. positive means entropy FELL when
-# excluded. That's the opposite sign of how "entropy change from excluding" naturally
-# reads, so we plot entropy_change = excluded - baseline instead: positive = entropy ROSE
-# when this person was excluded, i.e. they were anchoring/concentrating the group while
-# present; negative = they were adding spread while present.
+# entropy_drop (CSV) = baseline-excluded; flipped sign from how "change" reads, so plot
+# entropy_change = excluded-baseline: positive = entropy rose when excluded (anchoring).
 outlier_sensitivity <- read_csv(here("data", "results", "entropy_by_segment", "entropy_outlier_sensitivity.csv"), show_col_types = FALSE) |>
   mutate(block = factor(block, levels = c("frank", "sesame", "pixar")),
          entropy_change = entropy_excl - baseline_entropy)

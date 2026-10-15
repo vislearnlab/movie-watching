@@ -1,28 +1,16 @@
 """
-Is pixar's lower entropy (vs. frank/sesame) a broad group-level effect, or driven by a
-handful of divergent participants? Two checks, both restricted to the exact windows
-calc_entropy_by_segment.py uses (cut-filtered, full-containment) -- NOT the full-clip
-sliding windows fixation_density_concordance.csv was built from, which predate the
-segment-based windowing and would be a mismatched comparison.
+Does pixar's lower entropy reflect a broad group effect, or a few participants?
+Uses calc_entropy_by_segment.py's windows (cut-filtered, full-containment).
 
-1. Leave-one-participant-out on entropy itself: for each participant in a block, rerun
-   the canonical pipeline (same WINDOW_S/N_FIX_FIXED/N_DRAWS as calc_entropy_by_segment.py)
-   excluding just that person, and record how much block-mean entropy drops. Direct
-   answer to "does removing any one person change the result" -- no proxy metric.
-2. Concordance recomputed on entropy's own windows: each participant's individual-vs-
-   leave-one-out-group correlation (same closed-form math as calc_concordance_group.py),
-   restricted to entropy's qualifying windows and aggregated segment-then-mean, matching
-   exactly how entropy itself is aggregated (not a flat mean across pooled windows, which
-   would let longer segments outweigh shorter ones relative to entropy's own weighting) --
-   lets us check whether the people the leave-one-out test flags are also the ones with
-   unusually low group agreement.
+1. Leave-one-out on entropy: exclude each person, measure the shift. Direct, not
+   a proxy.
+2. Concordance on the same windows, segment-then-mean: do people flagged by (1)
+   also show low group agreement?
 
-Restricted to frank/sesame/pixar -- the blocks the headline claim concerns; slow is
-already excluded from the headline itself.
+frank/sesame/pixar only.
 
-Output: data/results/entropy_by_segment/entropy_outlier_sensitivity.csv -- one row per
-(block, pid): n_segments_present, entropy_drop (baseline block entropy minus entropy with
-pid excluded; positive = removing them lowers entropy), mean_concordance_r.
+Output: entropy_outlier_sensitivity.csv -- (block, pid): n_segments_present,
+entropy_drop (positive = removing them lowers entropy), mean_concordance_r.
 """
 
 import sys
@@ -130,10 +118,9 @@ def video_entropy_segments(arrays, dur, seg_id, rng, exclude_pid=None):
 
 
 def video_concordance(arrays, seg_id):
-    """Per-pid list of PER-SEGMENT mean concordance r, restricted to qualifying windows.
-    Segment-then-mean, matching how entropy itself is aggregated (video_entropy_segments)
-    -- NOT a flat mean across pooled windows, which would let longer segments (more
-    qualifying windows) outweigh shorter ones relative to how entropy weighs them."""
+    """Per-pid list of per-segment mean concordance r (segment-then-mean, matching
+    entropy's own aggregation -- not a flat mean across windows, which would
+    overweight long segments)."""
     pids = sorted(arrays)
     r_by_pid_seg = {p: {} for p in pids}
     for w in np.where(seg_id >= 0)[0]:

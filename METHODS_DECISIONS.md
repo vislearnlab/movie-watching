@@ -1012,7 +1012,92 @@ display edge rather than overshooting it (as the earlier 200px/144-patch grid di
     every condition in both sweeps; pixar-frank is significant at every window size and at
     the two finest grids (66, 120 tiles), narrowing but not reversing at the two coarsest
     grids (6: p=0.149, 15: p=0.062).
-- **New R notebook**: `scripts/analysis/plot_entropy_pixar_headlines.qmd` -- the
-  step-through writeup of the three headlines above (lower entropy in pixar; holds across
-  window size; holds across grid size), reading both CSVs above, running ANOVA + Tukey HSD
-  live in R (not pasted from the Python runs), saving to `figures/entropy/`.
+- **New R notebook**: `scripts/analysis/plot_entropy.qmd` -- the step-through writeup of
+  the three claims above (lower entropy in pixar; holds across window size; holds across
+  grid size), reading both CSVs above, running ANOVA + Tukey HSD live in R (not pasted
+  from the Python runs), saving to `figures/entropy/`.
+
+## 2026-10-15 — ISC doesn't survive segmentation; tile-peak ISC built as a fix, promoted to canonical
+
+- **Question**: does ISC (inter-subject correlation of gaze position over time) hold up
+  when computed per cut-to-cut segment instead of per whole clip, the same way entropy is?
+  pixar_birds only, all checks below in scratch, nothing promoted to a canonical script.
+- **No -- confirmed empirically, not just reasoned about.** Fixation-based pairwise ISC
+  (`calc_isc_fixations.py`'s `fixations_to_binned_series` + `align_and_isc`, the project's
+  existing method): whole-clip mean isc_xy=0.430 vs. segment-mean=0.325 (-24%), and even a
+  single uncut 26.87s segment (nearly 1/5 of the clip) only reaches 0.31 -- well short of
+  the whole-clip value. This says the gap isn't a short-segment/low-N artifact alone: a
+  meaningful share of ISC's signal comes from *repeated* shared-reaction events (joint
+  saccades at cuts, shared capture by motion) accumulating across the *whole* clip, which
+  by construction can't live inside any single segment, long or short.
+- **Tried fixing it with density vectors instead of raw position** (pairwise, each
+  person's own closed-form density-vector peak -- argmax tile, not centroid/PC -- tracked
+  over WINDOW_S=STEP_S=1.0s non-overlapping windows, correlated the same isc_x/isc_y/mean
+  way as the existing pipeline). This did NOT help -- it was worse on every axis: lower
+  whole-clip baseline (0.381), worse relative attenuation (-30%), and far fewer scorable
+  segments (14/43 vs. 40/43 for fixation ISC). Root cause: WINDOW_S=1.0s is a 50x coarser
+  sampling rate than the fixation approach's 20ms bins (1 sample/sec vs. 50/sec), so
+  MIN_WINDOWS=3 demands 3.0s of segment just to attempt a correlation, and 67% of
+  pixar_birds' 43 segments are under 3.0s (median segment = 2.29s) -- a real duration
+  floor, not a fixable windowing artifact (confirmed: every segment >=3.0s scored; no
+  near-miss segments lost to grid-alignment phase).
+- **Better version, named "tile-peak ISC": GROUP-level, not pairwise, WINDOW_S=STEP_S=0.5s.**
+  This is the one structural change that matters most, so it's called out on its own:
+  each person is correlated against the LEAVE-ONE-OUT GROUP's peak (everyone else's pooled
+  density, same construction as concordance), not against one other person. That's a
+  deliberate fix, not a style choice -- the group side, pooled from ~35-41 people, is
+  almost never undefined in a given window, unlike a single other person's trajectory,
+  which is what let this version recover far more usable data than the pairwise attempt.
+  Per person per window: own peak = argmax of their own closed-form density vector (tile
+  center x,y, NOT raw gaze/fixation coordinates); group peak = argmax of the group-minus-
+  them vector, also tile-center x,y. Track both as time series, Pearson r on x and y
+  independently (None if either side's variance is nonzero only due to float noise from
+  the `total - own` subtraction -- needs a tolerance check, not exact `==0`; scipy's own
+  near-constant detection still returns NaN on ~1e-13-std input that fails an exact-zero
+  guard), isc_xy = mean of whichever axis(es) are defined (matching `align_and_isc`'s "at
+  least one of isc_x/isc_y" rule). 0.5s chosen because it's just past pixar_birds' own
+  median fixation duration (296ms) -- NOT because the entropy window-size sweep validated
+  0.5s, which pooled ~40 people's fixations per window and says nothing about whether one
+  person's own fixation stream has enough data at that size, a different data-sufficiency
+  regime entirely. Result (pixar_birds): whole-clip=0.506, segment-mean=0.434, only -14%
+  relative attenuation (vs -24% fixation-pairwise, -30% pairwise-peak-1.0s) -- the only
+  variant where segmenting costs meaningfully less. Coverage: 25/43 segments (vs. the 1.0s
+  pairwise version's 14/43, still short of fixation ISC's 40/43, since this still needs
+  >=1.5s/segment vs. fixation ISC's 1.0s floor).
+- **Caveat on comparing the group-level number's magnitude directly to pairwise ISC**:
+  correlating an individual against a pooled ~40-person reference is inherently less noisy
+  than correlating two individuals against each other, so some of the 0.506 vs. 0.430 gap
+  is a statistical property of pooling, not evidence of "more true synchrony." The
+  RELATIVE attenuation (whole-clip vs. segment-mean) is the fairer cross-method
+  comparison, since both numbers get the same pooling effect.
+- **Cross-validated against the existing pairwise ISC, all 12 clips, whole-clip level**:
+  the same four clips (slow_people, slow_hands, frank_play, pixar_birds) stand out as the
+  highest-ISC clips under BOTH methods, with the same relative ordering of everything else
+  -- real agreement at the clip level, not just a coincidence of block averages. The
+  block-level ranking does change (pairwise ISC: pixar highest, 0.430; tile-peak ISC: slow
+  highest, 0.522, pixar second, 0.506) -- but this traces to pixar being a block of exactly
+  one clip (nothing to average down), while slow's block average mixes two very-high clips
+  (hands, people) with two middling ones (animals, inanimate). Not a disagreement about
+  which moments are synchronized, just an aggregation artifact of block size.
+- **Entropy vs. tile-peak ISC**: segment-level, all 12 clips, negative as predicted (low
+  entropy = concentrated attention should track high ISC = tight temporal tracking): pooled
+  r=-0.354, p<0.0001, n=133; consistent direction in all 4 blocks but only individually
+  significant in pixar (r=-0.621, p=0.0009, n=25 -- frank/sesame/slow each r=-0.14 to
+  -0.23, ns). Per-CLIP (n=12, whole-clip ISC vs. mean entropy across a clip's segments):
+  r=-0.712, p=0.0093 -- the cleanest view of the relationship, with slow_hands anchoring
+  the low-entropy/high-ISC end almost exactly on the fit line and slow_people as the one
+  real outlier (highest ISC of any clip, only middling entropy).
+- **Gaze-overlay spot-checks** (`figures/checks/entropy_isc_spotcheck/`, pixar_birds
+  seg07/10/33): confirmed visually. seg7 (entropy=4.00, ISC=0.01): multiple birds on a
+  wire plus a stray off-target density blob -- genuinely dispersed. seg10 (entropy=2.66,
+  ISC=0.80): one isolated bird, one tight density cloud. seg33 (entropy=2.78, ISC=0.86): a
+  single elongated, streaking density cloud -- not a static target but everyone's gaze
+  tracking the same *moving* target together, a second, distinct mechanism for the same
+  low-entropy/high-ISC combination.
+- **Status: promoted to canonical.** `scripts/analysis/calc_isc_tilepeak.py` -- named to
+  match `calc_isc_rawgaze.py`/`calc_isc_fixations.py` (by input representation: raw
+  samples / fixation events / tile-peak), output `data/results/isc/isc_tilepeak.csv`
+  (`isc_tilepeak_x/y/xy` columns, prefixed so they can't get silently confused with
+  `isc_fixation_pairwise.csv`'s `isc_x/y/xy`). Whole-clip only, all 12 clips, one row per
+  (video, pid) -- matches the table above. The segment-level checks above (pixar only) and
+  the entropy-vs-ISC comparison (all 12 clips) are still scratch, not canonical scripts.
