@@ -1,0 +1,334 @@
+---
+title: "Entropy of Group Fixation Density — Pixar's Lower Entropy"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    theme: cosmo
+    highlight-style: github
+---
+
+# Setup
+
+Three claims: (1) pixar has lower entropy than frank/sesame at the standard settings,
+(2) holds across window size (0.5-2.0s, N matched per size), (3) holds across grid
+resolution (6-120 tiles, diameter matched to the 120-tile grid's overlap ratio). `slow` is
+plotted for transparency but excluded from the claim -- its segments run far longer on
+average, a confound traced separately (METHODS_DECISIONS.md, 2026-10-15).
+
+Reads `entropy_by_segment.csv` (canonical pipeline, backs Claim 1) and
+`entropy_sensitivity_sweep.csv` (window/grid sweeps, backs Claims 2-3), both from
+`data/results/entropy_by_segment/`. All stats computed live, not pasted from prior runs.
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggthemes)
+library(glue)
+library(here)
+
+FIGURES_DIR <- here("figures", "entropy")
+dir.create(FIGURES_DIR, showWarnings = FALSE, recursive = TRUE)
+
+BLOCKS <- c("frank", "sesame", "slow", "pixar")
+BLOCK_COLORS <- c(frank = "#0072B2", sesame = "#D55E00", slow = "#999999", pixar = "#009E73")
+
+entropy_by_segment <- read_csv(here("data", "results", "entropy_by_segment", "entropy_by_segment.csv"), show_col_types = FALSE) |>
+  filter(!is.na(mean_entropy_rarefied)) |>
+  mutate(block = factor(block, levels = BLOCKS))
+
+sensitivity_sweep <- read_csv(here("data", "results", "entropy_by_segment", "entropy_sensitivity_sweep.csv"), show_col_types = FALSE) |>
+  mutate(block = factor(block, levels = BLOCKS))
+
+entropy_theme <- theme_few(base_size = 13) + theme(panel.grid.minor.x = element_blank())
+
+# ANOVA + Tukey HSD of value_col ~ block; returns overall F/p plus the two pairs the claim rests on.
+anova_tukey <- function(df, value_col) {
+  fit <- aov(df[[value_col]] ~ block, data = df)
+  av <- summary(fit)[[1]]
+  tukey <- TukeyHSD(fit)$block
+  pair <- function(a, b) {
+    hit <- which(rownames(tukey) %in% c(glue("{a}-{b}"), glue("{b}-{a}")))
+    if (length(hit) == 0) NA_real_ else tukey[hit, "p adj"]
+  }
+  tibble(n = nrow(df), df_between = av["block", "Df"], df_within = av["Residuals", "Df"],
+         F = av["block", "F value"], p = av["block", "Pr(>F)"],
+         p_frank_pixar = pair("frank", "pixar"), p_sesame_pixar = pair("sesame", "pixar"))
+}
+
+block_means <- function(df, value_col, ...) {
+  df |> group_by(...) |>
+    summarise(se = sd(.data[[value_col]]) / sqrt(n()), n = n(), mean_entropy = mean(.data[[value_col]]), .groups = "drop")
+}
+
+sig_stars <- function(p) case_when(p < 0.001 ~ "***", p < 0.01 ~ "**", p < 0.05 ~ "*", TRUE ~ "ns")
+
+# Shared line+ribbon plot for the two sweeps: one line per block, F/p labels below each x value.
+plot_sweep <- function(means, stats, x_var, x_trans, x_lab, title, subtitle) {
+  label_y <- min(means$mean_entropy - means$se) - 0.12 * diff(range(means$mean_entropy))
+  labels <- stats |> mutate(label = glue("F={round(F,1)}\np={signif(p,2)}"))
+  ggplot(means, aes(x = .data[[x_var]], y = mean_entropy, colour = block)) +
+    geom_ribbon(aes(ymin = mean_entropy - se, ymax = mean_entropy + se, fill = block), alpha = 0.15, colour = NA) +
+    geom_line(linewidth = 0.9) + geom_point(size = 2.2) +
+    geom_text(data = labels, aes(x = .data[[x_var]], y = label_y, label = label), colour = "grey30",
+              inherit.aes = FALSE, size = 2.9, vjust = 1) +
+    scale_colour_manual(values = BLOCK_COLORS) + scale_fill_manual(values = BLOCK_COLORS) +
+    scale_x_continuous(trans = x_trans, breaks = sort(unique(means[[x_var]])), expand = expansion(mult = 0.08)) +
+    scale_y_continuous(expand = expansion(mult = c(0.18, 0.08))) +
+    labs(title = title, subtitle = str_wrap(subtitle, 85), x = x_lab, y = "Mean entropy, rarefied (bits)", colour = "block", fill = "block") +
+    entropy_theme + theme(legend.position = "top")
+}
+```
+
+---
+
+# Claim 1: Lower Entropy in Pixar
+
+```{r claim1}
+h1_stats <- anova_tukey(entropy_by_segment, "mean_entropy_rarefied")
+h1_means <- block_means(entropy_by_segment, "mean_entropy_rarefied", block)
+h1_stats
+```
+
+```{r claim1-plot, fig.height=6}
+# Axis starts at 2 bits, not 0 -- below that is indistinguishable from pure calibration
+# noise (median tracker calibration error alone produces ~2.1 bits; see chat/scratch sim).
+# Points, not bars, below a non-zero baseline: a bar's LENGTH conventionally encodes
+# magnitude, so truncating a bar's baseline visually exaggerates relative differences --
+# points don't carry that convention, so a non-zero floor isn't misleading here.
+set.seed(0)
+p1 <- ggplot(entropy_by_segment, aes(x = block, y = mean_entropy_rarefied)) +
+  geom_jitter(width = 0.18, alpha = 0.35, size = 1.6, colour = "grey60") +
+  geom_pointrange(data = h1_means, aes(y = mean_entropy, ymin = mean_entropy - se, ymax = mean_entropy + se, colour = block),
+                   size = 0.9, linewidth = 1.1) +
+  scale_colour_manual(values = BLOCK_COLORS) +
+  coord_cartesian(ylim = c(2, NA)) +
+  annotate("text", x = 2.5, y = max(entropy_by_segment$mean_entropy_rarefied) + 0.35,
+           label = glue("ANOVA F({h1_stats$df_between},{h1_stats$df_within})={round(h1_stats$F,2)}, p={signif(h1_stats$p,2)}\n",
+                        "Tukey: frank-pixar {sig_stars(h1_stats$p_frank_pixar)}, sesame-pixar {sig_stars(h1_stats$p_sesame_pixar)}"),
+           size = 3.4) +
+  labs(title = "Pixar has the lowest mean entropy of pooled group gaze",
+       subtitle = str_wrap("Canonical pipeline: 1.0s windows, 120-tile grid, N=75. Grey points = cut-to-cut segments; coloured point+range = block mean +/- SE.", 85),
+       x = NULL, y = "Mean entropy, rarefied (bits)") +
+  entropy_theme + theme(legend.position = "none")
+
+p1
+ggsave(file.path(FIGURES_DIR, "mean_segment_entropy_by_block.png"), p1, width = 9, height = 7)
+```
+
+---
+
+# Claim 2: Holds Across Window Size
+
+```{r claim2}
+window_sweep <- sensitivity_sweep |> filter(sweep == "window")
+h2_stats <- window_sweep |> group_by(window_s) |> group_modify(~ anova_tukey(.x, "mean_entropy")) |> ungroup()
+h2_means <- block_means(window_sweep, "mean_entropy", window_s, block)
+h2_stats
+```
+
+```{r claim2-plot, fig.height=6}
+p2 <- plot_sweep(h2_means, h2_stats, "window_s", "identity", "Window size (s)",
+                  "Pixar's entropy gap holds across window size",
+                  "Fixed 120-tile grid; N matched per window size (p5 fixation count). F/p below each point.")
+p2
+ggsave(file.path(FIGURES_DIR, "entropy_window_size_control.png"), p2, width = 9, height = 7)
+```
+
+---
+
+# Claim 3: Holds Across Grid Resolution
+
+```{r claim3}
+grid_sweep <- sensitivity_sweep |> filter(sweep == "grid")
+h3_stats <- grid_sweep |> group_by(n_tiles) |> group_modify(~ anova_tukey(.x, "mean_entropy")) |> ungroup()
+h3_means <- block_means(grid_sweep, "mean_entropy", n_tiles, block)
+h3_stats
+```
+
+```{r claim3-plot, fig.height=6}
+p3 <- plot_sweep(h3_means, h3_stats, "n_tiles", "log10", "Number of scene tiles (log scale)",
+                  "Pixar's entropy gap holds across grid resolution",
+                  "Fixed 1.0s windows, N=78; tile diameter matched to the 120-tile grid's overlap ratio. F/p below each point.")
+p3
+ggsave(file.path(FIGURES_DIR, "entropy_grid_size_control.png"), p3, width = 9, height = 7)
+```
+
+---
+
+# Claim 4: Not Driven by Outliers
+
+Is the frank/sesame-vs-pixar gap a broad group effect, or a few divergent participants?
+Leave-one-participant-out on entropy itself (`diagnostic_entropy_outlier_sensitivity.py`):
+rerun the canonical pipeline once per participant, excluding just them, and see how much
+block-mean entropy moves. Restricted to frank/sesame/pixar (the blocks the claim concerns).
+
+A plain overlay of the leave-one-out values on Claim 1's point scale would be invisible --
+the whole effect is under 0.02 bits, against a 0-5 bit axis. So: the first plot shows the
+leave-one-out range as a crossbar (and the number, since the eye can't resolve it), and a
+second, zoomed plot shows the same values on their own scale, against the actual gap size.
+
+```{r claim4}
+# entropy_drop (from the CSV) = baseline - excluded, i.e. positive means entropy FELL when
+# excluded. That's the opposite sign of how "entropy change from excluding" naturally
+# reads, so we plot entropy_change = excluded - baseline instead: positive = entropy ROSE
+# when this person was excluded, i.e. they were anchoring/concentrating the group while
+# present; negative = they were adding spread while present.
+outlier_sensitivity <- read_csv(here("data", "results", "entropy_by_segment", "entropy_outlier_sensitivity.csv"), show_col_types = FALSE) |>
+  mutate(block = factor(block, levels = c("frank", "sesame", "pixar")),
+         entropy_change = entropy_excl - baseline_entropy)
+
+h4_range <- outlier_sensitivity |>
+  group_by(block) |>
+  summarise(baseline = first(baseline_entropy), excl_min = min(entropy_excl), excl_max = max(entropy_excl),
+            max_abs_drop = max(abs(entropy_drop)), .groups = "drop")
+
+gaps <- h4_range |> select(block, baseline) |> deframe()
+gap_frank_pixar <- gaps["frank"] - gaps["pixar"]
+gap_sesame_pixar <- gaps["sesame"] - gaps["pixar"]
+h4_range
+```
+
+```{r claim4-plot-a, fig.height=6}
+p4a <- ggplot(h4_range, aes(x = block, y = baseline)) +
+  geom_col(fill = BLOCK_COLORS[levels(outlier_sensitivity$block)], width = 0.6, colour = "black", linewidth = 0.4) +
+  geom_errorbar(aes(ymin = excl_min, ymax = excl_max), width = 0.25, linewidth = 1.2) +
+  geom_text(aes(y = baseline + 0.45, label = glue("max shift: {round(max_abs_drop, 3)} bits")), size = 3.2) +
+  labs(title = "Mean entropy by block, with leave-one-out range overlaid",
+       subtitle = str_wrap("Black crossbar = range of block-mean entropy across 36-41 reruns, each excluding one participant -- barely visible at this scale.", 85),
+       x = NULL, y = "Mean entropy, rarefied (bits)") +
+  entropy_theme
+
+p4a
+ggsave(file.path(FIGURES_DIR, "entropy_outlier_sensitivity_bars.png"), p4a, width = 9, height = 7)
+```
+
+```{r claim4-plot-b, fig.height=6}
+p4b <- ggplot(outlier_sensitivity, aes(x = block, y = entropy_change, colour = block)) +
+  geom_hline(yintercept = 0, colour = "grey50", linewidth = 0.4) +
+  geom_jitter(width = 0.15, size = 2, alpha = 0.7) +
+  scale_colour_manual(values = BLOCK_COLORS) +
+  labs(title = "How much does excluding one participant move block entropy?",
+       subtitle = str_wrap(glue("Each point = one participant excluded, one at a time. Positive = entropy rose when they were excluded. For reference, the actual frank-pixar gap is {round(gap_frank_pixar,2)} bits and sesame-pixar is {round(gap_sesame_pixar,2)} bits -- 20-30x any single participant's effect."), 85),
+       x = NULL, y = "Entropy change from excluding this person (bits)", colour = NULL) +
+  entropy_theme + theme(legend.position = "none")
+
+p4b
+ggsave(file.path(FIGURES_DIR, "entropy_outlier_sensitivity_zoomed.png"), p4b, width = 9, height = 7)
+```
+
+```{r claim4-concordance}
+h4_conc <- outlier_sensitivity |> group_by(block) |>
+  summarise(r = cor(mean_concordance_r, entropy_change, use = "complete.obs"), .groups = "drop")
+h4_conc
+```
+
+```{r claim4-plot-c, fig.height=5}
+h4_conc_labels <- h4_conc |> mutate(label = glue("r = {round(r, 2)}"))
+
+p4c <- ggplot(outlier_sensitivity, aes(x = entropy_change, y = mean_concordance_r, colour = block)) +
+  geom_point(size = 2, alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 0.8) +
+  geom_text(data = h4_conc_labels, aes(label = label), x = -Inf, y = Inf, hjust = -0.2, vjust = 1.5,
+            colour = "grey20", size = 3.4, inherit.aes = FALSE) +
+  scale_colour_manual(values = BLOCK_COLORS) +
+  facet_wrap(~block) +
+  labs(title = "More concordant participants are the ones anchoring the group",
+       subtitle = str_wrap("Each point = one participant. Positive x = entropy rose when they were excluded (they were concentrating the group while present). Both axes computed on the same segment-matched windows as the leave-one-out test.", 95),
+       x = "Entropy change from excluding this person (bits)", y = "Participant's mean concordance with group", colour = NULL) +
+  entropy_theme + theme(legend.position = "none")
+
+p4c
+ggsave(file.path(FIGURES_DIR, "entropy_outlier_concordance_correlation.png"), p4c, width = 10, height = 5.5)
+```
+
+No single participant comes close to explaining the gap -- the largest effect of excluding
+any one person (0.02 bits) is roughly 5% of the smallest block gap (frank-pixar, 0.39 bits).
+The direction is sensible throughout: the more concordant a participant is with the group,
+the more entropy *rises* when they're excluded -- i.e. they were anchoring/concentrating the
+group while present (r = 0.80 to 0.92 across blocks, concordance and entropy aggregated the
+same way -- segment-then-mean). Conversely, low-concordance participants are the ones adding
+spread while present, so excluding them lowers entropy. The two metrics agree on who's
+unusual -- they just don't individually matter much to the result.
+
+---
+
+# Claim 5: Content vs. Production
+
+Pixar is a single clip, so block, production style, and content (animated, non-human
+birds) are fully confounded for it -- a between-block comparison alone can't say whether
+its low entropy is about *how it's made* or *what's in it*. frank and sesame hold
+production roughly constant across their own clips while content varies (objects vs.
+people; different segments), so their within-block spread is a natural test of whether
+content alone moves entropy. slow does too, but with far fewer scorable segments/clip.
+
+```{r claim5}
+clip_order <- c("frank_complex", "frank_objects", "frank_play",
+                "sesameindia_1", "sesameindia_2", "sesameus_1", "sesameus_2",
+                "slow_animals", "slow_hands", "slow_inanimate", "slow_people", "pixar_birds")
+entropy_by_clip <- entropy_by_segment |> mutate(video = factor(video, levels = clip_order))
+
+clip_means <- entropy_by_clip |>
+  group_by(video, block) |>
+  summarise(se = sd(mean_entropy_rarefied) / sqrt(n()), n = n(),
+            mean_entropy = mean(mean_entropy_rarefied), .groups = "drop")
+
+within_block_anova <- entropy_by_clip |>
+  filter(block != "pixar") |>
+  group_by(block) |>
+  group_modify(~ broom::tidy(aov(mean_entropy_rarefied ~ video, data = .x))) |>
+  filter(term == "video") |>
+  select(block, df, statistic, p.value)
+
+clip_means |> group_by(block) |> summarise(clip_range = max(mean_entropy) - min(mean_entropy), .groups = "drop")
+within_block_anova
+```
+
+```{r claim5-plot, fig.height=6.5, fig.width=10}
+block_counts <- clip_means |> mutate(block = factor(block, levels = BLOCKS)) |> count(block) |> arrange(block)
+boundaries <- cumsum(block_counts$n)[-nrow(block_counts)] + 0.5
+
+# Axis starts at 2 bits, not 0 -- see Claim 1 for why (calibration-noise floor, and
+# points rather than bars so a non-zero baseline doesn't distort the visual encoding).
+p5 <- ggplot(entropy_by_clip, aes(x = video, y = mean_entropy_rarefied)) +
+  geom_jitter(width = 0.15, alpha = 0.35, size = 1.3, colour = "grey60") +
+  geom_pointrange(data = clip_means, aes(y = mean_entropy, ymin = mean_entropy - se, ymax = mean_entropy + se, colour = block),
+                   size = 0.7, linewidth = 1) +
+  geom_vline(xintercept = boundaries, colour = "grey50", linetype = "dashed", linewidth = 0.4) +
+  scale_colour_manual(values = BLOCK_COLORS) +
+  coord_cartesian(ylim = c(2, NA)) +
+  labs(title = "Mean entropy by clip, grouped by block",
+       subtitle = str_wrap("Canonical pipeline: 1.0s windows, 120-tile grid, N=75. Grey points = cut-to-cut segments; coloured point+range = clip mean +/- SE.", 95),
+       x = NULL, y = "Mean entropy, rarefied (bits)", colour = "block") +
+  entropy_theme + theme(axis.text.x = element_text(angle = 35, hjust = 1), legend.position = "top")
+
+p5
+ggsave(file.path(FIGURES_DIR, "entropy_by_clip.png"), p5, width = 11, height = 7)
+```
+
+Within-block clip-to-clip spread (frank: 0.44 bits, sesame: 0.44 bits) is comparable in
+size to the frank-pixar and sesame-pixar gaps themselves (0.39, 0.47 bits) -- and slow's
+spread (0.84 bits, slow_hands to slow_animals) is *larger* than either, despite one fixed
+production style throughout. ANOVA confirms this is real, not noise, for frank and sesame
+(both p<0.05); slow's ANOVA doesn't reach significance, but that's a power issue (~4
+scorable segments/clip, the smallest n of any block), not evidence the spread is smaller.
+Content moves entropy by an amount comparable to or larger than the production-level
+effect Claim 1 rests on, so pixar's single-clip status leaves "production" and "content"
+(and pixar's non-human, animated-bird content specifically) still confounded -- this isn't
+resolved by the data in hand.
+
+---
+
+# Summary
+
+```{r summary}
+bind_rows(
+  h2_stats |> mutate(sweep = "window", condition = as.character(window_s)),
+  h3_stats |> mutate(sweep = "grid", condition = as.character(n_tiles))
+) |> select(sweep, condition, n, F, p, p_frank_pixar, p_sesame_pixar)
+```
+
+Pixar's mean entropy is lowest in every condition across both sweeps -- direction never
+flips. Pixar-sesame is significant everywhere; pixar-frank is significant at every window
+size and at the two finest grids, narrowing but not reversing at the two coarsest.

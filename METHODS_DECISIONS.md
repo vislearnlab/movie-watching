@@ -957,3 +957,62 @@ display edge rather than overshooting it (as the earlier 200px/144-patch grid di
   default, confirmed via `ffmpeg showinfo` on two real cases -- one with a ~5ms annotation
   error, one with a ~33ms/one-frame error -- that 1 frame of margin wasn't always enough but
   2 was, for both).
+
+## 2026-10-15 — Entropy: whole-segment-pooled abandoned, two pipeline bugs fixed, robustness sweeps, headline notebook
+
+- **Tried whole-segment-pooled entropy (pool all fixations across a whole cut-to-cut
+  segment, one entropy value per segment) as an alternative to averaging per-window
+  entropy across a segment.** Abandoned: it has two confounds the windowed approach
+  doesn't. (1) Segment duration itself drives apparent spread -- `slow`'s segments run
+  ~15s vs. ~3-4s for the other blocks, so pooling mechanically accumulates more spatial
+  coverage regardless of content; block-level entropy "jump size" tracked block-level mean
+  segment duration almost exactly. (2) A single fixed N (e.g. 75) represents wildly
+  different fractions of each block's available fixation pool when pool size scales with
+  duration -- 7.3% of `slow`'s pool vs. 86.0% of `sesame`'s at N=75, so the "same"
+  rarefaction isn't doing the same thing across blocks. Per user instruction, all
+  whole-segment-pooled work (scripts, CSV, figures) was deleted; nothing from that line of
+  work was ever committed.
+- **Fixed two real bugs in `calc_entropy_by_segment.py`** (previously committed in
+  `109a597` with neither bug present yet):
+  - Zero-duration trailing segments: a clip's rounded duration estimate could be
+    marginally less than its last cut timestamp (`frank_complex`: estimate 60.3 vs. actual
+    last cut 60.32), producing a spurious negative-length final segment. Already partly
+    addressed by switching to exact `ffprobe` durations (prior entry), but recurred;
+    fixed at the source by skipping any segment with `e - s <= 0`.
+  - Window-to-segment assignment required only `start < seg_end`, not full containment.
+    That let a window's tail bleed past its segment's boundary into the next segment's
+    data -- 100% of windows bleed for any segment shorter than `WINDOW_S`, not just an edge
+    case. Fixed to `start >= seg_start AND start + WINDOW_S <= seg_end`. This also
+    principles the "should there be a minimum segment length" question raised mid-session:
+    yes, exactly `WINDOW_S` -- 15/183 segments (8.2%) are now NaN rather than silently
+    computed from leaked data.
+  - Canonical `data/results/entropy_by_segment/entropy_by_segment.csv` regenerated after
+    both fixes (183 rows, `frank_complex` now has a clean 13 segments).
+- **Window-size and grid-size robustness sweeps**, to check whether "pixar is less
+  entropic than frank/sesame" is an artifact of the specific 1.0s/120-tile settings:
+  - Window-size sweep (0.5/1.0/1.5/2.0s, fixed 120-tile grid): N_FIX_FIXED can't be one
+    fixed value across window sizes without penalizing short windows (fewer fixations land
+    in a shorter window) or underusing long ones -- at N=75 and WINDOW_S=0.5, 28.5% of
+    windows get excluded for pixar alone. Fixed by computing N separately per window size as
+    floor(p5) of that window size's own pooled fixation-count distribution: 53/78/105/132
+    for 0.5/1.0/1.5/2.0s.
+  - Grid-size sweep (6/15/66/120 tiles, fixed 1.0s windows, N=78): tile diameter must be
+    chosen so each grid's overlap ratio (diameter/spacing_x) matches the 120-tile grid's
+    (~1.4483), not just picked as "smallest diameter that still tiles the screen" -- an
+    early pass used mismatched ratios and produced a spuriously null result at 6 tiles
+    (F=0.33, p=0.81) because the tiles were too small/sparse relative to the others to catch
+    any signal. Corrected diameters: 806/510/243/180px for 6/15/66/120 tiles. 66 (not an
+    exact 60) is the closest tile count achievable at the matched ratio on an 11-column
+    grid -- 60 tiles forces a different `n_rows` rounding that only reaches ratio 1.28.
+  - Both sweeps implemented in `scripts/analysis/calc_entropy_sensitivity_sweep.py` ->
+    `data/results/entropy_by_segment/entropy_sensitivity_sweep.csv`. Result: pixar has the
+    lowest mean entropy of the three (frank/sesame/pixar; `slow` excluded from this
+    comparison for the duration-confound reason above) in every single condition tested
+    across both sweeps -- direction never flips. Pixar-sesame (Tukey HSD) is significant at
+    every condition in both sweeps; pixar-frank is significant at every window size and at
+    the two finest grids (66, 120 tiles), narrowing but not reversing at the two coarsest
+    grids (6: p=0.149, 15: p=0.062).
+- **New R notebook**: `scripts/analysis/plot_entropy_pixar_headlines.qmd` -- the
+  step-through writeup of the three headlines above (lower entropy in pixar; holds across
+  window size; holds across grid size), reading both CSVs above, running ANOVA + Tukey HSD
+  live in R (not pasted from the Python runs), saving to `figures/entropy/`.
