@@ -1,59 +1,36 @@
 """
 Mean entropy of the pooled group fixation density, per cut-to-cut segment, for all 12 clips.
 
-"Entropy" here measures how SPREAD OUT the group's collective attention is in a given
-analysis window: normalize the pooled (duration-weighted Gaussian) density across the 120
-scene tiles to a probability distribution, then take its Shannon entropy in bits. A single
-tight target (everyone looking at the same spot) gives low entropy; several simultaneously
-salient things (attention genuinely split) gives high entropy. See METHODS_DECISIONS.md for
-the fuller writeup of this line of investigation, including the montage/video spot-checks
-that confirmed low/high-entropy windows look exactly like this intuition predicts.
+Entropy = Shannon entropy (bits) of the pooled duration-weighted Gaussian density, normalized
+across the 120 scene tiles. Low = everyone looks at one spot; high = attention genuinely
+split. See METHODS_DECISIONS.md for the full writeup and montage spot-checks.
 
-Tile grid
----------
-120 tiles: diameter=180px, 15 cols x 8 rows -- the SAME grid used throughout this project's
-concordance work (calc_concordance_group.py etc.), not a separate/coarser grid. Asserted in
-code, not just assumed.
+Tile grid: 120 tiles (diameter=180px, 15x8), same grid as the concordance work. Asserted
+in code.
 
-Fixed-N rarefaction -- and why these specific numbers
--------------------------------------------------------
-Raw entropy is sensitive to how many fixations happen to fall in a window: more fixations
-mechanically tends to inflate entropy a little, independent of content (pooled correlation
-between window fixation count and raw entropy was r=0.33 at this grid). To stop that from
-confounding any comparison across windows/clips/blocks, each window's entropy is computed
-from a FIXED number of fixations, randomly subsampled (without replacement) from everyone
-who fixated in that window, repeated across many draws and averaged -- the standard
-"rarefaction" fix for sample-size bias in diversity/entropy indices (same idea as
-species-rarefaction curves in ecology).
-
-- N_FIX_FIXED = 75 fixations per window. The pooled distribution of raw per-window fixation
-  counts across all 12 clips has percentiles p5=78, p25=94, median=109, p75=124, p95=144 (see
-  METHODS_DECISIONS.md, entropy fixation-count diagnostic). 75 sits just under that p5, so
-  only a small minority of windows -- the ones with the fewest fixations available -- don't
-  have enough to rarefy and are left as NaN (reported per-row via n_windows_dropped_low_fix,
-  not silently dropped). An earlier pass used N=60, picked as "comfortably below p5" without
-  a stated reason to prefer 60 specifically over other values well under 78; 75 was chosen
-  deliberately instead, closer to the actual p5 cutoff, directly motivated and documented
-  rather than picked as an arbitrary round number.
-- N_DRAWS = 100 random subsamples per window, averaged, to control Monte Carlo noise in the
-  rarefied entropy estimate. An earlier pass used 40 draws chosen for runtime convenience,
-  with no convergence check -- i.e. no verification that the per-window estimate had actually
-  stabilized by 40 draws rather than still drifting. 100 draws is a more conservative choice
-  for the same reason: it isn't independently proven sufficient either (no formal convergence
-  check has been run at 100 vs. 200+ draws), but it meaningfully reduces that risk relative to
-  40 and was requested explicitly over re-deriving a data-driven cutoff.
+Fixed-N rarefaction: raw entropy correlates with per-window fixation count (r=0.33),
+independent of content. Fix: subsample a FIXED N fixations per window (no replacement),
+repeat over many draws, average -- standard rarefaction for sample-size bias.
+- N_FIX_FIXED=75: just under the pooled per-window fixation-count p5 (78; percentiles
+  p5=78/p25=94/median=109/p75=124/p95=144). Windows below N get NaN, tracked via
+  n_windows_dropped_low_fix. Supersedes an earlier N=60 that had no stated reason over
+  other values below 78.
+- N_DRAWS=100: reduces Monte Carlo noise vs. an earlier N=40 (picked for runtime, no
+  convergence check). 100 isn't convergence-proven either, just more conservative.
 
 Reads fixation data from a LOCAL COPY only -- never the live server mount.
 
-Output
-------
-data/results/entropy_by_segment/entropy_by_segment.csv -- one row per (video, segment):
-  video, block, segment_idx, seg_start_s, seg_end_s, seg_dur_s, n_windows,
-  n_windows_dropped_low_fix, mean_entropy_rarefied
+Window-to-segment assignment requires full containment (start >= seg_start AND
+start+WINDOW_S <= seg_end), not just start < seg_end -- otherwise windows bleed past the
+segment boundary into the next segment's data (100% bleed for segments < WINDOW_S; same
+bug class `visualize_entropy_segment.py` fixed on the video side). This also sets the
+minimum segment length at WINDOW_S (1.0s): 15/183 segments (8.2%) get NaN entropy.
 
-Usage
------
-    python scripts/analysis/calc_entropy_by_segment.py
+Output: data/results/entropy_by_segment/entropy_by_segment.csv -- one row per (video,
+segment): video, block, segment_idx, seg_start_s, seg_end_s, seg_dur_s, n_windows,
+n_windows_dropped_low_fix, mean_entropy_rarefied (NaN if segment < WINDOW_S).
+
+Usage: python scripts/analysis/calc_entropy_by_segment.py
 """
 
 import sys
@@ -74,9 +51,7 @@ N_FIX_FIXED = 75   # see module docstring for why this value, not another, was c
 N_DRAWS = 100       # see module docstring for why this value, not another, was chosen
 RNG_SEED = 0
 
-# Exact clip durations via ffprobe -- NOT the rounded estimates (e.g. 60.3 vs the true 60.32)
-# used earlier in this project's exploration, which produced a negative-duration trailing
-# segment for frank_complex.
+# Exact durations via ffprobe, not rounded estimates (e.g. 60.3 vs true 60.32).
 DURATIONS = {
     "frank_complex": 60.32, "frank_objects": 60.12, "frank_play": 60.92,
     "pixar_birds": 150.15,
@@ -161,9 +136,14 @@ def main():
 
         cut_times = sorted(cuts_df[cuts_df.video_name == video].cut_time_s.tolist())
         bounds = [0.0] + cut_times + [dur]
+        n_written = 0
 
         for seg_idx, (s, e) in enumerate(zip(bounds[:-1], bounds[1:])):
-            m = (t >= s) & (t < e)
+            if e - s <= 0:
+                continue  # zero-length trailing segment (cut lands exactly at clip end)
+            # Require full containment (t+WINDOW_S <= e), not just t < e, so windows can't
+            # bleed past the segment boundary -- see module docstring.
+            m = (t >= s) & (t + WINDOW_S <= e)
             n_windows = int(m.sum())
             n_dropped = int(((n_fix_avail[m] < N_FIX_FIXED) & (n_fix_avail[m] > 0)).sum())
             mean_ent = np.nanmean(ent[m]) if n_windows > 0 else np.nan
@@ -173,7 +153,8 @@ def main():
                 n_windows=n_windows, n_windows_dropped_low_fix=n_dropped,
                 mean_entropy_rarefied=round(mean_ent, 4) if not np.isnan(mean_ent) else np.nan,
             ))
-        print(f"{video:16s} done, {len(cut_times)} cuts -> {len(bounds) - 1} segments")
+            n_written += 1
+        print(f"{video:16s} done, {len(cut_times)} cuts -> {n_written} segments")
 
     out = pd.DataFrame(rows)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
