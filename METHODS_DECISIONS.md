@@ -1101,3 +1101,129 @@ display edge rather than overshooting it (as the earlier 200px/144-patch grid di
   `isc_fixation_pairwise.csv`'s `isc_x/y/xy`). Whole-clip only, all 12 clips, one row per
   (video, pid) -- matches the table above. The segment-level checks above (pixar only) and
   the entropy-vs-ISC comparison (all 12 clips) are still scratch, not canonical scripts.
+
+## 2026-10-19 — Within-person vs. between-person gaze dispersion: entropy abandoned, tile-vector cosine distance built, four-quadrant framework
+
+- **Motivation**: why does slow_people have high ISC despite only moderate (not lowest)
+  entropy? Visual gaze-overlay inspection of its 4 segments found a "coordinated vs.
+  concentrated" mechanism -- entropy tracks spatial separation between 2 consistently-
+  tracked targets, while ISC stays high as long as the group agrees on which targets to
+  split between, regardless of distance. This motivated a new metric, borrowed from
+  ecology's diversity-partitioning framework: decompose a segment's gaze pattern into
+  within-person spread (how much one person's own attention moves around) and
+  between-person spread (how much different people's attention disagrees).
+- **First attempt: Shannon entropy of each person's own tile vector (pixar_birds pilot,
+  `scripts/analysis/calc_entropy_within_between.py`). Failed at this data's real sample
+  sizes.** Unrarefied (all available fixations per person per segment), within-person
+  entropy correlated r=0.79 with raw fixation count -- almost pure count confound, not
+  signal. Rarefying to a fixed N per person (matching the canonical group pipeline's
+  floor(p5) convention) made it worse, not better: at the resulting N=2, entropy on a
+  120-tile grid collapses to a narrow, near-ceiling band (1.65-2.03 bits, std=0.08) because
+  2 well-separated points almost always touch different tiles regardless of true distance
+  -- entropy's log-transform saturates at small N; this holds at every grid coarseness
+  tested (6/15/66/120 tiles, confirmed empirically, not just reasoned), since the kernel
+  width (sigma=46px, fixed) rather than tile count sets the achievable resolution for a
+  2-point sample. Diversity-partitioning's `beta = gamma - alpha` is also not a rigorous
+  decomposition for entropy (true additivity needs the Hill-number/multiplicative form),
+  unlike variance, which has an exact `law of total variance` identity -- this motivated
+  trying variance/distance-based metrics instead of a better entropy estimator.
+- **Centroid-based spread (pixel-space, ANOVA-style within/between-of-centroids) rejected
+  on conceptual grounds before being built out.** For genuinely bimodal attention (e.g.
+  slow_people's two co-moving targets), the arithmetic mean of a person's fixations lands
+  in the empty space *between* the two targets, not on either one -- a real, not cosmetic,
+  problem: "low between-person spread" would read as "people agree on a target" when the
+  true claim is only "people's *average* locations agree," which can be true for bimodal
+  splitting with no shared target at all.
+- **Built instead: tile-vector cosine distance** (`scripts/analysis/calc_within_between_cosine.py`,
+  canonical, all 12 clips). Same closed-form Gaussian/120-tile machinery as concordance and
+  `calc_isc_tilepeak.py` (sigma=46px, 15x8 grid, WINDOW_S=STEP_S=0.5s non-overlapping -- no
+  new spatial parameters). Two deliberately PARALLEL constructions (both "distance from a
+  mean"), NOT an additive decomposition (the quadrant framework below only needs two
+  comparable axes, not a literal total=within+between split, and cosine distance doesn't
+  decompose additively the way squared Euclidean does -- correlation/cosine was kept for
+  consistency with the existing tile-peak ISC/concordance convention instead):
+  - `within_person_cosine_dist`: mean cosine distance between a person's own per-window
+    tile vectors, over all pairs of windows in the segment -- temporal self-consistency,
+    not spatial spread of one snapshot. Captures switching ACROSS windows, not two targets
+    fixated simultaneously WITHIN one 0.5s window (blurs into one bimodal vector instead)
+    -- accepted limitation.
+  - `between_person_cosine_dist`: collapse each person's own windows to one mean vector,
+    then cosine distance to the LEAVE-ONE-OUT mean of every other eligible person's mean
+    vector. Deliberately NOT time-matched/synchrony-sensitive (unlike ISC) -- two people
+    who visited the same targets at different moments score as agreeing. An earlier
+    version of this script compared each person's per-WINDOW vector to the per-window
+    leave-one-out group (time-matched, ISC-style) instead of mean-to-mean; corrected after
+    the user pointed out it wasn't actually parallel to the within-person axis, which
+    compares one person's own windows to their own mean, not to a moving group reference.
+  - Avoiding entropy's log-transform (comparing raw/cosine vectors directly, never taking
+    an entropy of anything) is what fixes the small-N collapse: a vector-distance doesn't
+    saturate near a ceiling the way entropy does.
+  - Normalization note (unresolved tradeoff, left as cosine): L1-normalize-then-Euclidean
+    keeps the additive total=within+between identity and fixes the fixation-count/magnitude
+    confound; raw cosine fixes the magnitude confound too but not the additive identity;
+    L2-normalize-then-Euclidean is mathematically equivalent to cosine (exact identity:
+    squared Euclidean on unit vectors = 2(1-cosine similarity)). Picked cosine for
+    consistency with existing tile-peak ISC/concordance work, not because it's uniquely
+    correct.
+- **MIN_WINDOWS=2** (lowered from an initial 3, which mirrored `calc_isc_tilepeak.py`'s
+  floor). That floor's reasoning doesn't transfer here: tile-peak ISC reports one number
+  *per person* (where 2-window noise is exposed directly in the final output), but this
+  script only ever reports a segment-level mean over ~35-41 people, which should average
+  out single-pair noise the way any large average does. Recovers 18/183 segments
+  (144->162 valid) with no disruption to the 3 known pixar example segments (already
+  >=3 windows, unchanged) or the tile-peak ISC cross-correlation (-0.278 vs -0.269,
+  negligible) -- though that check only covers segments already in the old ISC scratch
+  file, not the newly-recovered 2-window segments specifically.
+- **MAX_FIXATION_MS=2000 fixation-duration filter, added after a concrete data-quality
+  find.** Illustrative per-quadrant example segments were picked by ranking participants'
+  own within/between values to find the clearest "textbook" cases per segment (most
+  extreme = farthest into that quadrant's corner). Several of the resulting "selective"
+  examples, on inspection via gaze-overlay GIFs, turned out to be a single absurdly long
+  fixation (5-19 seconds vs. a ~296ms corpus median) rather than genuine decisive gaze --
+  one participant, MW028, alone accounts for 4 of the 10 longest fixations in the whole
+  68,872-fixation corpus. Mechanism: within-person distance rewards near-zero values most
+  strongly for exactly this degenerate case (one unmoving fixation spanning many
+  consecutive windows gives ~identical tile vectors by construction), so "pick the most
+  extreme example" was specifically hunting for this artifact. Fix: drop fixations >2000ms
+  before building tile vectors (~98.8% of real fixations are under this; it isn't a tight
+  cutoff). Confirmed working on the two flagged cases: frank_play's top-scoring "selective"
+  participant changed from MW028 (the repeat offender) to MW049 (normal multi-window
+  values); frank_objects' near-zero remaining case (MW002) was checked against raw
+  fixation records and is genuine (two real fixations, 1056ms and 146ms, at different
+  nearby positions) -- the filter demonstrably removes the artifact without blanket-killing
+  every low-within-person-distance case.
+- **Four-quadrant framework** (median-split on both axes, pooled across all 183 segments):
+  CONCENTRATED (low within, low between -- one shared target), COORDINATED (high within,
+  low between -- everyone splits attention the same way, e.g. slow_people's two co-moving
+  targets or tracking one moving target), SELECTIVE (low within, high between -- each
+  person decisive, but people disagree on WHAT), SCATTERED (high within, high between --
+  individually unfocused AND disagreeing). Illustrated with gaze-overlay montages/GIFs in
+  `figures/within_between/` -- concentrated reads as a genuinely unified phenomenon across
+  every block and content type; coordinated's "two distinct agents" story holds for
+  pixar/sesame but not cleanly for frank_play/slow; selective is cleanest for content with
+  multiple similar interchangeable options (pixar's row of birds); slow and frank_objects
+  blur the selective/scattered distinction.
+- **Segment duration is a real confound on the between-person axis, demonstrated not just
+  suspected.** Between-person distance is built from each person's segment-long mean
+  vector, so longer segments give more time for people's *overall* patterns to converge
+  even without real moment-to-moment agreement. Artificially chopping slow's real ~15.2s
+  segments into ~3s chunks (matching the rest of the corpus) flipped its quadrant
+  distribution from 75% COORDINATED / 0% SELECTIVE to 34% CONCENTRATED / 14% COORDINATED /
+  32% SELECTIVE / 20% SCATTERED -- i.e. slow's apparent "coordinated" signature was
+  overwhelmingly a duration artifact, not a property of the content. Pixar's one long
+  segment (seg0, 26.87s) showed the identical pattern when chopped (mean between-person
+  distance 0.155 -> 0.344). **Not fixed in the canonical script** -- `all_clips_by_segment.csv`
+  still uses real scene-cut segments with their native (highly unequal: 0.5s-26.9s)
+  durations; duration-matched chunking is currently an ad hoc, uncommitted scratch
+  technique used only for illustration and the slow/pixar sensitivity check, not applied
+  across the whole dataset. Any cross-block or cross-clip comparison using this data should
+  account for this before trusting it.
+- **Status: canonical for the per-segment metric computation, NOT yet promoted as a
+  validated finding.** `scripts/analysis/calc_within_between_cosine.py` outputs
+  `data/results/within_between_cosine/all_clips_by_segment.csv`, all 12 clips. Figures in
+  `figures/within_between/` (quadrant scatter plots, schematics, gaze-overlay montages and
+  GIFs organized by quadrant). `calc_entropy_within_between.py` (the superseded entropy
+  pilot) is kept as a historical record of why that approach doesn't work, not deleted.
+  Outstanding before this should be treated as a trustworthy result: the duration confound
+  above is unresolved in the canonical pipeline, and the quadrant framework's
+  interpretability varies noticeably by block/content type rather than being uniform.
