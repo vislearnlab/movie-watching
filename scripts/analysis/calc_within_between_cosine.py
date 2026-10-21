@@ -23,13 +23,13 @@ total=within+between was dropped: the quadrant framework only needs two comparab
 not a literal partition of one total, and cosine distance doesn't decompose additively the
 way squared Euclidean distance would):
 - within_person_cosine_dist: for one person, mean cosine distance between their own
-  per-window tile vectors, over all pairs of windows within the segment. Variance of that
-  person's OWN windows around their OWN mean, in substance (mean pairwise distance and
-  variance-around-the-mean are the same information up to a constant). Low = this person
-  looks at roughly the same thing throughout the segment; high = they shift between
-  different things over time. Captures switching ACROSS windows, not two targets fixated
-  simultaneously WITHIN one 0.5s window (which blurs into one bimodal vector for that
-  window instead) -- a known, accepted limitation, not a bug.
+  per-window tile vectors, over all pairs of windows within the segment (or within the
+  sampled window set -- see N_CAP below). Variance of that person's OWN windows around
+  their OWN mean, in substance. Low = this person looks at roughly the same thing
+  throughout the segment; high = they shift between different things over time. Captures
+  switching ACROSS windows, not two targets fixated simultaneously WITHIN one 0.5s window
+  (which blurs into one bimodal vector for that window instead) -- a known, accepted
+  limitation, not a bug.
 - between_person_cosine_dist: first collapse each person's own per-window vectors to ONE
   mean vector for the segment (same windows used for within_person_cosine_dist). Then, for
   each person, cosine distance between their own mean vector and the LEAVE-ONE-OUT grand
@@ -57,9 +57,30 @@ per quadrant was specifically selecting for this artifact -- discovered via the
 selective-quadrant GIFs, where several "textbook decisive" examples turned out to be a
 single absurdly-long fixation, not genuine behavior. See conversation history.
 
+N_CAP=12 adaptive window cap (segment duration confound fix): a long segment gives
+between-person distance more time to converge (people's overall patterns agree more just
+because there's more time to sample the same places) even with no real moment-to-moment
+agreement, and gives within-person distance more time to drift -- demonstrated, not just
+suspected, by artificially chopping slow's real ~15.2s segments into ~3s chunks: quadrant
+distribution flipped from 75% COORDINATED/0% SELECTIVE to a roughly even spread across all
+four. Fix: a segment with <=N_CAP windows available uses all of them (unchanged, exact);
+a segment with MORE than N_CAP windows gets N_DRAWS random draws of exactly N_CAP windows
+(no replacement), averaged -- same Monte Carlo rarefaction convention the project already
+uses for fixation-count confounds in the entropy work. N_CAP=12 (6s) chosen over a strict
+fixed-N (same N for every segment, which controls the confound best but costs the most
+coverage -- fixed N=6 took coverage from 162/183 to 89/183) because it preserves full
+coverage (every segment that had >=2 windows before still qualifies) at a real but smaller
+cost to confound control: corr(duration, between) improves from an uncontrolled baseline to
+-0.33 at N_CAP=12, worse than tighter caps (-0.23 at N_CAP=8, -0.14 at fixed N=6) because
+caps only intervene on the minority of segments above the cap -- most of the corpus (63% at
+N_CAP=8-10) has fewer than 8 real windows and is untouched by capping regardless of the cap
+value. This is a known, accepted partial fix, not a full solution -- see conversation
+history for the fixed-N vs. adaptive-cap comparison across N_CAP in {6, 8, 10, 12}.
+
 Output: data/results/within_between_cosine/all_clips_by_segment.csv -- one row per
-(video, segment): video, block, seg_idx, seg_start_s, seg_end_s, seg_dur_s, n_windows,
-n_people, within_person_cosine_dist, between_person_cosine_dist.
+(video, segment): video, block, seg_idx, seg_start_s, seg_end_s, seg_dur_s,
+n_windows_available, n_windows_used, n_people, within_person_cosine_dist,
+between_person_cosine_dist.
 
 Usage: python scripts/analysis/calc_within_between_cosine.py
 """
@@ -99,6 +120,10 @@ MAX_FIXATION_MS = 2000.0  # drop fixations longer than this -- see module docstr
                           # ~98.8% of real fixations (median ~296ms); excludes the ~1.2% of
                           # events that are almost certainly tracker/classifier artifacts,
                           # not genuine sustained gaze.
+N_CAP = 12       # use all available windows if <=N_CAP; random-sample N_CAP if more -- see
+                 # module docstring for why this value and why adaptive-cap over fixed-N.
+N_DRAWS = 100
+RNG_SEED = 0
 
 DURATIONS = {
     "frank_complex": 60.32, "frank_objects": 60.12, "frank_play": 60.92,
@@ -130,7 +155,40 @@ def cosine_dist(a, b):
     return 1.0 - np.dot(a, b) / (na * nb)
 
 
-def clip_within_between(video: str, dur: float, cuts_df: pd.DataFrame) -> list[dict]:
+def within_between_for_windows(pids: list[str], seg_vecs: np.ndarray) -> dict[str, tuple[float, float]]:
+    """One pass of the within/between computation over a FIXED set of windows (either all of
+    a short segment's windows, or one Monte Carlo draw of N_CAP windows from a long one).
+    Returns {pid: (within, between)} for people with enough data in this window set."""
+    within_vals, own_mean_vecs, eligible = [], [], []
+    for i, pid in enumerate(pids):
+        own_by_window = seg_vecs[i]
+        valid_w = np.where(own_by_window.sum(axis=1) > 0)[0]
+        if len(valid_w) < MIN_WINDOWS:
+            continue
+        pair_dists = [cosine_dist(own_by_window[a], own_by_window[b])
+                      for a, b in combinations(valid_w, 2)]
+        pair_dists = [d for d in pair_dists if not np.isnan(d)]
+        if not pair_dists:
+            continue
+        within_vals.append(np.mean(pair_dists))
+        own_mean_vecs.append(own_by_window[valid_w].mean(axis=0))
+        eligible.append(pid)
+
+    n_eligible = len(eligible)
+    if n_eligible < MIN_PEOPLE:
+        return {}
+    own_mean_vecs = np.array(own_mean_vecs)
+    total_mean = own_mean_vecs.sum(axis=0)
+    result = {}
+    for j, pid in enumerate(eligible):
+        grand_mean_loo = (total_mean - own_mean_vecs[j]) / (n_eligible - 1)
+        d = cosine_dist(own_mean_vecs[j], grand_mean_loo)
+        if not np.isnan(d):
+            result[pid] = (within_vals[j], d)
+    return result
+
+
+def clip_within_between(video: str, dur: float, cuts_df: pd.DataFrame, rng: np.random.Generator) -> list[dict]:
     fix = load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
     n_before = len(fix)
     fix = fix[(fix["endT"] - fix["startT"]) <= MAX_FIXATION_MS].copy()
@@ -158,47 +216,39 @@ def clip_within_between(video: str, dur: float, cuts_df: pd.DataFrame) -> list[d
         w_idx = [w for w in range(n_windows_total) if w * WINDOW_S >= s and (w + 1) * WINDOW_S <= e]
         base_row = dict(video=video, block=BLOCKS[video], seg_idx=seg_idx,
                          seg_start_s=round(s, 2), seg_end_s=round(e, 2),
-                         seg_dur_s=round(e - s, 2), n_windows=len(w_idx))
+                         seg_dur_s=round(e - s, 2), n_windows_available=len(w_idx))
+
         if len(w_idx) < MIN_WINDOWS:
-            rows.append(dict(base_row, n_people=0, within_person_cosine_dist=np.nan,
-                              between_person_cosine_dist=np.nan))
+            rows.append(dict(base_row, n_windows_used=0, n_people=0,
+                              within_person_cosine_dist=np.nan, between_person_cosine_dist=np.nan))
             continue
 
-        seg_vecs = all_vecs[:, w_idx, :]  # (n_pids, n_seg_windows, 120)
+        if len(w_idx) <= N_CAP:
+            result = within_between_for_windows(pids, all_vecs[:, w_idx, :])
+            n_windows_used = len(w_idx)
+        else:
+            within_acc = {p: [] for p in pids}
+            between_acc = {p: [] for p in pids}
+            for _ in range(N_DRAWS):
+                draw_w = rng.choice(w_idx, size=N_CAP, replace=False)
+                draw_result = within_between_for_windows(pids, all_vecs[:, draw_w, :])
+                for pid, (wv, bv) in draw_result.items():
+                    within_acc[pid].append(wv)
+                    between_acc[pid].append(bv)
+            result = {p: (np.mean(within_acc[p]), np.mean(between_acc[p]))
+                      for p in pids if within_acc[p]}
+            n_windows_used = N_CAP
 
-        within_vals, own_mean_vecs = [], []
-        for i in range(len(pids)):
-            own_by_window = seg_vecs[i]  # (n_seg_windows, 120)
-            valid_w = np.where(own_by_window.sum(axis=1) > 0)[0]
-            if len(valid_w) < MIN_WINDOWS:
-                continue
-            pair_dists = [cosine_dist(own_by_window[a], own_by_window[b])
-                          for a, b in combinations(valid_w, 2)]
-            pair_dists = [d for d in pair_dists if not np.isnan(d)]
-            if not pair_dists:
-                continue
-            within_vals.append(np.mean(pair_dists))
-            own_mean_vecs.append(own_by_window[valid_w].mean(axis=0))  # this person's segment-mean vector
-
-        n_people = len(own_mean_vecs)
+        n_people = len(result)
         if n_people < MIN_PEOPLE:
-            rows.append(dict(base_row, n_people=n_people, within_person_cosine_dist=np.nan,
-                              between_person_cosine_dist=np.nan))
+            rows.append(dict(base_row, n_windows_used=n_windows_used, n_people=n_people,
+                              within_person_cosine_dist=np.nan, between_person_cosine_dist=np.nan))
             continue
-
-        own_mean_vecs = np.array(own_mean_vecs)  # (n_people, 120)
-        total_mean = own_mean_vecs.sum(axis=0)
-        between_vals = []
-        for i in range(n_people):
-            grand_mean_loo = (total_mean - own_mean_vecs[i]) / (n_people - 1)  # leave-one-out
-            d = cosine_dist(own_mean_vecs[i], grand_mean_loo)
-            if not np.isnan(d):
-                between_vals.append(d)
 
         rows.append(dict(
-            base_row, n_people=n_people,
-            within_person_cosine_dist=round(float(np.mean(within_vals)), 4),
-            between_person_cosine_dist=round(float(np.mean(between_vals)), 4),
+            base_row, n_windows_used=n_windows_used, n_people=n_people,
+            within_person_cosine_dist=round(float(np.mean([v[0] for v in result.values()])), 4),
+            between_person_cosine_dist=round(float(np.mean([v[1] for v in result.values()])), 4),
         ))
 
     return rows
@@ -206,9 +256,10 @@ def clip_within_between(video: str, dur: float, cuts_df: pd.DataFrame) -> list[d
 
 def main():
     cuts_df = pd.read_csv(CUTS_PATH)
+    rng = np.random.default_rng(RNG_SEED)
     all_rows = []
     for video, dur in DURATIONS.items():
-        rows = clip_within_between(video, dur, cuts_df)
+        rows = clip_within_between(video, dur, cuts_df, rng)
         n_valid = sum(1 for r in rows if not np.isnan(r["within_person_cosine_dist"]))
         print(f"{video:16s} {len(rows)} segments, {n_valid} with a valid within/between pair")
         all_rows.extend(rows)

@@ -1227,3 +1227,37 @@ display edge rather than overshooting it (as the earlier 200px/144-patch grid di
   Outstanding before this should be treated as a trustworthy result: the duration confound
   above is unresolved in the canonical pipeline, and the quadrant framework's
   interpretability varies noticeably by block/content type rather than being uniform.
+
+## 2026-10-20 — Within/between duration confound: N_CAP=12 adaptive window rarefaction (partial fix)
+
+- **Follow-up to the duration confound documented above.** A long segment gives
+  between-person distance more time to converge (people's overall patterns agree more just
+  because there's more time to sample the same places) even with no real moment-to-moment
+  agreement, and gives within-person distance more time to drift -- same mechanism already
+  demonstrated by chopping `slow`'s real ~15.2s segments into ~3s chunks.
+- **Fix: adaptive window cap, not a fixed N.** A segment with <=N_CAP windows available
+  uses all of them, unchanged, exact. A segment with MORE than N_CAP windows gets N_DRAWS
+  random draws of exactly N_CAP windows (no replacement), averaged -- the same Monte Carlo
+  rarefaction convention already used in this project for fixation-count confounds in the
+  entropy work.
+- **Alternatives considered:**
+  - **Strict fixed-N for every segment** (same N regardless of segment length) controls the
+    confound best, but costs the most coverage: fixed N=6 took coverage from 162/183 valid
+    segments down to 89/183 -- most short segments get dropped entirely.
+  - **N_CAP=12 (6s), the one chosen**: preserves full coverage (every segment that had
+    >=2 windows before still qualifies) at a real but smaller cost to confound control.
+  - Tighter caps (N_CAP=8, N_CAP=10) were also checked and control the confound better than
+    N_CAP=12, but still not as well as fixed N=6.
+- **Why N_CAP=12 over the tighter caps, given it controls the confound the least well of
+  the four options tested:** corr(duration, between-person distance) is -0.33 at N_CAP=12,
+  worse than -0.23 at N_CAP=8 and -0.14 at fixed N=6 -- caps only intervene on the minority
+  of segments above the cap, and most of the corpus (63% at N_CAP=8-10) has fewer than 8
+  real windows to begin with, so it's untouched by capping at any value. N_CAP=12 was kept
+  anyway for the coverage tradeoff (full coverage vs. 89/183), accepted explicitly as a
+  partial fix, not a full solution.
+- **Status: not a resolution of the duration confound**, just a smaller version of it than
+  doing nothing. Any cross-block or cross-clip comparison should still account for residual
+  duration sensitivity. See `scripts/analysis/calc_within_between_cosine.py` for the
+  implementation (`N_CAP`, `N_DRAWS`, `RNG_SEED` constants; `within_between_for_windows()`
+  is the single-pass helper called once per segment at or under the cap, or once per Monte
+  Carlo draw above it).
