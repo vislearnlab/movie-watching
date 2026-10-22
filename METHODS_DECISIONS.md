@@ -1261,3 +1261,58 @@ display edge rather than overshooting it (as the earlier 200px/144-patch grid di
   implementation (`N_CAP`, `N_DRAWS`, `RNG_SEED` constants; `within_between_for_windows()`
   is the single-pass helper called once per segment at or under the cap, or once per Monte
   Carlo draw above it).
+
+## 2026-10-21 — Per-tile optical flow motion metric, to test content predictors of quadrant membership
+
+- **Motivation**: characterize what segment content drives concentrated/coordinated/selective
+  /scattered quadrant membership. Motion ("how much is moving, and how many separate things")
+  was the first candidate feature, computed on the same 120-tile grid as gaze so the two are
+  directly comparable (`scripts/analysis/calc_motion_tiles.py`).
+- **Dense Farneback optical flow**, not frame-differencing, between every consecutive frame.
+- **Global-motion (camera pan) subtraction**: subtract the per-frame median flow vector
+  (robust proxy for camera motion) before computing magnitude. Needed: a sanity check on
+  pixar_birds found raw flow backwards on camera-tracking shots (background scored as high
+  motion, the tracked subject near-zero) in 2 of 6 inspected high-motion scenes. Confirmed
+  fixed by inspecting the same windows before/after; non-panning shots were unaffected.
+  frank_complex (real handheld footage) showed no comparable inversion — likely pixar-specific
+  (deliberate tracking shots), not a general problem.
+- **fps normalization**: multiply magnitude by each clip's own fps (px/frame -> px/second).
+  The 12 clips span 3 frame rates (25, 23.976, 29.97); resolution is uniform (1280x720) so no
+  spatial correction needed, just temporal.
+- **Box-pooling, not Gaussian**: motion is pooled into the 15x8 tile grid via
+  `cv2.resize(..., INTER_AREA)`, not the Gaussian-at-tile-centers method the gaze pipeline
+  uses. Deliberate: gaze needs a kernel to smooth sparse fixation points into a field; flow is
+  already a dense field, so box-pooling is the natural analogue. Tile footprints are therefore
+  not pixel-identical to the gaze grid's edge-inset Gaussian centers, just the same 15x8
+  structure and row-major ordering.
+- **Output**: `data/results/motion/<clip>_motion_tiles.csv`, one row per 0.5s window (matches
+  `calc_within_between_cosine.py`'s WINDOW_S), columns `tile_000`...`tile_119`.
+- **Status**: all 12 clips computed (`data/results/motion/`). Segment-level motion-gaze
+  correlation by quadrant built in `calc_motion_gaze_correlation.py` (see entry below).
+
+## 2026-10-21 — Per-tile visual saliency: FineGrained chosen over SpectralResidual
+
+- **Motivation**: a second content feature (alongside motion) to test as a predictor of
+  quadrant membership -- low-level bottom-up visual salience (color/contrast/orientation),
+  explicitly a hypothesis about what might guide attention, not a prediction of gaze itself.
+  True GBVS isn't available in any mainstream Python package; `cv2.saliency` (OpenCV's
+  `opencv-contrib-python`, swapped in for the previously-installed `opencv-python`) offers
+  two unrelated algorithms: `StaticSaliencySpectralResidual` (Hou & Zhang 2007, frequency-
+  domain, grayscale-only) and `StaticSaliencyFineGrained` (different method, not frequency-
+  based).
+- **Sanity-checked both on pixar_birds**, 10 distinct high-saliency windows each. Found both
+  algorithms agree: wheat-field background texture consistently scores higher than the flat-
+  shaded bird characters in most scenes (confirmed via raw per-pixel map + tile values for
+  one case, w121's falling bird -- a real but weak signal, swamped by a denser 10-bird row
+  elsewhere in frame, not a bug). Two independent algorithms agreeing argues this is a
+  genuine property of the content (flat cartoon subjects vs. textured backgrounds), not an
+  artifact of one method.
+- **Decision: FineGrained chosen as the canonical algorithm**, by visual inspection --
+  user's read is it resembles GBVS more closely than SpectralResidual does, despite neither
+  being literal GBVS. SpectralResidual is much faster (18s vs. ~4min for pixar_birds) but
+  that wasn't the deciding factor.
+- **Output convention**: `data/results/saliency/<clip>_saliency_tiles.csv` is FineGrained
+  (no suffix, the default in `calc_saliency_tiles.py --algo`); SpectralResidual outputs are
+  explicitly suffixed `_spectral_residual` where kept, as a comparison artifact.
+- **Status**: only pixar_birds computed so far (both algorithms); not yet run on the
+  remaining 11 clips.
