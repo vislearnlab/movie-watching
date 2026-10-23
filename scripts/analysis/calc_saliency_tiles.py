@@ -1,6 +1,6 @@
 """
 Per-tile low-level visual saliency (cv2.saliency.StaticSaliencySpectralResidual), on the same
-120-tile (15x8) grid as gaze and motion. See METHODS_DECISIONS.md for method notes.
+120-tile grid, box-pooled over each DeepMeaning 240px patch footprint (tile_pooling.py). See METHODS_DECISIONS.md.
 
 Usage:
     python scripts/analysis/calc_saliency_tiles.py --clip pixar_birds --sanity-check
@@ -21,6 +21,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 import sys  # noqa: E402
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 from plot_patch_grid import compute_patch_grid  # noqa: E402
+sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
+from tile_pooling import tile_box_means  # noqa: E402
 
 STIMULI_DIR = PROJECT_ROOT / "stimuli" / "main_blocks"
 OUT_DIR = PROJECT_ROOT / "data" / "results" / "saliency"
@@ -64,6 +66,7 @@ def compute_saliency_windows(video: str, algo: str) -> tuple[np.ndarray, dict]:
     n_windows_total = int(info["duration"] // WINDOW_S)
     window_sums = np.zeros((n_windows_total, N_ROWS * N_COLS))
     window_counts = np.zeros(n_windows_total)
+    frame_t, frame_vecs = [], []  # per-frame output, for exact segment averaging
 
     frame_idx = 0
     while True:
@@ -71,9 +74,11 @@ def compute_saliency_windows(video: str, algo: str) -> tuple[np.ndarray, dict]:
         if not ok:
             break
         _, sal_map = sal.computeSaliency(frame)
-        tile_sal = cv2.resize(sal_map, (N_COLS, N_ROWS), interpolation=cv2.INTER_AREA)
+        tile_sal = tile_box_means(sal_map)
 
         t_s = frame_idx / fps
+        frame_t.append(t_s)
+        frame_vecs.append(tile_sal)
         w = int(t_s // WINDOW_S)
         if w < n_windows_total:
             window_sums[w] += tile_sal.flatten()
@@ -82,7 +87,7 @@ def compute_saliency_windows(video: str, algo: str) -> tuple[np.ndarray, dict]:
 
     cap.release()
     window_counts[window_counts == 0] = 1
-    return window_sums / window_counts[:, None], info
+    return window_sums / window_counts[:, None], info, np.array(frame_t), np.array(frame_vecs)
 
 
 def sanity_check_frame(video: str, sal_vecs: np.ndarray, info: dict):
@@ -98,7 +103,7 @@ def sanity_check_frame(video: str, sal_vecs: np.ndarray, info: dict):
     )
     img = plt.imread(frame_path)
 
-    centers, _ = compute_patch_grid(180, N_COLS, 1920, 1080)
+    centers, _ = compute_patch_grid(240, N_COLS, 1920, 1080)
     scale_x, scale_y = info["width"] / 1920, info["height"] / 1080
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
@@ -127,10 +132,11 @@ def main():
     parser.add_argument("--clip", required=True)
     parser.add_argument("--algo", choices=list(ALGOS), default="fine_grained")
     parser.add_argument("--sanity-check", action="store_true")
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
     args = parser.parse_args()
 
     print(f"Computing saliency ({args.algo}) for {args.clip}...")
-    sal_vecs, info = compute_saliency_windows(args.clip, args.algo)
+    sal_vecs, info, frame_t, frame_vecs = compute_saliency_windows(args.clip, args.algo)
     print(f"{args.clip}: {sal_vecs.shape[0]} windows, {sal_vecs.shape[1]} tiles")
 
     n_windows = sal_vecs.shape[0]
@@ -141,11 +147,18 @@ def main():
     df.insert(0, "window_idx", np.arange(n_windows))
     df.insert(0, "video", args.clip)
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
     algo_tag = "" if args.algo == "fine_grained" else f"_{args.algo}"
-    out_path = OUT_DIR / f"{args.clip}_saliency_tiles{algo_tag}.csv"
+    out_path = args.out_dir / f"{args.clip}_saliency_tiles{algo_tag}.csv"
     df.to_csv(out_path, index=False)
     print(f"Saved {out_path}")
+
+    fdf = pd.DataFrame(frame_vecs, columns=tile_cols)
+    fdf.insert(0, "frame_time_s", frame_t)
+    fdf.insert(0, "video", args.clip)
+    frame_path = args.out_dir / f"{args.clip}_saliency_tiles{algo_tag}_frames.csv"
+    fdf.to_csv(frame_path, index=False)
+    print(f"Saved {frame_path}")
 
     if args.sanity_check:
         FIGURE_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,6 @@
 """
-Per-tile optical-flow motion magnitude, on the same 120-tile (15x8) grid as the gaze tile
-vectors. See METHODS_DECISIONS.md for method rationale (global-motion subtraction, box- vs.
+Per-tile optical-flow motion magnitude, box-pooled over each DeepMeaning 240px patch footprint
+(tile_pooling.py). See METHODS_DECISIONS.md for method rationale (global-motion subtraction, box- vs.
 Gaussian-pooling, fps normalization).
 
 Usage:
@@ -22,13 +22,15 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 from plot_patch_grid import compute_patch_grid  # noqa: E402
+sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
+from tile_pooling import tile_box_means  # noqa: E402
 
 STIMULI_DIR = PROJECT_ROOT / "stimuli" / "main_blocks"
 OUT_DIR = PROJECT_ROOT / "data" / "results" / "motion"
 FIGURE_DIR = PROJECT_ROOT / "figures" / "checks"
 
 WINDOW_S = 0.5  # matches calc_within_between_cosine.py
-N_COLS, N_ROWS = 15, 8  # matches the 120-tile gaze grid (compute_patch_grid(180, 15, ...))
+N_COLS, N_ROWS = 15, 8  # matches the 120-tile gaze grid (compute_patch_grid(240, 15, ...))
 
 
 def get_video_info(video_path: Path) -> dict:
@@ -62,6 +64,7 @@ def compute_motion_windows(video: str) -> tuple[np.ndarray, dict]:
     n_windows_total = int(info["duration"] // WINDOW_S)
     window_sums = np.zeros((n_windows_total, N_ROWS * N_COLS))
     window_counts = np.zeros(n_windows_total)
+    frame_t, frame_vecs = [], []  # per-frame output, for exact segment averaging
 
     frame_idx = 1
     while True:
@@ -75,9 +78,11 @@ def compute_motion_windows(video: str) -> tuple[np.ndarray, dict]:
         global_dx, global_dy = np.median(flow[..., 0]), np.median(flow[..., 1])
         residual_dx, residual_dy = flow[..., 0] - global_dx, flow[..., 1] - global_dy
         mag = np.sqrt(residual_dx ** 2 + residual_dy ** 2) * fps  # px/frame -> px/second
-        tile_mag = cv2.resize(mag, (N_COLS, N_ROWS), interpolation=cv2.INTER_AREA)
+        tile_mag = tile_box_means(mag)
 
         t_s = frame_idx / fps
+        frame_t.append(t_s)
+        frame_vecs.append(tile_mag)
         w = int(t_s // WINDOW_S)
         if w < n_windows_total:
             window_sums[w] += tile_mag.flatten()
@@ -89,7 +94,7 @@ def compute_motion_windows(video: str) -> tuple[np.ndarray, dict]:
     cap.release()
     window_counts[window_counts == 0] = 1  # avoid div-by-zero for any empty window
     motion_vecs = window_sums / window_counts[:, None]
-    return motion_vecs, info
+    return motion_vecs, info, np.array(frame_t), np.array(frame_vecs)
 
 
 def sanity_check_frame(video: str, motion_vecs: np.ndarray, info: dict):
@@ -106,7 +111,7 @@ def sanity_check_frame(video: str, motion_vecs: np.ndarray, info: dict):
     )
     img = plt.imread(frame_path)
 
-    centers, _ = compute_patch_grid(180, N_COLS, 1920, 1080)
+    centers, _ = compute_patch_grid(240, N_COLS, 1920, 1080)
     scale_x, scale_y = info["width"] / 1920, info["height"] / 1080
 
     tile_vals = motion_vecs[best_w].reshape(N_ROWS, N_COLS)
@@ -139,10 +144,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--clip", required=True)
     parser.add_argument("--sanity-check", action="store_true")
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
     args = parser.parse_args()
 
     print(f"Computing optical flow for {args.clip}...")
-    motion_vecs, info = compute_motion_windows(args.clip)
+    motion_vecs, info, frame_t, frame_vecs = compute_motion_windows(args.clip)
     print(f"{args.clip}: {motion_vecs.shape[0]} windows, {motion_vecs.shape[1]} tiles, "
           f"fps={info['fps']:.3f}, n_frames={info['n_frames']}")
 
@@ -154,10 +160,17 @@ def main():
     df.insert(0, "window_idx", np.arange(n_windows))
     df.insert(0, "video", args.clip)
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = OUT_DIR / f"{args.clip}_motion_tiles.csv"
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = args.out_dir / f"{args.clip}_motion_tiles.csv"
     df.to_csv(out_path, index=False)
     print(f"Saved {out_path}")
+
+    fdf = pd.DataFrame(frame_vecs, columns=tile_cols)
+    fdf.insert(0, "frame_time_s", frame_t)
+    fdf.insert(0, "video", args.clip)
+    frame_path = args.out_dir / f"{args.clip}_motion_tiles_frames.csv"
+    fdf.to_csv(frame_path, index=False)
+    print(f"Saved {frame_path}")
 
     if args.sanity_check:
         FIGURE_DIR.mkdir(parents=True, exist_ok=True)
