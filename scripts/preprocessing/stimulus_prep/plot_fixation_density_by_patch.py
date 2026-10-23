@@ -152,8 +152,8 @@ def main():
                         help="Output directory for the check figure (default: figures/checks/).")
     parser.add_argument("--display_width", type=int, default=1920)
     parser.add_argument("--display_height", type=int, default=1080)
-    parser.add_argument("--patch_diameter_px", type=float, default=180,
-                        help="FINAL value confirmed 2026-09-29 -- see METHODS_DECISIONS.md.")
+    parser.add_argument("--patch_diameter_px", type=float, default=240,
+                        help="Moved from 180px to 240px 2026-10-22 (50% overlap) -- see METHODS_DECISIONS.md.")
     parser.add_argument("--patch_n_cols", type=int, default=15,
                         help="FINAL value confirmed 2026-09-29.")
     parser.add_argument("--screen_width_cm", type=float, default=53.14)

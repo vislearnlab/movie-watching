@@ -48,7 +48,7 @@ DISPLAY_H <- 1080
 SIGMA_PX <- 46.0
 WINDOW_S <- 1.0
 STEP_S <- 0.25
-PATCH_DIAMETER_PX <- 180
+PATCH_DIAMETER_PX <- 240  ## 2026-10-22: moved from 180px to 240px (50% overlap)
 PATCH_N_COLS <- 15
 
 inventory <- read_csv(here("data", "results", "stimulus_prep", "stimulus_inventory.csv"), show_col_types = FALSE)

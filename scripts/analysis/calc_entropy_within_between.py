@@ -77,7 +77,7 @@ PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_
 CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts.csv"
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "entropy_within_between" / "pixar_birds_by_segment.csv"
 
-centers, grid_info = compute_patch_grid(180, 15, DISPLAY_W, DISPLAY_H)
+centers, grid_info = compute_patch_grid(240, 15, DISPLAY_W, DISPLAY_H)
 cx, cy = centers["center_x"].to_numpy(), centers["center_y"].to_numpy()
 assert len(cx) == 120
 

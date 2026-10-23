@@ -106,8 +106,8 @@ def main():
                              "lab server in this repo).")
     parser.add_argument("--checks_dir", default=None,
                         help="Output directory for the check figures (default: figures/checks/).")
-    parser.add_argument("--patch_diameter_px", type=float, default=180,
-                        help="Patch circle diameter in pixels. FINAL value confirmed 2026-09-29 -- see METHODS_DECISIONS.md.")
+    parser.add_argument("--patch_diameter_px", type=float, default=240,
+                        help="Patch circle diameter in pixels. Moved from 180px to 240px 2026-10-22 (50% overlap) -- see METHODS_DECISIONS.md.")
     parser.add_argument("--patch_n_cols", type=int, default=15,
                         help="Number of columns (row count is derived). FINAL value confirmed 2026-09-29.")
     parser.add_argument("--display_width", type=int, default=1920)

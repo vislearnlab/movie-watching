@@ -50,7 +50,7 @@ def render_window_video(video: str, window: int):
     tile_cols = [c for c in motion_df.columns if c.startswith("tile_")]
     motion_vec = motion_df.loc[motion_df["window_idx"] == window, tile_cols].to_numpy()[0]
 
-    centers, _ = compute_patch_grid(180, N_COLS, 1920, 1080)
+    centers, _ = compute_patch_grid(240, N_COLS, 1920, 1080)  # 2026-10-22: moved from 180px to 240px (50% overlap)
     scale_x, scale_y = info["width"] / 1920, info["height"] / 1080
 
     t0, t1 = window * WINDOW_S, (window + 1) * WINDOW_S

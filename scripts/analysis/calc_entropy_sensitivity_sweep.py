@@ -5,7 +5,7 @@ Segment-level entropy across a window-size and grid-size sweep -- robustness che
 Window sweep: WINDOW_S in [0.5,1.0,1.5,2.0]s, 120-tile grid. N_FIX_FIXED = floor(p5) of
 each window size's own fixation-count distribution (53/78/105/132), not one fixed N.
 
-Grid sweep: n_tiles in [6,15,66,120], WINDOW_S=1.0s. Diameters (806/510/243/180px) matched
+Grid sweep: n_tiles in [6,15,66,120], WINDOW_S=1.0s. Diameters (806/510/243/240px) matched
 to the 120-tile grid's overlap ratio (~1.448) -- mismatched ratios gave a spurious null at
 6 tiles in an earlier pass.
 
@@ -32,7 +32,10 @@ STEP_S, SIGMA = 0.25, 46.0
 N_DRAWS, RNG_SEED = 100, 0
 
 WINDOW_SWEEP = {0.5: 53, 1.0: 78, 1.5: 105, 2.0: 132}  # window_s -> N_FIX_FIXED (floor(p5))
-GRID_SWEEP = [(806, 3, 6), (510, 5, 15), (243, 11, 66), (180, 15, 120)]  # (diameter, n_cols, n_tiles)
+# 2026-10-22: 120-tile entry's diameter moved 180->240px to match the current tile-center grid;
+# the 6/15/66-tile diameters are still ratio-matched (~1.448) to the OLD 180px grid, not
+# re-derived for the new 240px/ratio-2.0 grid. Not re-run; kept for historical record only.
+GRID_SWEEP = [(806, 3, 6), (510, 5, 15), (243, 11, 66), (240, 15, 120)]  # (diameter, n_cols, n_tiles)
 BASELINE_WINDOW_S, BASELINE_N_FIX = 1.0, 78
 
 DURATIONS = {
@@ -119,14 +122,14 @@ def main():
     all_rows = []
 
     # Window-size sweep: fixed 120-tile grid, N matched per window size.
-    centers120, _ = compute_patch_grid(180, 15, DISPLAY_W, DISPLAY_H)
+    centers120, _ = compute_patch_grid(240, 15, DISPLAY_W, DISPLAY_H)  # 2026-10-22: moved from 180px to 240px (50% overlap)
     cx120, cy120 = centers120["center_x"].to_numpy(), centers120["center_y"].to_numpy()
     for window_s, n_fix in WINDOW_SWEEP.items():
         rng = np.random.default_rng(RNG_SEED)
         for video, dur in DURATIONS.items():
             rows = segment_entropy(video, dur, all_arrays[video], window_s, n_fix, cx120, cy120, rng, cuts_df)
             for r in rows:
-                r.update(sweep="window", window_s=window_s, n_tiles=120, diameter_px=180, n_fix_fixed=n_fix)
+                r.update(sweep="window", window_s=window_s, n_tiles=120, diameter_px=240, n_fix_fixed=n_fix)
             all_rows.extend(rows)
         print(f"window sweep: window_s={window_s} done")
 

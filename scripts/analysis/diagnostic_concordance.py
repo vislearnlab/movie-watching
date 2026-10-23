@@ -112,7 +112,7 @@ def main():
     parser.add_argument("--window_s", type=float, default=1.0)
     parser.add_argument("--step_s", type=float, default=0.25)
     parser.add_argument("--sigma_px", type=float, default=46.0)
-    parser.add_argument("--patch_diameter_px", type=float, default=180)
+    parser.add_argument("--patch_diameter_px", type=float, default=240)  # 2026-10-22: moved from 180px to 240px (50% overlap)
     parser.add_argument("--patch_n_cols", type=int, default=15)
     parser.add_argument("--checks_dir", default=None, help="Output directory (default: figures/checks/).")
     args = parser.parse_args()

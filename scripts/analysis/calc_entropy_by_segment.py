@@ -70,7 +70,7 @@ PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_
 CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts.csv"
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "entropy_by_segment" / "entropy_by_segment.csv"
 
-centers, grid_info = compute_patch_grid(180, 15, DISPLAY_W, DISPLAY_H)
+centers, grid_info = compute_patch_grid(240, 15, DISPLAY_W, DISPLAY_H)  # 2026-10-22: moved from 180px to 240px (50% overlap)
 cx, cy = centers["center_x"].to_numpy(), centers["center_y"].to_numpy()
 n_tiles = len(cx)
 assert n_tiles == 120 and grid_info["n_cols"] == 15 and grid_info["n_rows"] == 8, \
@@ -163,7 +163,7 @@ def main():
     total_windows = out["n_windows"].sum()
     total_dropped = out["n_windows_dropped_low_fix"].sum()
     print(f"\nWrote {len(out)} rows to {OUTPUT_PATH}")
-    print(f"n_tiles: {n_tiles} (15x8 grid, diameter=180px)")
+    print(f"n_tiles: {n_tiles} (15x8 grid, diameter=240px)")
     print(f"rarefaction: N={N_FIX_FIXED} fixed fixations/window, {N_DRAWS} random draws "
           f"averaged per window, seed={RNG_SEED}")
     print(f"windows with fewer than {N_FIX_FIXED} fixations available (entropy=NaN for that "

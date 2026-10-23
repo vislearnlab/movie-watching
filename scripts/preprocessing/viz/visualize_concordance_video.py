@@ -286,7 +286,7 @@ def parse_args():
     p.add_argument("--window_s", type=float, default=1.0)
     p.add_argument("--step_s", type=float, default=0.25)
     p.add_argument("--sigma_px", type=float, default=46.0)
-    p.add_argument("--patch_diameter_px", type=float, default=180)
+    p.add_argument("--patch_diameter_px", type=float, default=240)  # 2026-10-22: moved from 180px to 240px (50% overlap)
     p.add_argument("--patch_n_cols", type=int, default=15)
     p.add_argument("--output_width", type=int, default=OUTPUT_WIDTH)
     p.add_argument("--output_height", type=int, default=OUTPUT_HEIGHT)
