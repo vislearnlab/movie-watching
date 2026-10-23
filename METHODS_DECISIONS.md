@@ -1316,3 +1316,171 @@ display edge rather than overshooting it (as the earlier 200px/144-patch grid di
   explicitly suffixed `_spectral_residual` where kept, as a comparison artifact.
 - **Status**: only pixar_birds computed so far (both algorithms); not yet run on the
   remaining 11 clips.
+
+## 2026-10-22 — DeepMeaning rebuilt to use the project's 120-tile grid, not its native 73%-overlap grid
+
+- **Motivation**: a third content feature (meaning, alongside motion/saliency), via
+  Hayes & Henderson (2025) DeepMeaning (https://osf.io/hcnfx/), ported locally as
+  `research-projects/DeepMeaning` (CoCa `coca_ViT-L-14`/`mscoco_finetuned_laion2b_s13b_b90k`
+  embeddings -> pretrained indoor/outdoor linear regression heads). Its native grid
+  (`define_fuzzy_grid`, 128px patches, 73% overlap, 1620 patches/frame at 1920x1080) is a
+  different spatial basis than every other feature in this project (120 tiles, 15x8, from
+  `compute_patch_grid`). Decision: rebuild the grid-handling to operate natively on the 120
+  tile positions rather than compute on the native grid and downsample afterward, so meaning
+  is directly comparable/combinable with motion, saliency, center bias, and gaze without a
+  resampling step.
+- **Patch size matched to 128px** (DeepMeaning's own validated size) at the 120 tile centers,
+  rather than inventing a new patch size -- avoids re-validating the CoCa embedding at an
+  unvalidated patch scale. The embedding regression itself (weights, BGR/RGB quirk, CoCa
+  checkpoint) is untouched.
+- **Canvas-space placement, not native-resolution**: all 12 clips are 1280x720 (16:9), which
+  `choose_canvas` always maps to the 1920x1080 validated canvas with a clean 1.5x upscale and
+  zero letterboxing. Placing the *unscaled* 120 tile-center positions (computed directly at
+  1920x1080, same convention used for gaze/motion/saliency/center) directly in that canvas
+  space means patches fit cleanly in bounds (x: 26-1894, y: 26-1054) with no edge-clamping
+  needed -- scaling centers down to native 1280x720 first (as in an earlier ad hoc check) was
+  the wrong space and produced spurious negative-index edge overflow.
+- **`deepmeaning/pipeline.py` changes**: `process_video()` gained `patch_centers` (canvas-
+  space (x,y) list, overrides `define_fuzzy_grid()` entirely when given) and `patch_size`
+  params; `PATCH_SIZE` module constant usage replaced with the local parameter everywhere
+  (crop loop, `_assemble_map`). Original paper-faithful fuzzy-grid behavior remains the
+  default when `patch_centers` is omitted. `grid.py`/`coca_model.py`/`viz.py` untouched --
+  `FrameTransform` and the embedding/classification code are grid-size-agnostic already.
+- **Manual indoor/outdoor labeling**: added `manual_label_lookup` param (timestamp -> category,
+  confidence reported as 1.0) to bypass the zero-shot classifier per-frame. Built
+  `scripts/preprocessing/cut_annotation/indoor_outdoor_annotation_tool.html` (same standalone-
+  HTML/file:// pattern as `cut_annotation_tool.html`) to label the existing within/between-
+  cosine segments (179 total across 12 clips) as indoor/outdoor/mixed, rather than building a
+  new scene segmentation -- keeps labels aligned with every other per-segment analysis.
+- **Visually verified on pixar_birds** (16 frames, 0.1 fps, rebuilt 120-tile grid): overlay
+  maps and raw per-patch values both show the correct direction on cartoon content -- e.g.
+  frame at t=~1.25s, bird-face patches mean predicted_meaning=2.44 vs. sky patches=1.92; a
+  later frame (birds on a wire) shows a visually distinct warm band tracking the wire exactly.
+  Consistent with the original native-grid check from several weeks prior
+  (`figures/deep-meaning/frame003_deepmeaning.png`).
+- **Environment**: fresh `.venv` in `research-projects/DeepMeaning` (not reused from any
+  other project), `pip install -e .`. Confirmed MPS available and used (`torch 2.14.1`,
+  `cuda=False, mps=True`); no Tversky/GPU-cluster dependency at this patch count.
+- **Timing**: ~9.2s/frame on MPS for 120 patches (vs. the native grid's 1620 patches/frame,
+  which is GPU-cluster-scale). A full corpus run at 1 fps across all 12 clips is estimated at
+  roughly 2-2.5 hours on this Mac.
+- **Status**: pipeline rebuild done and visually verified; manual-labeling GUI built but not
+  yet used to produce real labels; full-corpus run not yet started.
+
+## 2026-10-23 — Motion and saliency re-pooled onto DeepMeaning's patch footprints (tile-center alignment)
+
+- **Problem**: `calc_motion_tiles.py`/`calc_saliency_tiles.py` pooled with `cv2.resize(..., (15, 8), INTER_AREA)`
+  = 128x135px boxes tiling the full screen, centers x 64-1856, y 67.5-1012.5 (display px). Gaze and
+  DeepMeaning tiles are centered at x 120-1800, y 120-960 (`compute_patch_grid(240, 15, 1920, 1080)`).
+  Same index and row-major order, but tile i pointed at a different screen location away from center
+  (up to 56px off at the edges). The 2026-10-21 "box-pooling, not Gaussian" note is superseded on this point.
+- **Fix**: new `scripts/analysis/tile_pooling.py::tile_box_means` = mean over the exact square DeepMeaning
+  crops for each fine patch (240x240 canvas px, centered on the tile center, same `round(c - size/2)`
+  rounding), mapped to source frames (160x160px at 1280x720). Both scripts now use it.
+- **Verified**: gaze centers x 2/3 == DeepMeaning's recorded `patch_center_x/y` (frank_complex fine240),
+  pooling-box centers == the same, all boxes 160x160 in bounds, integral-image means == direct slice means.
+- **Footprints still differ by design**: gaze = Gaussian (sigma=46px) evaluated at the center; motion,
+  saliency, meaning = 240px square box mean. Centers are identical across all four.
+- **Rerun done (all 12 clips)**: new files in `data/results/{motion,saliency}/` (window CSVs + per-frame
+  `*_frames.csv`); old resize-grid tile files moved to `data/results/{motion,saliency}/legacy_resize_grid/`. Downstream results built on the
+  old files (motion/saliency-gaze correlations, partial correlations, variance partition) are stale until rerun.
+
+## 2026-10-23 — Information-gain analysis (Kümmerer, Wallis & Bethge 2015): setup decisions
+
+- **Code**: `scripts/analysis/information_gain/` (settings in `config.py`). Adults only for now; group label kept in every table.
+- **Gaze vectors used as-is**: closed-form duration-weighted Gaussian density (sigma=46px) at the 120 tile centers,
+  over the whole segment, normalized to sum to 1 per participant x segment. No per-fixation kernel renormalization,
+  even though per-fixation tile mass varies with position (1.14 on a tile center, 0.73 in a gap, 0.10 at 20px from
+  the edge, 0.009 in a corner). Revisit later.
+- **Averaging (open)**: equal weight per participant x segment cell, then per participant, for now. Looking-time
+  weighting across segments (per-cell normalization otherwise erases between-segment looking time) discussed, deferred.
+- **Cross-validation unit = clip** (leave-one-clip-out) for floor, epsilon, lambda, and feature parameters:
+  segments within a clip share content, so leave-one-segment-out would leak it into the floor.
+- **Both segment sets run**: `cuts` (183 cut-to-cut segments) and `slow_chopped` (247; each slow segment split into 5).
+- **Feature per segment = mean of frames inside the segment** (motion/saliency at native fps, meaning at 6fps), not
+  0.5s windows: windows straddle cuts and mix two shots. Motion/saliency scripts now also write
+  `<clip>_<feature>_tiles_frames.csv`. Motion drops the first flow frame of each segment (its frame pair spans the cut). Meaning = averaged fine+coarse at the 120 tile centers.
+- **Features plotted at patch centers, smoothed, sampled** (following Haskins et al. 2020 Sci Rep: "average rating for
+  each tile was then plotted at its center coordinate", then Gaussian-smoothed). Segment-mean patch values (240px box
+  means for motion/saliency, DeepMeaning ratings) placed at patch centers, normalized Gaussian-weighted average evaluated
+  at the 120 tile centers: fine sigma=46px (same as gaze) for all three features; coarse meaning sigma=92px (~2x its
+  spacing; at sigma=46 the 28 coarse points would be isolated spikes). At fine scale each tile ~ 88% its own patch,
+  ~3% per side neighbor. Chosen over overlap-averaging the 240px footprints: at exactly 50% overlap every tile center
+  sits on the corner of the 2x2-patch mosaic (unsmoothed sampling is a raster-convention knife-edge; smoothed, each
+  tile = 25% own / 75% neighbors). Gaze already = fixations smoothed (sigma=46) and sampled at the same centers; the
+  closed form matches raster-blur-then-sample to 0.055% of peak once positions are pixel-rounded (1.3% otherwise, from
+  sub-pixel positions the raster can't represent). Meaning fine vs fine+coarse average: median r=0.94 per segment
+  (5th pct 0.85); fine vs coarse 0.72; coarse not flat after smoothing + rescaling (tile SD 0.090 vs fine 0.098).
+  Check figure: `figures/checks/meaning_point_smoothing_fine46_coarse92.png`.
+- **Feature scaling = joint min-max to [0, 1] across all segments** (`FEATURE_SCALING = "corpus"`), following
+  Kümmerer et al. 2015 ("jointly rescaled ... over all images at once, not per image"), same operation for all three
+  features; meaning's fine and coarse are each rescaled jointly, averaged, rescaled again. Keeps contrast differences
+  between segments. Briefly set to within-segment z-scoring earlier the same day; reverted to follow the paper.
+  `"segment_z"` kept as an alternative.
+- **Why a nonlinearity at all (separate from normalization)**: normalizing alone (q = x / sum(x)) assumes looking
+  is *proportional* to the raw feature value, which fixes two things the raw scale has no right to decide:
+  (1) the zero point -- adding a constant to a feature changes q (raw meaning sits around 1.9-2.4, so proportional
+  q is nearly uniform: a bird-face tile at 2.44 vs. sky at 1.92 gets only 1.27x the predicted looking);
+  (2) the sharpness -- how much more looking the top tiles get than the rest. Gaze may be far more (or less)
+  concentrated than the feature's raw ratios imply. Normalization only makes the vector sum to 1; it cannot change
+  either property. f(x) is fit to gaze to set them, then normalization turns f(x) into a probability vector.
+- **Nonlinearity = 20-knot monotone piecewise-linear, following Kümmerer et al. 2015** ("supported in 20 equidistant
+  points"), one curve per feature on the jointly [0, 1]-rescaled values, fit by maximum likelihood on training clips.
+  Chosen over exp(a*x) (briefly adopted to minimize parameters) because IG should reflect information a feature carries,
+  not how well its relationship to gaze fits one curve shape -- a shape misfit would leak into the unique/shared
+  partition. exp(a*x) kept as comparison (`NONLINEARITY = "exp"`).
+- **Saliency = OpenCV FineGrained** (kept; Haskins et al. 2020 used GBVS).
+- **Shuffled-feature control**: each segment paired with a random segment from a different clip.
+- **Minimum data**: >= 3 fixations per participant x segment; >= 3 other participants for the ceiling.
+- **Pipeline built** (`scripts/analysis/information_gain/`: load_gaze, load_features, baseline, ceiling,
+  feature_models, scoring, partition, sanity_checks, plots). Floor eps and ceiling lam chosen by nested
+  leave-one-clip-out (inner floors exclude both the held-out and the inner clip); feature curves fit on training
+  clips with floors excluding the held-out clip. Ceiling/models scored on identical cells (>= 3 fixations,
+  >= 3 others). Variants: knots_floor (headline), exp_floor, knots_nofloor (floor comparison).
+- **First pass, 2026-10-23, cuts set, slow_people meaning still missing (177 segments, 45 adults, no CIs)**:
+  ceiling 1.24 bits; IG saliency 0.17, motion 0.24, meaning 0.30, all three 0.33 (27% of ceiling); motion+meaning
+  0.38 > all three, so unique saliency = -0.04 (equal-weight dilution, anticipated in the plan). Shuffled features
+  drop to -0.19/-0.25/-0.37. Motion curve is a step (flat above ~0.1 rescaled): exp(a*x) gets motion only 0.07 bits
+  vs 0.24 with knots. Ceiling convergence still rising (k=8: 1.06, 16: 1.18, 32: 1.26 bits), so the ceiling is
+  likely underestimated and proportions explained overestimated. Entropy vs ceiling per segment r = -0.44.
+- **Full run, all 12 clips (2026-10-23, knots_floor, no CIs yet)**. cuts (181 segments, 45 adults): ceiling 1.24;
+  saliency 0.17, motion 0.24, meaning 0.30, all three 0.34 (27% of ceiling); partition shared 0.26, unique meaning
+  +0.08, motion +0.04, saliency -0.04. slow_chopped (245 segments): ceiling 1.34; all three 0.38 (28%); shared 0.29,
+  unique meaning +0.08, motion +0.06, saliency -0.05. 2 of 183 cut segments drop out (no cells meet >= 3 fixations
+  with >= 3 others). All sanity checks pass; shuffled features drop below 0 for every feature in both sets.
+- **Knot count sweep** (`knots_sweep.py`, cuts): held-out IG plateaus from 5 to 20 knots (all features within 0.01
+  bits of their best); 40 slightly lower; exp loses most of motion (0.07 vs 0.24); 3 knots loses a quarter of
+  meaning. 20 kept: fixed a priori by the paper, avoids choosing a hyperparameter on the reported held-out scores.
+- **Resolution check** (`explore_dense_grid.py`, same pipeline on full-screen grids, cuts, 20 knots, floor):
+  28 locations (7x4): ceiling 0.99 bits, all three 0.27 (26.9% of ceiling); 120 tiles: 1.24, 0.34 (27.1%);
+  9,975 locations (133x75): 1.24, 0.32 (26.3%). Bits plateau by 120 (gaze is smoothed with sigma=46 and features
+  carry 240px-patch detail, so finer sampling adds no information); proportions of ceiling and the partition are
+  stable across all three resolutions (shared ~21%, unique meaning ~6.5%, motion ~3%, saliency ~-3.4%).
+- **Trial exclusion: negative ceiling** (`exclusions.py`, `config.EXCLUDE_NEGATIVE_CEILING`). A trial (participant x
+  clip) is dropped if its mean ceiling across segments is < 0, i.e. the other viewers predict that person's gaze worse
+  than the content-blind floor -- a signature of calibration/tracking failure rather than idiosyncratic viewing. Floor
+  and ceiling for the rule are computed once on unfiltered data; the excluded trials are then removed from every
+  downstream step (floor, eps, lambda, the "others" in everyone's ceiling, curve fits, scoring). Excludes 2 of 448
+  trials in both segment sets: MW006 sesameindia_2 (-0.76 bits) and MW049 sesameus_2 (-0.13). Low-but-positive
+  trials (e.g. MW049 overall 0.59 bits, MW012 0.89) are kept.
+  Effect (cuts): ceiling 1.24 -> 1.25 bits; all three 27.1% -> 27.3% of ceiling; shared 20.9 -> 21.1%; uniques
+  unchanged within 0.1 pt. slow_chopped: all three 28.4%, shared 21.9%. All sanity checks still pass.
+- **Kids, adult reference** (`kids_adult_reference.py`, 2026-10-23). Kids' fixations (f329476c) copied from
+  `data/preprocessed/fixations/kids` to `data/local_cache/fixations/kids`. All kids with fixation files included
+  except MWK005 (valid_data=False): 19 kids. MWK011-021 are not in participant_summary.csv (dated 2026-07-15), so
+  have no validity/calibration screen; the negative-ceiling trial rule is their only quality filter. Kids are scored
+  against adult-derived models only (adult floor, adult lambda, adult-fit feature curves; ceiling "others" = all adults
+  in the segment), so the question is how well adult-derived models predict kids, not a kids-only analysis. Same
+  >= 3 fixation cell rule. Result (cuts): ceiling 1.20 bits (adults 1.25); all three 28.1% of ceiling (adults 27.3%);
+  shared 22.0%, unique motion +3.7%, meaning +4.8%, saliency -2.3%. 0 of 143 kid trials excluded.
+- **Open: single-segment failures not caught by the trial rule** (revisit). The negative-ceiling rule averages over a
+  clip, so one bad segment can pass: MWK01 frank_play seg 17 (4 fixations, kid ceiling -3.73 bits; clip mean
+  positive). It drives the kids' selective-quadrant value (-1.7% explained; 8.2% without MWK01). A cell-level rule was
+  considered and deliberately not adopted for now (7% of cells are negative, mostly noise; cutting them risks
+  overfitting to noise).
+- **Kids, kid reference** (`IG_GROUP=kids`, 2026-10-23). Whole pipeline rerun on kids only (kid floor, eps, lambda,
+  feature curves, ceiling = other kids); outputs in `information_gain/kids/` subfolders (cache, results), figures in `figures/information_gain/kids-kidref/` (adults in `adults/`, adult-reference kids in `kids-adultref/`),
+  `figures/checks/information_gain_kids/`). Same 19 kids. Trial rule excludes 1 of 143: MWK02 sesameus_2 (-0.05 bits).
+  179 segments (3 lack >= 4 kids). Ceiling 1.17 bits from ~10-13 others (convergence k=8: 1.14, still rising, so
+  more underestimated than the adult ceiling). All three 28.2% of ceiling; shared 22.2%, unique motion +4.2%, meaning
+  +4.8%, saliency -3.0% -- nearly identical to the adult-reference kids result (28.1%; 22.0/+3.7/+4.8/-2.3).
