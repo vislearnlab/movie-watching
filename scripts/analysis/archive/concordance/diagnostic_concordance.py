@@ -58,11 +58,12 @@ import pandas as pd
 from scipy.ndimage import gaussian_filter
 from scipy.stats import pearsonr
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 from plot_patch_grid import compute_patch_grid  # noqa: E402
-from calc_concordance_group import load_video_fixations, closed_form_tile_values  # noqa: E402
+sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
+from gaze_tiles import load_video_fixations, closed_form_tile_values  # noqa: E402
 
 DISPLAY_W, DISPLAY_H = 1920, 1080
 

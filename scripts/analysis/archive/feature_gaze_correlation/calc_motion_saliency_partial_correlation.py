@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]  # archived: scripts/analysis/archive/feature_gaze_correlation
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 
 from calc_within_between_cosine import BLOCKS, MIN_WINDOWS, WINDOW_S  # noqa: E402

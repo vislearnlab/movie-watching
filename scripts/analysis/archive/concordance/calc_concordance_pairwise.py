@@ -45,13 +45,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 from plot_patch_grid import compute_patch_grid  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from calc_concordance_group import (  # noqa: E402
+sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
+from gaze_tiles import (  # noqa: E402
     load_video_fixations, build_participant_arrays, closed_form_tile_values, DISPLAY_W, DISPLAY_H,
 )
 
