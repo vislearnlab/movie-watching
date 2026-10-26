@@ -1484,3 +1484,223 @@ display edge rather than overshooting it (as the earlier 200px/144-patch grid di
   179 segments (3 lack >= 4 kids). Ceiling 1.17 bits from ~10-13 others (convergence k=8: 1.14, still rising, so
   more underestimated than the adult ceiling). All three 28.2% of ceiling; shared 22.2%, unique motion +4.2%, meaning
   +4.8%, saliency -3.0% -- nearly identical to the adult-reference kids result (28.1%; 22.0/+3.7/+4.8/-2.3).
+
+## 2026-10-23 — Feature–gaze correlation scripts archived
+
+Moved `calc_motion_gaze_correlation.py`, `calc_saliency_gaze_correlation.py`, `calc_motion_saliency_partial_correlation.py`,
+`calc_feature_gaze_partial_correlation.py` and `calc_feature_gaze_variance_partition.R` to
+`scripts/analysis/archive/feature_gaze_correlation/` (with README). The question they asked -- which content features
+explain gaze -- is now addressed by the information-gain analysis. PROJECT_ROOT paths updated so they still run.
+
+## 2026-10-23 — Concordance archived; shared gaze-loading code moved to gaze_tiles.py
+
+Concordance (`calc_concordance_group`/`_pairwise` .py/.R, `diagnostic_concordance.py`, `visualize_concordance_video.py`,
+`plot_concordance_isc_timecourses.qmd`, `plot_individual_differences.qmd`, `calc_center_bias.R`) moved to
+`scripts/analysis/archive/concordance/` (with README). Before moving, the helpers 17 other scripts imported from
+`calc_concordance_group.py` (`load_video_fixations`, `build_participant_arrays`, `closed_form_tile_values`, `DISPLAY_W/H`)
+were moved unchanged into `scripts/analysis/gaze_tiles.py`, and the ffmpeg/density-overlay helpers that
+`visualize_entropy_segment.py` imported from `visualize_concordance_video.py` into `scripts/preprocessing/viz/video_overlay.py`.
+All importers (ISC tile-peak, entropy, within/between, information gain, montages, and the archived scripts) repointed;
+import check passes for all 18.
+
+## 2026-10-23 — All plotting moves to R (project-wide rule); information gain converted first
+
+User rule: all plotting is done in R, regardless of analysis; Python computes and writes CSVs. Scope agreed: charts only
+for now (frame-overlay maps/montages and videos stay in Python). Information gain converted:
+- `plots.py` removed; `plot_data.py` writes `plotdata_groups_<tag>.csv` (group values per facet: overall, block, quadrant,
+  clip) and `plotdata_units_<tag>.csv` (per-segment / per-participant values divided by the facet's ceiling), plus
+  `per_segment_` and `curves_` CSVs. `kids_adult_reference.py` calls the same export (tag `<set>_kids_adultref`).
+- `baseline.py` writes `floor_<set>.csv`; `sanity_checks.py` writes `ceiling_convergence_<set>.csv`; `knots_sweep.py` and
+  `explore_dense_grid.py` no longer plot (their CSVs already existed).
+- `plot_information_gain.R --group adults|kids-kidref|kids-adultref [--segment-set] [--only]` draws all main figures;
+  `plot_information_gain_checks.R [--group adults|kids]` draws floor maps, convergence, knot sweep, dense-grid check.
+- Still Python: `check_meaning_point_smoothing.py` (map over video frames, out of current scope).
+Remaining Python chart scripts to convert: within/between (`plot_quadrant_scatter`, `plot_quadrant_distribution`,
+`plot_within_between_timecourse`), face-gaze `plot_results.py`.
+
+## 2026-10-24 — Scene cuts frame-corrected (`all_clips_cuts_frame_corrected.csv`); fades split at their midpoint
+
+**Problem.** The browser-annotated cuts in `annotations/scene-cuts/all_clips_cuts.csv` are systematically late.
+`scripts/preprocessing/cut_annotation/check_cut_frame_accuracy.py` (→ `data/results/stimulus_prep/cut_frame_accuracy.csv`)
+finds the true cut frame as the largest frame-to-frame change near each annotation (frame k at t = k/fps, the convention
+the feature CSVs use). Of 145 clean hard cuts, 144 are annotated 0–1.5 frames after the first new-scene frame (median
+20 ms, max 40 ms), so that frame fell in the previous segment. This is the same thing the 2-frame render margin
+(entropy videos, above) was papering over.
+
+**What it affected** (per-segment feature vectors, annotated vs. corrected cuts, 183 segments):
+- **Motion: yes.** `load_features.segment_mean` drops a segment's first flow row because it spans the cut, but with late
+  cuts the row that really spans the cut (a whole-frame scene change, so very large flow) stayed in the previous segment.
+  Median +4% motion; up to 7× in short segments (sesameindia_1 seg 0, 0.8 s: r = 0.31 with its corrected map); 6
+  segments r < 0.95.
+- Saliency, meaning: negligible (all r ≥ 0.97). Meaning is sampled every 4th frame, so only ~1 cut in 4 put a sample on
+  the wrong side.
+- Gaze (IG, within/between, entropy): ≤ 40 ms moves between segments, below saccade latency; 4 within/between windows
+  held ≤ 40 ms of post-cut time.
+
+**Decision.** New file `annotations/scene-cuts/all_clips_cuts_frame_corrected.csv`, written by
+`scripts/preprocessing/cut_annotation/correct_cut_frames.py`. The original annotation file is kept unchanged as the raw
+record. Every boundary sits halfway between two frames, (k − 0.5)/fps, where k is the first frame of the new segment:
+- **hard (149):** k = the true cut frame. This covers the 145 clean cuts plus 4 pixar cuts that fast motion made look
+  ambiguous (verified on contact sheets; frame 1926 at 80.36 s overrides the detector). Shift −19 to −61 ms.
+- **fade through black (18; all 12 slow-block cuts, and frank_complex/objects/play at ~20 s and ~40 s): split at the fade
+  midpoint** (user's choice). The boundary goes after the middle of the darkest frames (luminance ≤ min + 1). Shift −0.6
+  to −163 ms. The fade-out frames stay in the earlier segment and the fade-in frames in the later one.
+- **dissolve (3; frank_objects 5.43, 18.74, 35.23 s):** k = the first frame ≥ 50% blended into the next shot, estimated by
+  least squares and checked by eye (the blend estimate is noisy where objects move). Shift +76 to +153 ms.
+- **unchanged (2):** pixar 64.77 s (a continuous camera tilt with no frame-level transition) and frank_complex 60.32 s
+  (the clip end).
+
+Optical flow during fades and dissolves is not removed. Brightness change and cross-blending can register as motion in
+the few frames on either side of the boundary. Not quantified.
+
+Scripts repointed to the corrected file: `information_gain/config.py`, `calc_within_between_cosine.py`, and the entropy
+scripts (`calc_entropy_by_segment.py`, `calc_entropy_within_between.py`, `calc_entropy_sensitivity_sweep.py`,
+`diagnostic_entropy_outlier_sensitivity.py`). Results regenerated: see the next entry when done.
+
+## 2026-10-24 — Results regenerated with frame-corrected cuts
+
+Reran within/between (cuts and slow_chopped), entropy_by_segment, the full IG pipeline for adults and kids
+(+ kids_adult_reference, knots sweep, dense-grid checks) and all IG figures. Pre-fix outputs are not kept in the repo.
+- **Within/between:** same 162 segments; old vs. new r = 0.994 (within) and 0.997 (between); median change 0, max 0.10
+  and 0.06 (fade/dissolve segments whose boundaries moved most).
+- **IG (adults, cuts, knots_floor):** ceiling 1.247 → 1.230 bits. All-three model 0.340 → 0.331 bits (27.3% → 26.9% of
+  ceiling). Unique motion is unchanged (+0.038); unique meaning 0.083 → 0.080; shared 0.263 → 0.254. slow_chopped moves
+  the same way (ceiling 1.346 → 1.331; all three 28.4% → 28.0%). The small, uniform drop includes the gaze-only
+  ceiling. Segments now start at the true cut, so their first ~40 ms of gaze still reflects the previous shot (saccade
+  latency), rather than the motion fix itself. No conclusion changes.
+- Entropy scripts other than `calc_entropy_by_segment.py` (within_between, sensitivity sweep, outlier diagnostic) were
+  repointed but not rerun.
+
+## 2026-10-24 — Fixed block colors, project-wide
+
+User choice: pixar yellow; frank, sesame, slow blue, green, red. Exact shades were picked to pass all-pairs CVD
+separation (dataviz `validate_palette.js --pairs all`; worst pair slow↔sesame, protan ΔE 9.5). The darker green and
+the vermilion red are what make red/green separable. An earlier coral red read as pink.
+frank `#2a78d6`, pixar `#eda100`, sesame `#006414`, slow `#e85a32`. Defined once in `scripts/analysis/block_colors.R`,
+which `plot_information_gain.R`, `plot_within_between_scatter.R`, `plot_within_between_marginals.R` and
+`plot_entropy.qmd` source. Python `plot_quadrant_scatter.py` still has its old per-clip shades (pending R conversion).
+
+## 2026-10-24 — Face feature: human-reviewed boxes, area-weighted
+
+Faces = humans and Muppets only (no Pixar birds or other animals), per the user. YuNet (OpenCV, score ≥ 0.5) proposed
+boxes on ~2 Hz review frames per segment (`prepare_face_review.py`); the user reviewed every segment of all 12 clips in
+a local GUI (`face_review_server.py`), accepting/rejecting/drawing boxes. Muppets were almost all hand-drawn. The 5 clips
+the user listed as face-free (slow_hands, slow_animals, slow_inanimate, frank_objects, pixar_birds) were pre-set to
+no faces; detector-confident segments were flagged for review. All flags were false hits (hands, a train front,
+birds). Annotations: `annotations/faces/<clip>_faces.json`.
+- **Feature value = fraction of each 240px tile footprint covered by face boxes** (`calc_face_tiles.py`, same box-mean
+  pooling as motion/saliency → `data/results/face/`), then segment mean, σ=46 smoothing and 120-tile sampling as for the
+  other features. User decision: keep it **area-weighted** rather than a size-independent presence map, because a
+  larger face is more likely to be looked at, and the probability map should reflect that. So small faces in wide shots
+  (e.g. slow_people, frank_complex segments 2/3/6/7) carry little weight.
+- Feature is sampled at review frames (~2 Hz), not every frame. Boxes are clipped at the frame edge.
+- Visual check: `figures/face_maps/<clip>_face_map.png` (`montage_face_maps.py`).
+
+## 2026-10-24 — Face added to IG as a 4th feature
+
+`config.FEATURES` now saliency, motion, meaning, face (abbrev. F). Face is scaled like the others (corpus min-max).
+Every subset is scored as a fixed equal-weight mixture (15 models). The partition is generalized to N features:
+unique_k = all-four − the mixture without k, shared = the rest. The commonality formula for any subset (checked
+against the old 3-feature formulas, exact match) gives common_<letters> columns, which replace common_all3/common_SM/....
+plot_data writes `ig_all`/`prop_all` (= the all-features model) instead of `ig_SMX`/`prop_SMX`. Gaze, floor and ceiling
+are untouched; all old 3-feature numbers reproduce exactly. Face color in figures `#b5459b` (passes all-pairs CVD).
+- **Segments without faces stay in.** There face = 0 everywhere, so the face-only model = floor (IG 0). But the
+  equal-weight all-four mixture is diluted toward the floor there, so unique face can be negative in those segments.
+- **Adults, cuts, knots_floor (% of 1.23-bit ceiling):** face alone 15.4% (saliency 13.3, motion 19.1, meaning 24.0);
+  shuffled face −18.1%; all three 26.9% → all four 28.4%; unique face +1.5%. Uniques shrink because they are now
+  over the other three: meaning 6.5 → 3.9%, motion 3.1 → 1.3%, saliency −3.4 → −1.9%; shared 20.7 → 23.7%.
+  slow_chopped: face alone 12.3%, all three 28.0% → all four 28.1%, unique face +0.0%. Dense grid (9975 locations):
+  unique face +1.3%; coarse grid (28): +0.8%.
+- **Kids (kids reference):** face alone 12.2% (cuts) / 9.0% (slow_chopped); unique face −0.0% / −1.6%.
+  Kids vs adult models: unique face −0.4%.
+- Fitted face curve: smooth and monotone, ~40× at full coverage, consistent across held-out clips.
+
+## 2026-10-24 — Face analyzed on face clips only; all-clips analysis stays 3-feature
+
+User decision: all 12 clips → saliency, motion, meaning (+ all three); the face analysis uses only the 7 clips with faces
+(frank_complex, frank_play, sesameindia_1/2, sesameus_1/2, slow_people) and all four features. This removes the
+dilution from face-free clips described in the previous entry. `config.SUBSETS` drives this:
+partition/plot_data/kids_adult_reference/explore_dense_grid write `<tag>` (all clips, 3 features) and
+`<tag>_faceclips`. `plot_information_gain.R --subset all|faceclips` draws each. The face-clip numbers reuse the
+same leave-one-clip-out fits (curves trained on all other clips); only the scored cells are restricted. The mixtures
+have fixed equal weights, and face-free segments carry no information for the face curve, so no refit is needed.
+Some segments within the face clips still have no faces (they stay in).
+- **Adults, cuts (113 segments, ceiling 1.29 bits):** saliency 5.1%, motion 15.3%, meaning 21.5%, **face 25.1%**,
+  all three 23.7%, all four 29.5%; unique face +5.9%, meaning +3.9%, motion +0.0%, saliency −4.0%; shuffled face −14.1%.
+  slow_chopped: face 22.5%, all four 29.8%, unique face +4.4%. Dense grid 9975: unique face +5.5%; coarse 28: +4.7%.
+- **Kids (kids reference), cuts:** face 19.6% (meaning 18.3, motion 18.1); all three 23.2% → all four 27.0%; unique
+  face +3.8%. slow_chopped +1.9%. Kids vs adult models: unique face +3.3%.
+- All-clips (3-feature) numbers are unchanged from before face was added.
+- Added facet "faces" (clips with vs. without faces) to plot_data; `supplementary_by_faces_<tag>.png` shows the
+  3-feature bars per group, each against its own ceiling. Adults, cuts: with faces 1.29-bit ceiling, saliency 5% /
+  motion 15% / meaning 22% / all three 24%; without faces 1.14-bit ceiling, 26% / 25% / 29% / 32%.
+- Added subset `_allclips4` (all 12 clips, 4 features) for the faces facet only: `overall_ig[_people]_by_faces_<tag>_allclips4.png`.
+  Adults, cuts: in face-free clips, unique face −5.5% (pure dilution), all four 26.5% vs all three 32.0%. In face clips
+  the numbers equal `_faceclips`.
+
+## 2026-10-25 — Center-bias check: uniform baseline, spatial prior as a feature
+
+Prompted by a reviewer-style concern: every feature model is feature × floor (β=1), so all models share the floor,
+and "shared" may partly be that shared ingredient rather than content overlap. The knots_nofloor variant (β=0,
+still scored against the floor) can't settle this: every model then underperforms the floor, all IGs go negative,
+and shared (−42.6%) mostly reflects the floor that all three models lack (three-way overlap +8.9% → −61%).
+Pairwise overlaps don't shrink without the floor (SM 3.2 → 4.6, SX 4.6 → 4.6, MX 4.0 → 9.6%).
+User decision: make uniform the baseline ("floor") and enter the old floor as a 4th feature, "spatial" (P).
+`uniform_baseline.py` scores all 15 equal-weight mixtures of P + the no-floor S/M/X models over uniform. The ceiling is
+the same model as before, re-expressed over uniform (ig_ceiling + ll_floor − ll_uniform). Figures:
+`overall_ig[_people]_<set>_uniform.png`, `supplementary_<set>_uniform.png` (`plot_information_gain.R --variant uniform`).
+Spatial color `#5a3e9e` (passes all-pairs CVD). partition.py generalized to any feature letters (existing outputs
+byte-identical).
+- **Adults, cuts (ceiling 2.30 bits over uniform):** spatial 46.6%, saliency 14.7%, motion 26.3%, meaning 26.6%;
+  S+M+X 29.9%; all four 41.1% (below spatial alone, since equal weighting dilutes the strongest component). Shared
+  34.5%: **+35.5% involves spatial, −0.9% is overlap among saliency/motion/meaning alone**. Unique: spatial +11.2%,
+  meaning +0.5%, motion −0.2%, saliency −5.0%. slow_chopped is the same pattern (shared 34.3% = +33.9% with spatial,
+  +0.5% content-only).
+- Interpretation: under this decomposition, the shared bucket in the floor-based analysis is almost entirely
+  center-bias overlap. Caveat: fixed equal-weight mixtures; when one component dominates, adding weaker ones lowers IG,
+  which pushes their unique shares negative. Fitted mixture weights would be needed for a fairer partition.
+
+## 2026-10-25 — Within/between quadrants: kids vs. adults
+
+- `calc_within_between_cosine.py --group kids` (same kid set as IG: all kid files minus MWK005; 7-14 kids per segment,
+  median 11, vs. adult median 35) -> `all_clips_by_segment_kids.csv`. 162 segments valid in both groups.
+- `compare_quadrants_kids_adults.py`: each group classified on its own pooled thresholds. Across segments, adult-kid
+  r = 0.86 (within) and 0.79 (between). Same quadrant: 68/75 (91%) of segments classified in both at q=0.4 (the
+  convention); 115/162 (71%) with a median split (chance ~25%). Kids on adult thresholds: 88% / 66%.
+- Caveat: between-person distance uses a leave-one-out mean of ~10 kids vs ~34 adults, so kid values carry more
+  sampling noise (kids' means slightly higher: within 0.686 vs 0.630, between 0.357 vs 0.338). Adults not subsampled to kid N.
+
+## 2026-10-25 — IG confidence intervals: segment bootstrap; CI + waterfall figure
+
+- `information_gain/bootstrap_ci.py --unit participant|segment|clip`: 2,000 resamples; each draw recomputes model group
+  averages (mean of participant means), the ceiling, % of ceiling and the partition; percentile 95% CIs. Models not refit.
+- Adults, unchopped, 3 features: segment-level CIs are ~3-4x wider than participant-level (stimulus variability
+  dominates); all uniques exclude 0 at every level (unique motion at clip level 0.5-6.0%). Segment level chosen for
+  figures (clip level = 12 units, too few for precise percentiles; kept as a robustness check).
+- `plot_ig_ci_waterfall.R` (default `--unit segment`): (A) single models + all three with CIs, (B) waterfall shared ->
+  unique salience -> motion -> semantics -> all three. Slide colors/names (salience #1e4c7c, motion #357a76, semantics
+  #f09937); proposed replacement for the violin "overall" figure.
+- Grouped CIs: `bootstrap_ci.py --by block|quadrant|face` bootstraps segments within each group; `--q 0.5` classifies
+  quadrants on a median split (default 0.4 leaves the middle band unclassified). User chose 50/50 for quadrant figures
+  (162 segments classified: 36 selective, 45 scattered, 45 concentrated, 36 coordinated). Adults, % of ceiling, all three
+  (shared): selective 15.2 (6.8), scattered 26.5 (19.6), concentrated 30.5 (24.6), coordinated 31.8 (26.9). Face clips
+  (`config.FACE_CLIPS`, 3-feature models) 23.7 (16.1, unique semantics +9.0) vs no-face 32.0 (28.0, +3.0); confounded
+  with block. Figures: `ig_waterfall_by_{block,quadrant,quadrant_q50,face}_cuts_knots_floor.png`.
+- "Shared" = all 2-way + 3-way commonalities (unique_k = loss from dropping only k). Adults: SM 3.2 + SX 4.6 + MX 4.0
+  + SMX 8.9 = 20.7%. Plotted as one bar; split not shown.
+
+## 2026-10-26 — IG kids vs. adults (kid reference), all / by block / by adult quadrant
+
+- Kids scored on the kids-only pipeline (`IG_GROUP=kids`: own floor, curves, ceiling), segment bootstrap as adults.
+  Quadrants for both groups = adult 50/50 classification. 19 kids total, 9-14 per clip (adults ~35-41).
+- All blocks, adults vs kids, % of ceiling: all three 26.9 vs 28.1; shared 20.7 vs 22.1; unique motion +3.1 vs +4.1,
+  unique semantics +6.5 vs +4.7. Per block, every component within ~2 points; blocks differ far more than groups.
+  Only adult-selective segments show kids lower (10.1 vs 15.2; kid CIs very wide). Not a finding at this N.
+- `plot_ig_waterfall_kids_adults.R` (`--block`) -> `figures/information_gain/kids_vs_adults/`.
+- Least-adultlike segments (`montage_kids_vs_adults_mismatch.py`): mismatch = kid-to-adult minus kid-kid cosine distance
+  (kids agreeing with each other but not with adults). Kid-adult distance tracks kid-kid r = 0.96, so kids' distance from
+  adults is mostly their own scatter. One outlier: frank_play seg17 (~4 SD; adults on the face, kids on the pencil/hand).
+  No null distribution yet.
+- Kid ages at test (from the user's DOB sheet, not stored in the repo): 17 of 19 with DOB, mean 7.1 y (SD 1.0), median
+  7.7, range 5.3-8.2; 12 DOBs month-only (15th assumed); MWK008/MWK009 missing. Narrow, older range: a within-sample
+  age slope (development-slope prediction) is not estimable; would need younger children.

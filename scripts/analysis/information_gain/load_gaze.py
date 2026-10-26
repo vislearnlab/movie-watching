@@ -15,7 +15,7 @@ from segments import segment_table
 
 sys.path.insert(0, str(C.PROJECT_ROOT / "scripts" / "analysis"))
 sys.path.insert(0, str(C.PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
-from calc_concordance_group import build_participant_arrays, closed_form_tile_values, load_video_fixations  # noqa: E402
+from gaze_tiles import build_participant_arrays, closed_form_tile_values, load_video_fixations  # noqa: E402
 from tile_pooling import CENTERS  # noqa: E402
 
 TILE_COLS = [f"tile_{i:03d}" for i in range(120)]

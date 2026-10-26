@@ -3,16 +3,13 @@ Exploratory: the Overall IG pipeline (unchopped, 20 knots, floor) rebuilt on a d
 ~10,000 locations instead of the 120 tiles. Same cells, same nested leave-one-clip-out, same
 smoothing (gaze sigma=46 from fixations; features plotted at patch centers, sigma 46/92).
 
-Output: figures/checks/overall_ig_dense_<n>.png, data/results/information_gain/summary_dense_<n>.csv
+Output: data/results/information_gain/summary_dense_<n>[_faceclips].csv (plotted by plot_information_gain_checks.R)
 
 Usage: python scripts/analysis/information_gain/explore_dense_grid.py [NX NY]  (default 133 75)
 """
 
 import sys
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize, minimize_scalar
@@ -20,13 +17,12 @@ from scipy.optimize import minimize, minimize_scalar
 import config as C
 from common import group_average
 from load_features import frame_feature, load_meaning_raw, meaning_frames, segment_mean
-from partition import partition
-from plots import headline
+from partition import models_of, partition
 from scoring import MODELS
 from segments import segment_table
 
 sys.path.insert(0, str(C.PROJECT_ROOT / "scripts" / "analysis"))
-from calc_concordance_group import build_participant_arrays, closed_form_tile_values, load_video_fixations  # noqa: E402
+from gaze_tiles import build_participant_arrays, closed_form_tile_values, load_video_fixations  # noqa: E402
 from tile_pooling import CENTERS  # noqa: E402
 
 NX, NY = (int(sys.argv[1]), int(sys.argv[2])) if len(sys.argv) > 2 else (133, 75)
@@ -72,14 +68,15 @@ def build_features(keys):
     raw = {c: r for c in C.CLIPS if (r := load_meaning_raw(c)) is not None}
     meaning = meaning_frames(raw)
     w_fine = smoothing_to_grid(CENTERS[["center_x", "center_y"]].to_numpy(), C.SIGMA_FEATURE_FINE)
-    out = {f: {} for f in ["saliency", "motion", "meaning_fine", "meaning_coarse"]}
+    out = {f: {} for f in ["saliency", "motion", "face", "meaning_fine", "meaning_coarse"]}
     for clip in C.CLIPS:
-        sal, mot, m = frame_feature(clip, "saliency"), frame_feature(clip, "motion"), meaning[clip]
+        sal, mot, face, m = frame_feature(clip, "saliency"), frame_feature(clip, "motion"), frame_feature(clip, "face"), meaning[clip]
         w_coarse = smoothing_to_grid(m[3], C.SIGMA_FEATURE_COARSE)
         for k in [k for k in keys if k[0] == clip]:
             s, e = segs.loc[k, "seg_start_s"], segs.loc[k, "seg_end_s"]
             out["saliency"][k] = w_fine @ segment_mean(sal, s, e)
             out["motion"][k] = w_fine @ segment_mean(mot, s, e, needs_prev=True)
+            out["face"][k] = w_fine @ segment_mean(face, s, e)
             out["meaning_fine"][k] = w_fine @ segment_mean((m[0], m[1]), s, e)
             out["meaning_coarse"][k] = w_coarse @ segment_mean((m[0], m[2]), s, e)
 
@@ -87,7 +84,7 @@ def build_features(keys):
         lo, hi = min(v.min() for v in d.values()), max(v.max() for v in d.values())
         return {k: (v - lo) / (hi - lo) for k, v in d.items()}
     fine, coarse = mm(out["meaning_fine"]), mm(out["meaning_coarse"])
-    return {"saliency": mm(out["saliency"]), "motion": mm(out["motion"]),
+    return {"saliency": mm(out["saliency"]), "motion": mm(out["motion"]), "face": mm(out["face"]),
             "meaning": mm({k: (fine[k] + coarse[k]) / 2 for k in keys})}
 
 
@@ -162,7 +159,7 @@ def main():
             llf = ll(Gs, floor_c)
             others = (Gs.sum(0) - Gs) / (len(Gs) - 1)
             q = {}
-            for f, ab in zip(C.FEATURES, "SMX"):
+            for f, ab in C.ABBR.items():
                 x = feats[f][k] * (C.N_KNOTS - 1)
                 kk = np.minimum(np.floor(x).astype(int), C.N_KNOTS - 2)
                 fx = curves[f][kk] * (1 - (x - kk)) + curves[f][kk + 1] * (x - kk)
@@ -176,20 +173,15 @@ def main():
         print(f"  {clip:15s} eps={eps:.3f} lam={lam:.3f}")
 
     df = pd.concat(rows, ignore_index=True)
-    ig = {m: group_average(df, f"ig_{m}") for m in MODELS}
-    s = pd.Series(dict(ceiling=group_average(df, "ig_ceiling"), **{f"ig_{m}": v for m, v in ig.items()},
-                       **partition(ig), n_participants=df.participant.nunique(),
-                       n_segments=df.groupby(["video", "seg_idx"]).ngroups))
-    s.to_frame("value").to_csv(C.RESULTS_DIR / f"summary_dense_{N}.csv")
-    print(s.round(4).to_string())
-    caption = (f"Same pipeline as the 120-tile Overall IG, on a {NX}x{NY} grid ({N} locations, ~14.4px cells). "
-               "Combined models are fixed equal-weight mixtures; each feature model includes the floor (beta=1). "
-               f"{int(s.n_participants)} adults, {int(s.n_segments)} segments, leave-one-clip-out. No confidence intervals.")
-    fig = headline(s, f"unchopped, 20 knots, floor, {N} locations", caption)
-    out = C.CHECK_FIG_DIR / f"overall_ig_dense_{N}.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved {out}")
+    df.to_parquet(C.CACHE_DIR / f"scores_dense_{N}.parquet", index=False)
+    for suffix, (feats, clips) in C.SUBSETS.items():
+        d = df if clips is None else df[df.video.isin(clips)]
+        ig = {m: group_average(d, f"ig_{m}") for m in models_of(feats)}
+        s = pd.Series(dict(ceiling=group_average(d, "ig_ceiling"), **{f"ig_{m}": v for m, v in ig.items()}, ig_all=ig[feats],
+                           **partition(ig, feats), n_participants=d.participant.nunique(),
+                           n_segments=d.groupby(["video", "seg_idx"]).ngroups))
+        s.to_frame("value").to_csv(C.RESULTS_DIR / f"summary_dense_{N}{suffix}.csv")
+        print(f"== {suffix or 'all clips'}\n{s.round(4).to_string()}")
 
 
 if __name__ == "__main__":

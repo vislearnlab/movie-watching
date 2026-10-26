@@ -1,7 +1,7 @@
 """
 Sanity checks (plan Step 7) not already enforced inline: floor scored against itself, floor leakage,
 leave-one-out leakage in the ceiling, ceiling > 0, shuffled-feature drop, floor-on vs. floor-off,
-and ceiling convergence with number of other participants (plot).
+and ceiling convergence with number of other participants (ceiling_convergence_<set>.csv, plotted in R).
 (Probability vectors summing to 1 with no zeros is asserted inside common.log_lik on every score.)
 
 Usage: python scripts/analysis/information_gain/sanity_checks.py [--segment-set cuts]
@@ -9,9 +9,6 @@ Usage: python scripts/analysis/information_gain/sanity_checks.py [--segment-set 
 
 import argparse
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -56,7 +53,7 @@ def main():
 
     for variant in ["knots_floor", "knots_nofloor"]:
         sc = pd.read_parquet(C.CACHE_DIR / f"scores_{ss}_{variant}.parquet")
-        for ftr in "SMX":
+        for ftr in C.ALL:
             report[f"{variant}_{ftr}_real_vs_shuffled"] = (f"{group_average(sc.dropna(subset=[f'ig_{ftr}']), f'ig_{ftr}'):.3f} vs "
                                                           f"{group_average(sc.dropna(subset=[f'ig_{ftr}_shuffled']), f'ig_{ftr}_shuffled'):.3f}")
 
@@ -86,21 +83,10 @@ def main():
     full = group_average(conv[conv.k == -1], "ig")
     report["ceiling_convergence"] = ", ".join(f"k={k}: {v:.3f}" for k, v in curve.items()) + f", all others: {full:.3f}"
 
-    fig, ax = plt.subplots(figsize=(5.5, 4))
-    ax.plot(curve.index, curve.values, "o-", color="#2a78d6", lw=2, ms=6)
-    ax.axhline(full, color="#52514e", ls="--", lw=1)
-    ax.text(curve.index.max(), full, " all others", va="bottom", ha="right", fontsize=8, color="#52514e")
-    ax.set_xscale("log", base=2)
-    ax.set_xlabel("number of other participants in the ceiling")
-    ax.set_ylabel("group ceiling (bits)")
-    ax.set_title(f"Ceiling convergence, {ss}", fontsize=10)
-    ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
-    out = C.CHECK_FIG_DIR / f"information_gain_ceiling_convergence_{ss}.png"
-    fig.savefig(out, dpi=150)
+    pd.concat([curve.rename("ig").rename_axis("k").reset_index(), pd.DataFrame(dict(k=[-1], ig=[full]))]).to_csv(
+        C.RESULTS_DIR / f"ceiling_convergence_{ss}.csv", index=False)  # k=-1: all others; plotted in R
     pd.Series(report).to_frame("result").to_csv(C.RESULTS_DIR / f"sanity_checks_{ss}.csv")
     print(pd.Series(report).to_string())
-    print(f"Saved {out}")
 
 
 if __name__ == "__main__":

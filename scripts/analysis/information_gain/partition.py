@@ -1,43 +1,63 @@
 """
 Group-average information gains, proportion explained, unique/shared partition, and full
-commonality decomposition. Cells restricted to those where all 7 models are defined.
+commonality decomposition, per C.SUBSETS (all clips with saliency/motion/meaning; face clips with all four).
+Cells restricted to those where every model in the subset is defined.
 
-Output: data/results/information_gain/summary_<segment_set>_<variant>.csv
+Output: data/results/information_gain/summary_<segment_set>_<variant>[_faceclips].csv
 
 Usage: python scripts/analysis/information_gain/partition.py
 """
+
+from itertools import combinations
 
 import pandas as pd
 
 import config as C
 from common import group_average
 from feature_models import VARIANTS
-from scoring import MODELS
+NAMES = {a: f for f, a in C.ABBR.items()} | {"P": "spatial"}  # P = spatial prior (the old floor), uniform_baseline.py
 
 
-def partition(ig: dict) -> dict:
-    u_S, u_M, u_X = ig["SMX"] - ig["MX"], ig["SMX"] - ig["SX"], ig["SMX"] - ig["SM"]
-    out = dict(unique_saliency=u_S, unique_motion=u_M, unique_meaning=u_X,
-               shared=ig["SMX"] - (u_S + u_M + u_X),
-               common_all3=ig["S"] + ig["M"] + ig["X"] - ig["SM"] - ig["SX"] - ig["MX"] + ig["SMX"],
-               common_SM=ig["SX"] + ig["MX"] - ig["X"] - ig["SMX"],
-               common_SX=ig["SM"] + ig["MX"] - ig["M"] - ig["SMX"],
-               common_MX=ig["SM"] + ig["SX"] - ig["S"] - ig["SMX"])
-    assert abs(out["shared"] - (out["common_all3"] + out["common_SM"] + out["common_SX"] + out["common_MX"])) < 1e-9
-    return out
+def ig_of(ig: dict, letters, feats: str) -> float:
+    key = "".join(a for a in feats if a in letters)
+    return ig[key] if key else 0.0
 
 
-def summarize(df: pd.DataFrame) -> dict:
-    cols = [f"ig_{m}" for m in MODELS]
-    df = df.dropna(subset=cols)
-    ig = {m: group_average(df, f"ig_{m}") for m in MODELS}
+def models_of(feats: str) -> list:
+    # Model names keep the letter order of feats, e.g. "SX" for feats "SMX".
+    return ["".join(c) for n in range(1, len(feats) + 1) for c in combinations(feats, n)]
+
+
+def partition(ig: dict, feats: str = C.ALL) -> dict:
+    # unique_k = all-features minus the mixture without k; shared = the rest. Commonality of subset S (Seibold &
+    # McDonald 1974): -sum_{T in S} (-1)^|T| IG((ALL - S) + T); common_<S> for |S| >= 2 sums to shared.
+    full = ig[feats]
+    out = {f"unique_{NAMES[a]}": full - ig_of(ig, set(feats) - {a}, feats) for a in feats}
+    out["shared"] = full - sum(out.values())
+    common = {}
+    for n in range(2, len(feats) + 1):
+        for S in combinations(feats, n):
+            rest = set(feats) - set(S)
+            common["common_" + "".join(S)] = -sum((-1) ** len(T) * ig_of(ig, rest | set(T), feats)
+                                                  for k in range(len(S) + 1) for T in combinations(S, k))
+    assert abs(out["shared"] - sum(common.values())) < 1e-9
+    return {**out, **common}
+
+
+def summarize(df: pd.DataFrame, feats: str = C.ALL, clips: list | None = None) -> dict:
+    models = models_of(feats)
+    df = df.dropna(subset=[f"ig_{m}" for m in models])
+    if clips is not None:
+        df = df[df.video.isin(clips)]
+    ig = {m: group_average(df, f"ig_{m}") for m in models}
     ceiling = group_average(df, "ig_ceiling")
     out = dict(n_cells=len(df), n_segments=df.groupby(["video", "seg_idx"]).ngroups,
                n_participants=df.participant.nunique(), ceiling=ceiling,
                **{f"ig_{m}": v for m, v in ig.items()},
                **{f"prop_{m}": v / ceiling for m, v in ig.items()},  # ratio of averages, not average of ratios
-               **{f"ig_{p}_shuffled": group_average(df, f"ig_{p}_shuffled") for p in "SMX"},
-               **partition(ig))
+               ig_all=ig[feats], **{f"ig_{p}_shuffled": group_average(df, f"ig_{p}_shuffled") for p in feats
+                                     if f"ig_{p}_shuffled" in df},
+               **partition(ig, feats))
     return out
 
 
@@ -46,9 +66,10 @@ def main():
     for segment_set in C.SEGMENT_SETS:
         for variant in VARIANTS:
             df = pd.read_parquet(C.CACHE_DIR / f"scores_{segment_set}_{variant}.parquet")
-            s = pd.Series(summarize(df))
-            s.to_frame("value").to_csv(C.RESULTS_DIR / f"summary_{segment_set}_{variant}.csv")
-            print(f"\n== {segment_set} / {variant} ==\n{s.round(4).to_string()}")
+            for suffix, (feats, clips) in C.SUBSETS.items():
+                s = pd.Series(summarize(df, feats, clips))
+                s.to_frame("value").to_csv(C.RESULTS_DIR / f"summary_{segment_set}_{variant}{suffix}.csv")
+                print(f"\n== {segment_set} / {variant}{suffix} ==\n{s.round(4).to_string()}")
 
 
 if __name__ == "__main__":

@@ -21,7 +21,11 @@ DURATIONS = {  # ffprobe, same as calc_entropy_by_segment.py
 }
 
 CV_UNIT = "clip"  # leave-one-clip-out for floor, epsilon, lambda, feature parameters
-FEATURES = ["saliency", "motion", "meaning"]
+FEATURES = ["saliency", "motion", "meaning", "face"]  # face added 2026-10-24 (see METHODS_DECISIONS)
+ABBR = {"saliency": "S", "motion": "M", "meaning": "X", "face": "F"}
+ALL = "".join(ABBR[f] for f in FEATURES)  # the all-features mixture
+FACE_CLIPS = ["frank_complex", "frank_play", "sesameindia_1", "sesameindia_2", "sesameus_1", "sesameus_2", "slow_people"]
+SUBSETS = {"": ("SMX", None), "_faceclips": ("SMXF", FACE_CLIPS), "_allclips4": ("SMXF", None)}  # output tag suffix: (features, clips); None = all clips
 FEATURE_SCALING = "corpus"  # joint [0, 1] rescale across all segments (Kümmerer 2015); "segment_z" = alternative
 NONLINEARITY = "knots"  # 20 equidistant knots, monotone piecewise-linear (Kümmerer 2015); "exp" = comparison
 N_KNOTS = 20
@@ -42,7 +46,7 @@ FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / GROUP
 KIDS_FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "kids"
 KIDS_EXCLUDE = ["MWK005"]  # valid_data=False in participant_summary; MWK011-021 have no summary row yet, all included
 PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
-CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts.csv"
+CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts_frame_corrected.csv"  # see METHODS_DECISIONS 2026-10-24
 FEATURE_TILE_DIR = PROJECT_ROOT / "data" / "results"  # <feature>/<clip>_<feature>_tiles_frames.csv
 MEANING_DIR = PROJECT_ROOT / "data" / "local_cache"
 MEANING_FINE_PATCH, MEANING_COARSE_PATCH = 240, 479
@@ -54,8 +58,5 @@ CANVAS_TO_SOURCE = 1280 / 1920
 _SUB = "" if GROUP == "adults" else GROUP  # non-adult groups write to their own subfolders
 CACHE_DIR = PROJECT_ROOT / "data" / "local_cache" / "information_gain" / _SUB
 RESULTS_DIR = PROJECT_ROOT / "data" / "results" / "information_gain" / _SUB
-FIG_ROOT = PROJECT_ROOT / "figures" / "information_gain"
-FIG_DIR = FIG_ROOT / ("adults" if GROUP == "adults" else f"{GROUP}-{GROUP[:-1]}ref")  # adults/, kids-kidref/
-KIDS_ADULTREF_FIG_DIR = FIG_ROOT / "kids-adultref"
 CHECK_FIG_DIR = PROJECT_ROOT / "figures" / "checks" / (f"information_gain_{_SUB}" if _SUB else "")
 RNG_SEED = 0

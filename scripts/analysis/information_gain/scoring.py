@@ -1,11 +1,13 @@
 """
-Scores the 7 models (single features + equal-weight mixtures) and the shuffled-feature controls as
+Scores every model (single features + equal-weight mixtures of every subset) and the shuffled-feature controls as
 information gain over the floor, on exactly the ceiling's participant x segment cells.
 
 Output: scores_<segment_set>_<variant>.parquet (ceiling columns + ig_<model> per cell)
 
 Usage: python scripts/analysis/information_gain/scoring.py
 """
+
+from itertools import combinations
 
 import numpy as np
 import pandas as pd
@@ -14,8 +16,8 @@ import config as C
 from common import TILE_COLS, load_gaze, log_lik
 from feature_models import VARIANTS
 
-ABBR = {"saliency": "S", "motion": "M", "meaning": "X"}
-MODELS = {"S": ["S"], "M": ["M"], "X": ["X"], "SM": ["S", "M"], "SX": ["S", "X"], "MX": ["M", "X"], "SMX": ["S", "M", "X"]}
+ABBR = C.ABBR
+MODELS = {"".join(c): list(c) for n in range(1, len(C.ALL) + 1) for c in combinations(C.ALL, n)}  # e.g. "SX": ["S", "X"]
 
 
 def score(segment_set: str, variant: str) -> pd.DataFrame:  # variant = predictions file tag
@@ -35,7 +37,7 @@ def score(segment_set: str, variant: str) -> pd.DataFrame:  # variant = predicti
             if all((clip, seg, p, False) in q for p in parts):
                 mix = np.mean([q[(clip, seg, p, False)] for p in parts], axis=0)  # fixed equal weights
                 row[f"ig_{name}"] = log_lik(G, np.broadcast_to(mix, G.shape)) - ll_floor
-        for p in "SMX":
+        for p in C.ALL:
             if (clip, seg, p, True) in q:
                 row[f"ig_{p}_shuffled"] = log_lik(G, np.broadcast_to(q[(clip, seg, p, True)], G.shape)) - ll_floor
         out.append(row)

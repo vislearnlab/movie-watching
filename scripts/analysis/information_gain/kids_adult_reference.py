@@ -4,8 +4,8 @@ from the adult pipeline (no kid data fit anywhere). Ceiling = (1 - lam_c) * mean
 + lam_c * adult floor_c. Same cell rule (>= 3 fixations) and trial exclusion rule (participant x clip mean
 ceiling < 0) as adults.
 
-Output: gaze_kids_<set>.parquet, scores_<set>_kids_adultref.parquet (cache);
-        summary_<set>_kids_adultref.csv, excluded_trials_kids_adultref_<set>.csv (results)
+Output: gaze_kids_<set>.parquet, scores_<set>_kids_adultref.parquet (cache); summary_, excluded_trials_kids_adultref_,
+        plotdata_*_<set>_kids_adultref.csv (results)
 
 Usage: python scripts/analysis/information_gain/kids_adult_reference.py [--segment-set cuts]
 """
@@ -15,13 +15,12 @@ import argparse
 import numpy as np
 import pandas as pd
 
-import matplotlib.pyplot as plt
 
 import config as C
 import load_gaze
 from common import TILE_COLS, load_gaze as load_adult_gaze, log_lik
 from partition import summarize
-from plots import BLOCK_COLORS, QUADRANT_Q, QUADRANT_TITLE_COLORS, headline, headline_by_group, quadrants, unit_partition
+from plot_data import export
 from scoring import ABBR, MODELS
 
 
@@ -60,7 +59,7 @@ def main():
             if all((clip, seg, m, False) in q for m in parts):
                 mix = np.mean([q[(clip, seg, m, False)] for m in parts], axis=0)
                 row[f"ig_{name}"] = log_lik(G, np.broadcast_to(mix, G.shape)) - ll_floor
-        for m in "SMX":
+        for m in C.ALL:
             if (clip, seg, m, True) in q:
                 row[f"ig_{m}_shuffled"] = log_lik(G, np.broadcast_to(q[(clip, seg, m, True)], G.shape)) - ll_floor
         out.append(row)
@@ -75,34 +74,11 @@ def main():
     df = df[~df.set_index(["video", "participant"]).index.isin(ex.set_index(["video", "participant"]).index)]
 
     df.to_parquet(C.CACHE_DIR / f"scores_{ss}_kids_adultref.parquet", index=False)
-    s = pd.Series(summarize(df))
-    s.to_frame("value").to_csv(C.RESULTS_DIR / f"summary_{ss}_kids_adultref.csv")
-    print(s.round(4).to_string())
-
-    tag = {"cuts": "unchopped", "slow_chopped": "slow chopped"}[ss] + ", 20 knots, floor; KIDS vs adult models"
-    cap = (f"Kids scored against adult-derived models: floor, lambda, feature curves and the ceiling's other viewers are all adults; "
-           f"ceiling = how well the adult group predicts each kid. {int(s.n_participants)} kids, {int(s.n_segments)} segments. "
-           "Combined models are fixed equal-weight mixtures; unique = all-three minus the two-feature mixture without that feature; "
-           "shared = all-three minus the uniques. No confidence intervals yet.")
-    for name, by, label, extra in [(f"overall_ig_{ss}_knots_floor", ["video", "seg_idx"], "dots = segments",
-                                    " Violins/dots: one per segment (kid-mean within segment, divided by the overall ceiling)."),
-                                   (f"overall_ig_people_{ss}_knots_floor", ["participant"], "dots = kids",
-                                    " Violins/dots: one per kid (mean over that kid's segments, divided by the overall ceiling).")]:
-        figs = {name: headline(s, f"{tag} ({label})", cap + extra, unit_partition(df, by))}
-        blk = cap.replace("No confidence intervals yet.", "No confidence intervals yet. Each panel is scaled to its own block's ceiling "
-                          "(kids weighted equally within block); black line = block group value.")
-        figs[name.replace(f"{ss}_", f"by_block_{ss}_")] = headline_by_group(
-            df.assign(block=df.video.map(C.BLOCKS)), by, f"{tag} ({label})", blk, "block", BLOCK_COLORS)
-        quad = quadrants(ss)
-        qcap = blk.replace("block", "quadrant") + (f" Quadrants from ADULT within/between cosine dispersion, pooled {QUADRANT_Q:.0%}/{1 - QUADRANT_Q:.0%} "
-                                                   f"split; {int(quad.quadrant.isna().sum())} middle-band segments excluded.")
-        figs[name.replace(f"{ss}_", f"by_quadrant_{ss}_")] = headline_by_group(
-            df.merge(quad, on=["video", "seg_idx"]), by, f"{tag} ({label})", qcap, "quadrant", QUADRANT_TITLE_COLORS)
-        for n, fig in figs.items():
-            C.KIDS_ADULTREF_FIG_DIR.mkdir(parents=True, exist_ok=True)
-            fig.savefig(C.KIDS_ADULTREF_FIG_DIR / f"{n}.png", dpi=150, bbox_inches="tight")
-            plt.close(fig)
-            print(f"Saved {C.KIDS_ADULTREF_FIG_DIR / n}.png")
+    for suffix, (feats, clips) in C.SUBSETS.items():
+        s = pd.Series(summarize(df, feats, clips))
+        s.to_frame("value").to_csv(C.RESULTS_DIR / f"summary_{ss}_kids_adultref{suffix}.csv")
+        print(s.round(4).to_string())
+        export(df, ss, C.RESULTS_DIR, f"{ss}_kids_adultref{suffix}", feats=feats, clips=clips)  # plot_information_gain.R --group kids-adultref
 
 
 if __name__ == "__main__":

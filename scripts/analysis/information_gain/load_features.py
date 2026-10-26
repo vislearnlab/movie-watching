@@ -1,9 +1,9 @@
 """
 Per-segment 120-tile feature vectors. Patch values (240px box means for motion/saliency, DeepMeaning
-ratings for meaning) are averaged over the segment's frames, plotted at their patch centers,
+ratings for meaning, face-box coverage for face, from ~2 Hz review frames) are averaged over the segment's frames, plotted at their patch centers,
 Gaussian-smoothed (normalized weighted average; fine sigma=46, coarse meaning sigma=92), and sampled
 at the 120 tile centers. Cached as a long table: smoothed unscaled columns (saliency_raw, motion_raw,
-meaning_fine, meaning_coarse) plus the scaled saliency, motion, meaning used by the models.
+face_raw, meaning_fine, meaning_coarse) plus the scaled saliency, motion, meaning, face used by the models.
 
 Usage: python scripts/analysis/information_gain/load_features.py
 """
@@ -83,20 +83,21 @@ def build(segment_set: str) -> pd.DataFrame:
     nan120 = np.full(120, np.nan)
     rows = []
     for clip in C.CLIPS:
-        sal, mot = frame_feature(clip, "saliency"), frame_feature(clip, "motion")
+        sal, mot, face = frame_feature(clip, "saliency"), frame_feature(clip, "motion"), frame_feature(clip, "face")
         m = meaning.get(clip)
         w_coarse = point_smoothing_matrix(m[3], C.SIGMA_FEATURE_COARSE) if m else None
         for seg in segs[segs.video == clip].itertuples():
             s, e = seg.seg_start_s, seg.seg_end_s
             # Segment-mean patch values -> plotted at centers, smoothed, sampled (linear, so order doesn't matter).
-            sv, mv = segment_mean(sal, s, e), segment_mean(mot, s, e, needs_prev=True)
+            sv, mv, fv = segment_mean(sal, s, e), segment_mean(mot, s, e, needs_prev=True), segment_mean(face, s, e)
             vec = dict(saliency=w_fine @ sv if sv is not None else nan120,
                        motion=w_fine @ mv if mv is not None else nan120,
+                       face=w_fine @ fv if fv is not None else nan120,
                        meaning_fine=w_fine @ segment_mean((m[0], m[1]), s, e) if m else nan120,
                        meaning_coarse=w_coarse @ segment_mean((m[0], m[2]), s, e) if m else nan120)
             rows.append(pd.DataFrame(dict(segment_set=segment_set, video=clip, seg_idx=seg.seg_idx,
                                           tile=np.arange(120), **vec)))
-    return scale_features(pd.concat(rows, ignore_index=True).rename(columns={"saliency": "saliency_raw", "motion": "motion_raw"}))
+    return scale_features(pd.concat(rows, ignore_index=True).rename(columns={"saliency": "saliency_raw", "motion": "motion_raw", "face": "face_raw"}))
 
 
 def zscore_by_segment(df: pd.DataFrame, col: str) -> pd.Series:
@@ -115,11 +116,13 @@ def scale_features(df: pd.DataFrame) -> pd.DataFrame:
         # Same operation for every feature; meaning's two scales are each z-scored before averaging.
         df["saliency"] = zscore_by_segment(df, "saliency_raw")
         df["motion"] = zscore_by_segment(df, "motion_raw")
+        df["face"] = zscore_by_segment(df, "face_raw")
         df["meaning_avg"] = (zscore_by_segment(df, "meaning_fine") + zscore_by_segment(df, "meaning_coarse")) / 2
         df["meaning"] = zscore_by_segment(df, "meaning_avg")
     else:  # "corpus" (Kümmerer et al. 2015): min-max rescale to [0, 1] jointly across all segments, not per segment
         df["meaning_avg"] = (minmax(df.meaning_fine) + minmax(df.meaning_coarse)) / 2
         df["saliency"], df["motion"], df["meaning"] = minmax(df.saliency_raw), minmax(df.motion_raw), minmax(df.meaning_avg)
+        df["face"] = minmax(df.face_raw)
     return df.drop(columns=["meaning_avg"], errors="ignore")
 
 

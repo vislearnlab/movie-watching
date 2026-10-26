@@ -3,14 +3,11 @@ Floor (baseline): where people look regardless of content. For each held-out cli
 floor_c = (1 - eps_c) * pooled gaze of all other clips + eps_c * uniform, with eps_c chosen by
 inner leave-one-clip-out on the other clips only (clip c never informs its own floor).
 
-Output: floor_<segment_set>.parquet (video, eps, tile_000..tile_119) + figures/checks/information_gain_floor_<set>.png
+Output: floor_<segment_set>.parquet (video, eps, tile_000..tile_119) (cache) + floor_<set>.csv (results, for R)
 
 Usage: python scripts/analysis/information_gain/baseline.py
 """
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -50,28 +47,13 @@ def build(segment_set: str, gaze: pd.DataFrame | None = None) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def plot(df: pd.DataFrame, segment_set: str):
-    fig, axes = plt.subplots(3, 4, figsize=(14, 6.4))
-    vmax = df[TILE_COLS].to_numpy().max()
-    for ax, row in zip(axes.flat, df.itertuples()):
-        im = ax.imshow(np.array([getattr(row, t) for t in TILE_COLS]).reshape(8, 15), cmap="magma", vmin=0, vmax=vmax)
-        ax.set_title(f"held out: {row.video}\neps={row.eps:.1e}", fontsize=8.5)
-        ax.set_xticks([]); ax.set_yticks([])
-    fig.colorbar(im, ax=axes, fraction=0.02, label="floor probability per tile")
-    fig.suptitle(f"Floor per held-out clip (pooled gaze from the other 11 clips), 15x8 tiles, {segment_set}")
-    out = C.CHECK_FIG_DIR / f"information_gain_floor_{segment_set}.png"
-    fig.savefig(out, dpi=140, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved {out}")
-
-
 def main():
     for segment_set in C.SEGMENT_SETS:
         df = build(segment_set)
         out = C.CACHE_DIR / f"floor_{segment_set}.parquet"
         df.to_parquet(out, index=False)
         print(f"{segment_set}: eps per held-out clip {df.eps.min():.1e}-{df.eps.max():.1e} -> {out}")
-        plot(df, segment_set)
+        df.to_csv(C.RESULTS_DIR / f"floor_{segment_set}.csv", index=False)  # for plot_information_gain_checks.R
 
 
 if __name__ == "__main__":
