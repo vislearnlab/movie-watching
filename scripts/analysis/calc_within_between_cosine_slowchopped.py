@@ -21,7 +21,7 @@ from calc_within_between_cosine import (
     BLOCKS, CUTS_PATH, DURATIONS, FIXATION_DIR, MIN_WINDOWS, N_CAP, N_DRAWS, PARTICIPANT_SUMMARY_PATH,
     PROJECT_ROOT, RNG_SEED, SIGMA, WINDOW_S, cx, cy, within_between_for_windows,
 )
-from calc_concordance_group import build_participant_arrays, closed_form_tile_values, load_video_fixations
+from gaze_tiles import build_participant_arrays, closed_form_tile_values, load_video_fixations
 
 SLOW_CLIPS = ["slow_animals", "slow_hands", "slow_inanimate", "slow_people"]
 N_SUBSEGMENTS_PER_SEGMENT = 5

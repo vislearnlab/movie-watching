@@ -82,9 +82,10 @@ Output: data/results/within_between_cosine/all_clips_by_segment.csv -- one row p
 n_windows_available, n_windows_used, n_people, within_person_cosine_dist,
 between_person_cosine_dist.
 
-Usage: python scripts/analysis/calc_within_between_cosine.py
+Usage: python scripts/analysis/calc_within_between_cosine.py [--group adults|kids]   (kids -> all_clips_by_segment_kids.csv)
 """
 
+import argparse
 import sys
 from itertools import combinations
 from pathlib import Path
@@ -96,7 +97,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 
-from calc_concordance_group import (  # noqa: E402
+from gaze_tiles import (  # noqa: E402
     DISPLAY_H, DISPLAY_W, build_participant_arrays, closed_form_tile_values, load_video_fixations,
 )
 from plot_patch_grid import compute_patch_grid  # noqa: E402
@@ -140,8 +141,10 @@ BLOCKS = {
 
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "adults"
 PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
-CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts.csv"
+CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts_frame_corrected.csv"  # see METHODS_DECISIONS 2026-10-24
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "within_between_cosine" / "all_clips_by_segment.csv"
+KIDS_FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "kids"
+KIDS_EXCLUDE = ["MWK005"]  # same kid set as the IG pipeline (information_gain/config.py)
 
 centers, grid_info = compute_patch_grid(240, 15, DISPLAY_W, DISPLAY_H)  # 2026-10-22: moved from 180px (~29-31% overlap) to 240px (exactly 50% overlap on both axes), see METHODS_DECISIONS.md
 cx, cy = centers["center_x"].to_numpy(), centers["center_y"].to_numpy()
@@ -188,8 +191,16 @@ def within_between_for_windows(pids: list[str], seg_vecs: np.ndarray) -> dict[st
     return result
 
 
-def clip_within_between(video: str, dur: float, cuts_df: pd.DataFrame, rng: np.random.Generator) -> list[dict]:
-    fix = load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
+def load_fixations(video: str, group: str) -> pd.DataFrame:
+    if group == "adults":
+        return load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
+    fix = pd.concat([pd.read_csv(p) for p in sorted(KIDS_FIXATION_DIR.glob(f"*_{video}_f329476c.csv"))], ignore_index=True)
+    return fix[~fix.pid.isin(KIDS_EXCLUDE)]
+
+
+def clip_within_between(video: str, dur: float, cuts_df: pd.DataFrame, rng: np.random.Generator,
+                        group: str = "adults") -> list[dict]:
+    fix = load_fixations(video, group)
     n_before = len(fix)
     fix = fix[(fix["endT"] - fix["startT"]) <= MAX_FIXATION_MS].copy()
     n_dropped = n_before - len(fix)
@@ -255,20 +266,24 @@ def clip_within_between(video: str, dur: float, cuts_df: pd.DataFrame, rng: np.r
 
 
 def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--group", default="adults", choices=["adults", "kids"])
+    group = p.parse_args().group
+    out_path = OUTPUT_PATH if group == "adults" else OUTPUT_PATH.with_name(f"all_clips_by_segment_{group}.csv")
     cuts_df = pd.read_csv(CUTS_PATH)
     rng = np.random.default_rng(RNG_SEED)
     all_rows = []
     for video, dur in DURATIONS.items():
-        rows = clip_within_between(video, dur, cuts_df, rng)
+        rows = clip_within_between(video, dur, cuts_df, rng, group)
         n_valid = sum(1 for r in rows if not np.isnan(r["within_person_cosine_dist"]))
         print(f"{video:16s} {len(rows)} segments, {n_valid} with a valid within/between pair")
         all_rows.extend(rows)
 
     out = pd.DataFrame(all_rows)
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(OUTPUT_PATH, index=False)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(out_path, index=False)
     n_valid = int(out["within_person_cosine_dist"].notna().sum())
-    print(f"\nWrote {len(out)} rows ({n_valid} with a valid within/between pair) to {OUTPUT_PATH}")
+    print(f"\nWrote {len(out)} rows ({n_valid} with a valid within/between pair) to {out_path}")
 
 
 if __name__ == "__main__":

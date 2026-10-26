@@ -35,7 +35,7 @@ from calc_within_between_cosine import (  # noqa: E402
     FIXATION_DIR, MAX_FIXATION_MS, N_CAP, PARTICIPANT_SUMMARY_PATH, SIGMA, WINDOW_S, cx, cy,
     within_between_for_windows,
 )
-from calc_concordance_group import (  # noqa: E402
+from gaze_tiles import (  # noqa: E402
     DISPLAY_H, DISPLAY_W, build_participant_arrays, closed_form_tile_values, load_video_fixations,
 )
 from plot_within_between_timecourse import classify_quadrant, pooled_quantile_split  # noqa: E402
