@@ -32,7 +32,7 @@ FIGURES_DIR <- here("figures", "entropy")
 dir.create(FIGURES_DIR, showWarnings = FALSE, recursive = TRUE)
 
 BLOCKS <- c("frank", "sesame", "slow", "pixar")
-BLOCK_COLORS <- c(frank = "#0072B2", sesame = "#D55E00", slow = "#999999", pixar = "#009E73")
+source(here("scripts", "analysis", "block_colors.R"))  # BLOCK_COLORS
 
 entropy_by_segment <- read_csv(here("data", "results", "entropy_by_segment", "entropy_by_segment.csv"), show_col_types = FALSE) |>
   filter(!is.na(mean_entropy_rarefied)) |>

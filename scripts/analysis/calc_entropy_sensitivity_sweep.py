@@ -25,7 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 
-from calc_concordance_group import DISPLAY_H, DISPLAY_W, build_participant_arrays, load_video_fixations  # noqa: E402
+from gaze_tiles import DISPLAY_H, DISPLAY_W, build_participant_arrays, load_video_fixations  # noqa: E402
 from plot_patch_grid import compute_patch_grid  # noqa: E402
 
 STEP_S, SIGMA = 0.25, 46.0
@@ -53,7 +53,7 @@ BLOCKS = {
 
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "adults"
 PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
-CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts.csv"
+CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts_frame_corrected.csv"  # see METHODS_DECISIONS 2026-10-24
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "entropy_by_segment" / "entropy_sensitivity_sweep.csv"
 
 

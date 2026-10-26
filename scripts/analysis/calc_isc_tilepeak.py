@@ -42,7 +42,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 
-from calc_concordance_group import DISPLAY_H, DISPLAY_W, build_participant_arrays, closed_form_tile_values, load_video_fixations  # noqa: E402
+from gaze_tiles import DISPLAY_H, DISPLAY_W, build_participant_arrays, closed_form_tile_values, load_video_fixations  # noqa: E402
 from plot_patch_grid import compute_patch_grid  # noqa: E402
 
 WINDOW_S = STEP_S = 0.5

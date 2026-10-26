@@ -49,7 +49,7 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from calc_concordance_group import load_video_fixations  # noqa: E402 (same loader/population)
+from gaze_tiles import load_video_fixations  # noqa: E402 (same loader/population)
 
 
 def fixations_to_binned_series(fix_df: pd.DataFrame, bin_ms: float, n_bins: int) -> tuple[np.ndarray, np.ndarray]:
