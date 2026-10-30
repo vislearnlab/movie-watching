@@ -27,6 +27,46 @@ except ModuleNotFoundError:
 # yapf: enable
 __version__ = "0.8.0"
 
+# Validation result colors: clearly good, good but nearing the bad threshold, bad
+VALIDATION_COLORS = {"good": "#00e676", "near": "#ffd600", "bad": "#ff5252"}
+
+
+def evaluate_validation(result, good_threshold, bad_threshold, min_good_points,
+                        max_bad_points, n_points=5):
+    """Pass/fail for one validation: average of both eyes, else either eye alone.
+
+    Missing points count as bad; NaN (no data) counts as neither good nor bad.
+    """
+    left = [result.get(f"Point_{i}_accuracy_degrees_left", bad_threshold + .01) for i in range(1, n_points + 1)]
+    right = [result.get(f"Point_{i}_accuracy_degrees_right", bad_threshold + .01) for i in range(1, n_points + 1)]
+    avg = [(l + r) / 2 for l, r in zip(left, right)]
+
+    def counts(vals):
+        good = sum(v < good_threshold for v in vals)
+        bad = sum(v > bad_threshold for v in vals)
+        return good, bad, (good >= min_good_points) and (bad <= max_bad_points)
+
+    avg_good, avg_bad, _ = counts(avg)
+    verdict = {"passed": False, "rule": None, "values": avg, "n_good": avg_good, "n_bad": avg_bad,
+               "avg_good": avg_good, "avg_bad": avg_bad}
+    for rule, vals in (("average", avg), ("left eye", left), ("right eye", right)):
+        good, bad, ok = counts(vals)
+        if ok:
+            verdict.update(passed=True, rule=rule, values=vals, n_good=good, n_bad=bad)
+            break
+    return verdict
+
+
+def classify_accuracy(deg, good_threshold, bad_threshold):
+    """Label and color for one validation point."""
+    if np.isnan(deg):
+        return "NO DATA", VALIDATION_COLORS["bad"]
+    if deg < good_threshold:
+        return f"GOOD ({deg:.2f})", VALIDATION_COLORS["good"]
+    if deg <= bad_threshold:
+        return f"BORDERLINE ({deg:.2f})", VALIDATION_COLORS["near"]
+    return f"BAD ({deg:.2f})", VALIDATION_COLORS["bad"]
+
 
 class InfantStimuli:
     """Stimuli for infant-friendly calibration and validation.
@@ -792,7 +832,8 @@ class TobiiController:
   
 
     def _show_validation_result_full(self, result_buffer, show_results,
-                                save_to_file, decision_key, result_msg_color, validation_event):
+                                save_to_file, decision_key, result_msg_color, validation_event,
+                                criteria=None, final_attempt=False):
         if save_to_file:
             if self.validation_result_buffers is None:
                 self.validation_result_buffers = list()
@@ -805,9 +846,12 @@ class TobiiController:
             img_draw.rectangle(((0, 0), tuple(self.win.size)), fill=(0, 0, 0, 0))
             # Draw calibration points if available
             shuffled_indices = getattr(self, 'validation_shuffled_indices', None)
+            target_positions = []
             for enum_idx, (key, value) in enumerate(self.validation_result.points.items(), start=1):
                 this_point = value[-1]
                 p = this_point.screen_point
+                pw, ph = self.win.size / getattr(self.win, "contentScaleFactor", 1)
+                target_positions.append(((p.x - 0.5) * pw, (0.5 - p.y) * ph))
                 presentation_order = enum_idx
                 point_index = shuffled_indices[enum_idx - 1] + 1 if shuffled_indices is not None else enum_idx
 
@@ -875,26 +919,105 @@ class TobiiController:
             # Update image and draw it
             result_img.setImage(img)
             result_img.draw()
-            
-            # Create and draw text message
-            result_msg = visual.TextStim(self.win,
-                                        pos=(0, -self.win.size[1] / 4),
-                                        color=result_msg_color,
-                                        units="pix",
-                                        alignText="left",
-                                        wrapWidth=self.win.size[0] * 0.6,
-                                        autoLog=False)
-            result_msg.setText(str(result_buffer))
-            result_msg.draw()
+            choices = self._draw_validation_summary(result_buffer, target_positions, criteria,
+                                                    decision_key, final_attempt)
             self.win.flip()
 
+            event.clearEvents()
             waitkey = True
             while waitkey:
                 for key in event.getKeys():
-                    if key == decision_key:
+                    if key in choices:
+                        self.validation_choice = choices[key]
                         waitkey = False
                         break
     
+    def _draw_validation_summary(self, result_buffer, target_positions, criteria, decision_key,
+                                 final_attempt=False):
+        """Draw the verdict, the pass rule and a label per target; return {key: choice} the screen offers."""
+        # pix units are points, win.size is framebuffer pixels (differ on Retina)
+        w, h = self.win.size / getattr(self.win, "contentScaleFactor", 1)
+
+        def text(msg, pos, color, height, bold=False):
+            visual.TextStim(self.win, text=msg, pos=pos, color=color, height=height, bold=bold,
+                            units="pix", wrapWidth=w * 0.85, autoLog=False).draw()
+
+        n_points = len(target_positions)
+        choices = {decision_key: "continue"}
+        footer = f"Press {decision_key.upper()} to continue"
+        if criteria is None:
+            # No pass rule given: average accuracy per point only
+            values = [(result_buffer.get(f"Point_{i}_accuracy_degrees_left", np.nan)
+                       + result_buffer.get(f"Point_{i}_accuracy_degrees_right", np.nan)) / 2
+                      for i in range(1, n_points + 1)]
+            labels = [("NO DATA" if np.isnan(v) else f"{v:.2f}°", "white") for v in values]
+        else:
+            good, bad = criteria["good_threshold"], criteria["bad_threshold"]
+            min_good, max_bad = criteria["min_good_points"], criteria["max_bad_points"]
+            verdict = evaluate_validation(result_buffer, n_points=n_points, **criteria)
+            labels = [classify_accuracy(v, good, bad) for v in verdict["values"]]
+            n_nodata = sum(np.isnan(v) for v in verdict["values"])
+            eye = {"left eye": "left", "right eye": "right"}.get(verdict["rule"])
+            if verdict["rule"] == "average":
+                text("PASSED", (0, h * 0.3), VALIDATION_COLORS["good"], h * 0.09, bold=True)
+                detail = "Passed with both eyes"
+            elif eye:
+                text(f"{eye.upper()} EYE ONLY", (0, h * 0.3), VALIDATION_COLORS["near"], h * 0.09, bold=True)
+                if final_attempt:
+                    detail = f"Only the {eye} eye passed (values shown are the {eye} eye)"
+                    choices = {"r": "retry", "a": "accept"}
+                    footer = f"Press R to recalibrate (try for both eyes)   ·   Press A to accept the {eye}-eye calibration"
+                else:
+                    detail = f"Only the {eye} eye passed. Both eyes are needed on this attempt"
+                    choices = {decision_key: "retry"}
+                    footer = f"Press {decision_key.upper()} to recalibrate"
+            else:
+                text("FAILED", (0, h * 0.3), VALIDATION_COLORS["bad"], h * 0.09, bold=True)
+                problems = []
+                if verdict["n_good"] < min_good:
+                    problems.append(f"Only {verdict['n_good']} GOOD (needs {min_good})")
+                if verdict["n_bad"] > max_bad:
+                    problems.append(f"{verdict['n_bad']} BAD (allowed {max_bad})")
+                detail = "; ".join(problems)
+                if final_attempt:
+                    choices = {decision_key: "proceed"}
+                    footer = f"No attempts left. Press {decision_key.upper()} to continue the experiment"
+                else:
+                    choices = {decision_key: "retry"}
+                    footer = f"Press {decision_key.upper()} to recalibrate"
+            if n_nodata:
+                detail += f" · {n_nodata} target{'s' if n_nodata > 1 else ''} had no data"
+            text(detail, (0, h * 0.22), "white", h * 0.032)
+            text(f"Pass needs {min_good}+ GOOD (under {good}°) and at most {max_bad} BAD (over {bad}°)",
+                 (0, h * 0.17), "white", h * 0.026)
+            if eye:
+                # Summarize the eye not shown
+                other = "right" if eye == "left" else "left"
+                ov = [result_buffer.get(f"Point_{i}_accuracy_degrees_{other}", bad + .01) for i in range(1, n_points + 1)]
+                counts = [(sum(np.isnan(v) for v in ov), "no data"), (sum(v > bad for v in ov), "BAD"),
+                          (sum(good <= v <= bad for v in ov), "BORDERLINE")]
+                parts = ", ".join(f"{n} {lab}" for n, lab in counts if n)
+                text(f"{other.capitalize()} eye: {parts or 'did not meet the rule'} · check positioning",
+                     (0, h * 0.11), VALIDATION_COLORS["near"], h * 0.03, bold=True)
+
+        for (x, y), (label, color) in zip(target_positions, labels):
+            # Label sits toward the screen center so it stays clear of the edge
+            ly = y - h * 0.07 if y >= 0 else y + h * 0.07
+            visual.Rect(self.win, width=w * 0.19, height=h * 0.055, pos=(x, ly), units="pix",
+                        fillColor="black", lineColor=None, opacity=0.75, autoLog=False).draw()
+            text(label, (x, ly), color, h * 0.035, bold=True)
+        text(footer, (0, -h * 0.46), "white", h * 0.028)
+        return choices
+
+    def mark_validation_outcome(self, validation_event, passed, eyes_used, outcome):
+        """Record which eyes passed, which to analyze, and what happened next on this validation's summary rows."""
+        rows = [r for r in self.validation_summary_buffers if r.get("validation_step") == validation_event]
+        for r in rows:
+            r.update(validation_passed=passed, eyes_used=eyes_used, outcome=outcome)
+        if not rows:
+            logging.warning(f"No buffered validation summary rows for {validation_event}; outcome not saved")
+        return len(rows)
+
     def _show_validation_result(self, result_buffer, show_results,
                                 save_to_file, decision_key, result_msg_color):
         if save_to_file:
@@ -1334,15 +1457,21 @@ class TobiiInfantController(TobiiController):
             validation_summary_columns_order = ['point', 'point_index', 'presentation_order',
                                             'stimulus_x', 'stimulus_y', 'validation_step',
                                             'Mean_accuracy_degrees_left', 'Mean_accuracy_degrees_right',
-                                            'Mean_accuracy_pixels_left', 'Mean_accuracy_pixels_right']
+                                            'Mean_accuracy_pixels_left', 'Mean_accuracy_pixels_right',
+                                            'validation_passed', 'eyes_used', 'outcome']
             
             val_summary_df = pd.DataFrame(self.validation_summary_buffers)
-            val_summary_df = val_summary_df[validation_summary_columns_order]
+            val_summary_df = val_summary_df.reindex(columns=validation_summary_columns_order)
 
             # Write new validation summary to CSV
             if not val_summary_df.empty:
-                val_summary_df.to_csv(self.validation_summary_filename, mode='a', index=False, 
-                                    header=not os.path.isfile(self.validation_summary_filename))
+                fname = self.validation_summary_filename
+                if os.path.isfile(fname) and list(pd.read_csv(fname, nrows=0).columns) != validation_summary_columns_order:
+                    # File from an older version (e.g. a resumed session): rewrite with the new columns
+                    old_df = pd.read_csv(fname).reindex(columns=validation_summary_columns_order)
+                    pd.concat([old_df, val_summary_df]).to_csv(fname, index=False)
+                else:
+                    val_summary_df.to_csv(fname, mode='a', index=False, header=not os.path.isfile(fname))
             
             # Clear processed validation summary data to free memory
             self.validation_summary_buffers = list()
@@ -1738,6 +1867,8 @@ class TobiiInfantController(TobiiController):
                        result_msg_color="white",
                        event="default",
                        audio=None,
+                       criteria=None,
+                       final_attempt=False,
                        *kwargs):
         """Run validation.
         Press space to start collect valdiation samples.
@@ -1764,6 +1895,11 @@ class TobiiInfantController(TobiiController):
                 Accepts any PsychoPy color specification. Default is white.
             event: the event label to mark the validation in the data file.
                 Default is "default".
+            criteria: dict of evaluate_validation thresholds; if given, the
+                result screen shows PASSED/FAILED and GOOD/BAD per target.
+            final_attempt: if True, a 1-eye pass offers retry/accept and a
+                failure offers to proceed; the key chosen is stored in
+                self.validation_choice.
             *kwargs: other arguments to pass into psychopy.visual.ImageStim.
                 Has no effects if infant_stims is set to None.
         Returns:
@@ -1774,6 +1910,7 @@ class TobiiInfantController(TobiiController):
         
         if audio is not None:
             self._audio = audio
+        self.validation_choice = None
 
         # setup the procedure
         self.validation = ScreenBasedCalibrationValidation(
@@ -1809,7 +1946,7 @@ class TobiiInfantController(TobiiController):
             return self.validation_result
         result_buffer = self._process_validation_result(self.validation_result, event)
         self._show_validation_result_full(result_buffer, show_results, save_to_file,
-                                     decision_key, result_msg_color, event)
+                                     decision_key, result_msg_color, event, criteria, final_attempt)
 
         return result_buffer
 

@@ -32,3 +32,4 @@ scripts/preprocessing/segmentation/output*
 # Local-only working folders, not version-controlled
 paper/
 meeting-notes/
+presentations/

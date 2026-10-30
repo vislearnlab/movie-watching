@@ -9,7 +9,7 @@ from psychopy import logging as psychopy_logging
 psychopy_logging.console.setLevel(psychopy_logging.ERROR)
 from psychopy import core, visual, event, monitors, prefs
 from psychopy.visual.movies import MovieStim
-from psychopy_tobii_infant import TobiiInfantController, MockTobiiInfantController
+from psychopy_tobii_infant import TobiiInfantController, MockTobiiInfantController, evaluate_validation
 import tobii_research as tr
 from mock_tobii_research import MockTobiiResearch
 import time
@@ -156,11 +156,16 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
         min_good_points = config_data[f"general_validation"]["min_good_points"]
         max_bad_points = config_data[f"general_validation"]["max_bad_points"]
     
+    criteria = dict(good_threshold=good_threshold, bad_threshold=bad_threshold,
+                    min_good_points=min_good_points, max_bad_points=max_bad_points)
+
     logger.info(f"Starting {mode} calibration routine (event: {calib_event})")
     logger.debug(f"Max retries: {max_retries}, Good threshold: {good_threshold}, Bad threshold: {bad_threshold}, Min good points: {min_good_points}, Max bad points: {max_bad_points}")
     
     i = 0
-    while i < max_retries:
+    while True:
+        # From the last scheduled attempt on, a 1-eye pass is offered to the experimenter
+        final_attempt = i + 1 >= max_retries
         # reset stimli before each validation/calibration
         if i > 0:
             logger.debug(f"Resetting stimuli for retry {i}")
@@ -177,7 +182,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
             logger.debug(f"Creating calibration sound for iteration {i}")
             calibration_sound = SoundDeviceSound(CALIB_SOUND)
             try:
-                logger.info(f"Running calibration iteration {i+1}/{max_retries}")
+                logger.info(f"Running calibration iteration {i+1}/{max_retries}" + (" (extra, experimenter chose to retry)" if i >= max_retries else ""))
                 controller.run_calibration(CALIPOINTS, CALISTIMS, audio=calibration_sound, shuffle_points=shuffle_points)
             except Exception as e:
                 log_exception(logger, e, f"calibration iteration {i}")
@@ -199,14 +204,16 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
         logger.debug(f"Creating validation sound for iteration {i}")
         validation_sound = SoundDeviceSound(VALID_SOUND)
         try:
-            logger.info(f"Running validation iteration {i+1}/{max_retries}")
+            logger.info(f"Running validation iteration {i+1}/{max_retries}" + (" (extra, experimenter chose to retry)" if i >= max_retries else ""))
             result = controller.run_validation(
                 validation_points=CALIPOINTS,
                 infant_stims=CALISTIMS,
                 show_results=True,
                 event=f"{calib_event}_{i+1}",
                 audio=validation_sound,
-                shuffle_points=shuffle_points
+                shuffle_points=shuffle_points,
+                criteria=criteria,
+                final_attempt=final_attempt
             )
         except Exception as e:
             log_exception(logger, e, f"validation iteration {i}")
@@ -222,40 +229,37 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
             core.wait(0.2)
 
         # validation checking logic
-        left = [result.get(f"Point_{idx}_accuracy_degrees_left", bad_threshold+.01) for idx in range(1, 6)]
-        right = [result.get(f"Point_{idx}_accuracy_degrees_right", bad_threshold+.01) for idx in range(1, 6)]
+        val_event = f"{calib_event}_{i+1}"
+        choice = getattr(controller, "validation_choice", None)
+        verdict = evaluate_validation(result or {}, **criteria)
+        logger.debug(f"Validation results - Avg good: {verdict['avg_good']}/5, Avg bad: {verdict['avg_bad']}/5")
+        eye = {"left eye": "left", "right eye": "right"}.get(verdict["rule"])
 
-        def eye_passes(targets):
-            good = sum(t < good_threshold for t in targets)   
-            bad  = sum(t > bad_threshold for t in targets)   
-            return (good >= min_good_points) and (bad <= max_bad_points)
-
-        avg = [(l + r) / 2 for l, r in zip(left, right)]
-        avg_good = sum(t < good_threshold for t in avg)
-        avg_bad  = sum(t > bad_threshold for t in avg)
-        avg_ok = (avg_good >= min_good_points) and (avg_bad <= max_bad_points)
-
-        logger.debug(f"Validation results - Avg good: {avg_good}/5, Avg bad: {avg_bad}/5")
-        
-        if avg_ok:
-            logger.info(f"Validation passed on iteration {i+1} (average accuracy)")
+        if verdict["rule"] == "average":
+            logger.info(f"Validation passed on iteration {i+1} (both eyes)")
+            controller.mark_validation_outcome(val_event, "both", "both", "accepted")
+            break
+        elif eye and final_attempt and choice == "accept":
+            logger.info(f"Validation passed on iteration {i+1} ({eye} eye only, accepted by experimenter)")
+            controller.mark_validation_outcome(val_event, eye, eye, "accepted")
+            break
+        elif eye:
+            why = "experimenter chose to retry" if final_attempt else "both eyes required on this attempt"
+            logger.warning(f"Validation passed on iteration {i+1} with {eye} eye only; recalibrating ({why})")
+            controller.mark_validation_outcome(val_event, eye, None, "retried")
+            msg = f"Only the {eye} eye passed. Recalibrating for both eyes..."
+        elif final_attempt:
+            logger.warning(f"Validation failed on iteration {i+1}; no attempts left, proceeding")
+            controller.mark_validation_outcome(val_event, "none", "both", "proceeded_failed")
             break
         else:
-            left_ok  = eye_passes(left)
-            right_ok = eye_passes(right)
-            if left_ok or right_ok:
-                logger.info(f"Validation passed on iteration {i+1} (single eye acceptable)")
-                break
-            else:
-                logger.warning(f"Validation failed on iteration {i+1}")
+            logger.warning(f"Validation failed on iteration {i+1}")
+            controller.mark_validation_outcome(val_event, "none", None, "retried")
+            msg = "Validation failed. Recalibrating..."
 
         i += 1
-        if i < max_retries:
-            controller.display_text("Validation failed. Recalibrating...", duration=2)
-    
-    if i >= max_retries:
-        logger.warning(f"Calibration routine completed with max retries ({max_retries})")
-    
+        controller.display_text(msg, duration=2)
+
     # Final cleanup
     controller.targets.reset_stims()
     sd.stop()

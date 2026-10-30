@@ -8,7 +8,8 @@ eye-tracking sessions, which we have here (adults, infants, and kids).
 
 Per trial, builds an I2MC input frame from left/right eye pixel coordinates
 (NaN where left_valid/right_valid == 0), runs I2MC, and writes one row per
-detected fixation.
+detected fixation. If the block's calibration was accepted on one eye only
+(validation_summary eyes_used = left/right), only that eye is used.
 
 Outputs
 -------
@@ -73,7 +74,7 @@ XRES = 1920.0
 YRES = 1080.0
 FREQ = 250.0
 
-# Trials where both eyes are lost (left_valid == 0 AND right_valid == 0) for
+# Trials where both eyes (or the one accepted eye) are lost (left_valid == 0 AND right_valid == 0) for
 # more than this fraction of samples are excluded before I2MC ever runs on
 # them -- I2MC's own gap-interpolation/merging (see trial_to_i2mc_frame,
 # run_i2mc_on_trial) already handles moderate data loss well, but a trial
@@ -148,7 +149,7 @@ FIX_KEYS = [
 # every excluded trial. The console output printed during a run still shows
 # the full reason and value for each exclusion as it happens.
 #   1 = calibration fail  (block's calibration accuracy > max_calibration_deg)
-#   2 = invalid fraction fail (trial's both-eyes-invalid fraction > max_invalid_frac)
+#   2 = invalid fraction fail (trial's analyzed-eyes-invalid fraction > max_invalid_frac)
 EXCLUSION_REASON_CODES = {"calibration_deg": 1, "invalid_frac": 2}
 
 # ── parameter code ──────────────────────────────────────────────────────────
@@ -205,38 +206,50 @@ def read_csv_multi_encoding(path: str) -> pd.DataFrame | None:
 # parse_validation_summary + map_blocks_to_validations)
 
 def compute_block_calibration(trial_order_df: pd.DataFrame, validation_summary_df: pd.DataFrame) -> dict:
-    """Mean calibration accuracy (degrees, averaged over left/right eye and
-    the 5 validation points) for each block_index, taken from the last
-    validation attempt before that block started (block 0 uses the last
-    pre_validation attempt; later blocks use the last attempt of
+    """Calibration accuracy and eyes to analyze for each block_index, from
+    the last validation attempt before that block started (block 0 uses the
+    last pre_validation attempt; later blocks use the last attempt of
     block_validation_trial{first_trial_of_block}_*).
+
+    Accuracy is the mean error in degrees over the 5 validation points,
+    averaged over both eyes -- or for the accepted eye only, when the
+    experiment logged a 1-eye calibration (eyes_used = left/right). Older
+    summaries without eyes_used are treated as both eyes.
 
     Single validation per block, same as dataQC_check.py -- does not yet
     handle mid-block recalibration (see that file's TODO). Returns
-    block_index -> float, or None for a block with no matching validation.
+    block_index -> (degrees, eyes), or (None, "both") for a block with no
+    matching validation.
     """
     mean_rows = validation_summary_df[validation_summary_df["point"] == "mean"]
-    val_mean_deg = {}
+    val_cal = {}
     for _, row in mean_rows.iterrows():
-        val_mean_deg[row["validation_step"]] = (
-            row["Mean_accuracy_degrees_left"] + row["Mean_accuracy_degrees_right"]
-        ) / 2
+        eyes = row.get("eyes_used")
+        eyes = eyes if eyes in ("left", "right") else "both"
+        if eyes == "both":
+            deg = (row["Mean_accuracy_degrees_left"] + row["Mean_accuracy_degrees_right"]) / 2
+        else:
+            deg = row[f"Mean_accuracy_degrees_{eyes}"]
+        val_cal[row["validation_step"]] = (deg, eyes)
+
+    def attempt_num(step):
+        return int(step.rsplit("_", 1)[1])
 
     first_trial_of_block = trial_order_df.groupby("block_index")["total_trial_index"].min()
 
     block_calibration = {}
     for block_idx, first_trial in first_trial_of_block.items():
         if block_idx == 0:
-            pre_vals = sorted(v for v in val_mean_deg if v.startswith("pre_validation"))
-            block_calibration[block_idx] = val_mean_deg[pre_vals[-1]] if pre_vals else None
+            pre_vals = sorted((v for v in val_cal if re.fullmatch(r"pre_validation_\d+", v)), key=attempt_num)
+            block_calibration[block_idx] = val_cal[pre_vals[-1]] if pre_vals else (None, "both")
             continue
 
         matching = []
-        for v in val_mean_deg:
+        for v in val_cal:
             m = re.match(r"block_validation_trial(\d+)_(\d+)", v)
             if m and int(m.group(1)) == first_trial:
                 matching.append((int(m.group(2)), v))
-        block_calibration[block_idx] = val_mean_deg[max(matching)[1]] if matching else None
+        block_calibration[block_idx] = val_cal[max(matching)[1]] if matching else (None, "both")
 
     return block_calibration
 
@@ -264,10 +277,10 @@ def extract_trial_gaze(gaze_df: pd.DataFrame, video_name: str) -> pd.DataFrame |
 
 # ── I2MC input prep ────────────────────────────────────────────────────────────
 
-def trial_to_i2mc_frame(trial_df: pd.DataFrame) -> tuple[pd.DataFrame | None, float | None]:
+def trial_to_i2mc_frame(trial_df: pd.DataFrame, eyes: str = "both") -> tuple[pd.DataFrame | None, float | None]:
     """
     Build the [time, L_X, L_Y, R_X, R_Y] frame I2MC expects, and the fraction
-    of its samples where both eyes are invalid (used for the max_invalid_frac
+    of its samples where the analyzed eye(s) are all invalid (used for the max_invalid_frac
     exclusion check -- computed here, on the same filtered slice, so the two
     can't drift apart).
 
@@ -282,6 +295,11 @@ def trial_to_i2mc_frame(trial_df: pd.DataFrame) -> tuple[pd.DataFrame | None, fl
 
     left_valid  = pd.to_numeric(df.get("left_valid",  0), errors="coerce").fillna(0)
     right_valid = pd.to_numeric(df.get("right_valid", 0), errors="coerce").fillna(0)
+    # 1-eye calibration: treat the other eye as missing so I2MC never uses it
+    if eyes == "left":
+        right_valid = right_valid * 0
+    elif eyes == "right":
+        left_valid = left_valid * 0
     invalid_frac = float(((left_valid == 0) & (right_valid == 0)).mean())
 
     l_x = pd.to_numeric(df["left_x"],  errors="coerce").where(left_valid == 1)
@@ -414,7 +432,7 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
             if video_filter is not None:
                 video_matches += 1
 
-            cal_deg = block_calibration.get(row["block_index"])
+            cal_deg, _ = block_calibration.get(row["block_index"], (None, "both"))
             # Round to 2 decimal places before comparing against
             # max_calibration_deg, so a value like 2.00135 (which prints/reads
             # as "2.00°") is judged by what it displays as, not by
@@ -448,7 +466,7 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
             out_path = os.path.join(group_output_dir, f"{pid}_{vname}_{code}.csv")
             if os.path.exists(out_path) and not overwrite:
                 continue
-            pending.append((row, out_path))
+            pending.append((row, out_path, block_calibration.get(row["block_index"], (None, "both"))[1]))
 
         if not pending:
             n_considered = len(trial_order) if video_filter is None else (trial_order["video_name"] == video_filter).sum()
@@ -460,20 +478,20 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
             print(f"  [{group_label}] {pid}: could not read gaze CSV — skipping")
             continue
 
-        for row, out_path in pending:
+        for row, out_path, eyes in pending:
             vname = row["video_name"]
             trial_df = extract_trial_gaze(gaze_df, vname)
             if trial_df is None or trial_df.empty:
                 print(f"  [{group_label}] {pid}/{vname}: no gaze data for this trial — skipping")
                 continue
 
-            i2mc_df, invalid_frac = trial_to_i2mc_frame(trial_df)
+            i2mc_df, invalid_frac = trial_to_i2mc_frame(trial_df, eyes)
             if i2mc_df is None:
                 print(f"  [{group_label}] {pid}/{vname}: no valid samples — skipping")
                 continue
 
             if invalid_frac > max_invalid_frac:
-                print(f"  [{group_label}] {pid}/{vname}: {invalid_frac:.0%} of samples have both eyes "
+                print(f"  [{group_label}] {pid}/{vname}: {invalid_frac:.0%} of samples have {eyes} eye(s) "
                       f"invalid (> {max_invalid_frac:.0%} threshold) — excluded, no file written")
                 exclusions.append((pid, vname, "invalid_frac", invalid_frac))
                 continue
@@ -487,6 +505,7 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
             fix_df["group"]      = group_label
             fix_df["video_name"] = vname
             fix_df["block_id"]   = row.get("block_id", "unknown")
+            fix_df["eyes_used"]  = eyes
             fix_df.to_csv(out_path, index=False)
             processed_pids.add(pid)
             print(f"  [{group_label}] {pid}/{vname}: {len(fix_df)} fixations → {os.path.basename(out_path)}")
@@ -538,7 +557,7 @@ def main():
                         help="Recompute a participant's fixations even if a file for this pid/code already exists")
     parser.add_argument("--max_invalid_frac", type=float, default=MAX_INVALID_FRAC,
                         help="Exclude a trial (no fixation file written) if more than this fraction "
-                             "of its samples have both eyes invalid")
+                             "of its samples have the analyzed eye(s) invalid")
     parser.add_argument("--max_calibration_deg", type=float, default=MAX_CALIBRATION_DEG,
                         help="Exclude a trial (no fixation file written) if its block's calibration "
                              "accuracy (mean degrees error, last attempt before that block) exceeds this")

@@ -1704,3 +1704,20 @@ byte-identical).
 - Kid ages at test (from the user's DOB sheet, not stored in the repo): 17 of 19 with DOB, mean 7.1 y (SD 1.0), median
   7.7, range 5.3-8.2; 12 DOBs month-only (15th assumed); MWK008/MWK009 missing. Narrow, older range: a within-sample
   age slope (development-slope prediction) is not estimable; would need younger children.
+
+## 2026-10-30 — Calibration: 2-eye first, logged 1-eye acceptance, I2MC uses only the accepted eye
+
+- **Decision (experiment):** each calibration routine tries for a 2-eye pass (average of both eyes meets
+  the rule). On attempt 1, a 1-eye pass is shown as such but always recalibrates. From attempt 2
+  (`max_retries`) on, a 1-eye pass lets the experimenter press R (recalibrate for both eyes) or A
+  (accept the 1-eye calibration). A full failure on attempt 2 or later proceeds, as before.
+- **Logging:** `*_validation_summary.csv` gains `validation_passed` (both/left/right/none),
+  `eyes_used` (both/left/right; blank for attempts that were superseded by a recalibration) and
+  `outcome` (accepted/retried/proceeded_failed). A participant can have 2-eye and 1-eye blocks.
+- **Analysis:** `i2mc_fixations.py` reads `eyes_used` from the validation it already uses per
+  block; for a 1-eye block, the other eye is treated as missing and calibration accuracy is that
+  eye's alone. Older files without the column are treated as both eyes (unchanged results), and
+  fixation CSVs get an `eyes_used` column.
+- **Not covered:** `gaze_x`/`gaze_y` in the raw gaze CSV still average both eyes, so raw-gaze
+  analyses don't yet follow `eyes_used`; I2MC also still ignores mid-block forced recalibrations
+  (`lb_forced_validation_*`, `key_forced_validation_*`), as before.
