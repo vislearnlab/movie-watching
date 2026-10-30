@@ -1,0 +1,21 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+slow_people,prompt,c1,dog face,,0,,,,,,,,,,dog walking toward camera
+slow_people,box,c1,,,,,,0,,,822,515,864,560,dog face far
+slow_people,box,c1,,,,,,193,,,370,488,452,558,dog face incl ears
+slow_people,box,c1,,,,,,258,,,796,480,895,580,dog face close incl ears
+slow_people,exclude,103,,,,,,0,925,475,,,,,hand mask covers whole background cyclist right
+slow_people,exclude,103,,,,,,258,695,440,,,,,hand mask covers whole background cyclist
+slow_people,exclude,103,,,,,,322,845,465,,,,,hand mask covers whole background cyclist
+slow_people,exclude,103,,,,,,387,878,490,,,,,hand mask covers whole background cyclist
+slow_people,box,102,,,,,,323,,,848,360,870,388,right cyclist face; 102 mask covered whole upper body
+slow_people,box,103,,,,,,388,,,520,414,541,434,left cyclist hand; 103 mask covered forearm+handlebar
+slow_people,exclude,103,,,,,,64,505,575,,,,,hand mask on cyclist's bare foot
+slow_people,box,110,,,,,,979,,,1050,622,1105,692,hand gripping wheelbarrow handle (earlier exclude here removed a real hand)
+slow_people,box,110,,,,,,1043,,,170,150,232,212,hand on woodpile; unmasked in iter 3
+slow_people,box,110,,,,,,1108,,,138,240,205,312,hand on woodpile; unmasked in iter 3
+slow_people,box,110,,,,,,1174,,,438,285,495,365,hand on log; only fingertip sliver masked
+slow_people,box,113,,,,,,1628,,,182,180,204,206,left batter glove; 113 mask covered whole leg pad
+slow_people,box,113,,,,,,1564,,,172,155,198,190,left batter glove; 113 mask covered thigh pad
+slow_people,exclude,102,,,,,,323,850,410,,,,,shot 0: faces text track (boy's face f0-f135) jumps onto the cyclists' shirts f315-f449
+slow_people,box,102,,,,,,60,,,806,300,860,366,shot 0: boy's face; re-anchors it after the exclude removes the drifting text track
+slow_people,box,102,,,,,,290,,,750,365,776,392,shot 0: right cyclist face unmasked f290-f323 (f323 box track only starts at f324)

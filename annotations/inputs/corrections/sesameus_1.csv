@@ -1,0 +1,41 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+sesameus_1,box,4,,,,,,142,,,690,75,900,315,muppet face mask only covers eyes+nose
+sesameus_1,box,4,,,,,,239,,,770,90,1110,420,muppet face mask only covers eyes+nose
+sesameus_1,box,10,,,,,,372,,,595,120,800,340,muppet face mask only covers eye+nose in side view
+sesameus_1,prompt,c1,child face,,9,,,,,,,,,,boy beside man at feeder
+sesameus_1,box,c1,,,,,,765,,,638,203,708,297,
+sesameus_1,box,c1,,,,,,813,,,708,193,788,278,
+sesameus_1,prompt,c2,adult face,,9,,,,,,,,,,man bending over children
+sesameus_1,box,c2,,,,,,813,,,715,125,805,210,
+sesameus_1,prompt,c3,hands,,9,,,,,,,,,,child's hand on bucket
+sesameus_1,box,c3,,,,,,765,,,668,365,718,412,
+sesameus_1,exclude,32,,,,,,1201,660,460,,,,,sheep muppet face track on a real sheep head
+sesameus_1,exclude,32,,,,,,1244,860,630,,,,,sheep muppet face track on sheep wool
+sesameus_1,exclude,32,,,,,,1287,915,455,,,,,sheep muppet face track on sheep wool
+sesameus_1,prompt,c4,sheep face,,14,,,,,,,,,,real sheep head behind fence
+sesameus_1,box,c4,,,,,,1201,,,540,405,795,525,
+sesameus_1,box,34,,,,,,1474,,,535,115,700,285,adult face prompt produced no mask in shot 15
+sesameus_1,box,34,,,,,,1536,,,630,90,800,270,adult face prompt produced no mask in shot 15
+sesameus_1,box,37,,,,,,1678,,,185,275,315,390,left girl's face masked as two strips
+sesameus_1,prompt,c5,hands,,17,,,,,,,,,,no hand prompt in shot 17
+sesameus_1,box,c5,,,,,,1678,,,1165,240,1275,300,man's hand on rail
+sesameus_1,box,c5,,,,,,1678,,,175,445,235,505,
+sesameus_1,box,c5,,,,,,1678,,,595,405,645,460,
+sesameus_1,box,c5,,,,,,1678,,,680,575,735,640,
+sesameus_1,text,c4,,none,,,,,,,,,,,sheep face text masks patches of sheep wool in shot 14; keep box only
+sesameus_1,exclude,c998,,,,,,342,918,255,,,,,hand (unlabelled) mask on horse behind fence
+sesameus_1,exclude,c998,,,,,,403,962,300,,,,,hand (unlabelled) mask on horse behind fence
+sesameus_1,exclude,c998,,,,,,403,905,172,,,,,hand (unlabelled) mask on horse ear
+sesameus_1,prompt,c6,hands,,3,,,,,,,,,,man's hands on fence behind muppet (was hand unlabelled)
+sesameus_1,box,c6,,,,,,181,,,1068,288,1128,325,
+sesameus_1,exclude,16,,,,,,718,562,130,,,,,hands mask on a rope beside the bucket
+sesameus_1,box,19a,,,,,,965,,,605,455,730,550,sheep face track spreads over sheep bodies at f973
+sesameus_1,prompt,c7,muppet face,,13,,,,,,,,,,orange muppet face partly visible at top edge
+sesameus_1,box,c7,,,,,,1132,,,635,0,840,110,
+sesameus_1,box,32,,,,,,1417,,,990,410,1200,610,sheep muppet face has no mask at f1417
+sesameus_1,prompt,c8,child face,,17,,,,,,,,,,boy behind boy in blue shirt (was face unlabelled)
+sesameus_1,box,c8,,,,,,1678,,,850,262,912,368,
+sesameus_1,box,c4,,,,,,1287,,,865,415,965,500,c4 sheep face is a sliver on the fence at f1287; sheep head is to the right
+sesameus_1,box,1,,,,,,73,,,235,135,605,560,turkey face mask runs down the bare neck to frame bottom; box head incl snood
+sesameus_1,box,1,,,,,,97,,,268,188,550,578,turkey face mask runs down the bare neck to frame bottom; box head incl snood
+sesameus_1,box,10,,,,,,525,,,645,75,1000,370,muppet face 10 has a stray patch below the head at f525-f556; box the head only

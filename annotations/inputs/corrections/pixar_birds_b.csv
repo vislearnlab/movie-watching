@@ -1,0 +1,57 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+pixar_birds,box,331,,,,,,1993,,,150,125,355,350,dark grey bird face: only beak masked
+pixar_birds,box,331,,,,,,1993,,,848,95,1010,280,dark grey bird face: only beak masked
+pixar_birds,box,331,,,,,,1993,,,950,40,1150,275,dark grey bird face: only beak masked
+pixar_birds,exclude,336,,,,,,2044,400,300,,,,,mask covers bird belly; no face visible
+pixar_birds,exclude,336,,,,,,2044,950,300,,,,,mask covers bird belly; no face visible
+pixar_birds,exclude,336,,,,,,2044,35,200,,,,,mask covers bird belly at left edge; no face visible
+pixar_birds,exclude,341,,,,,,2318,590,580,,,,,small birds faces mask covers big bird's white belly
+pixar_birds,exclude,343,,,,,,2318,930,40,,,,,big bird face mask on small birds at top right
+pixar_birds,box,343,,,,,,2318,,,670,440,865,600,big bird face (beak+eye)
+pixar_birds,box,343,,,,,,2333,,,675,455,915,560,big bird face; beak taken by 341 here
+pixar_birds,box,343,,,,,,2334,,,190,200,960,510,big bird face close-up unmasked in shot 29
+pixar_birds,box,343,,,,,,2379,,,235,110,960,435,big bird face close-up unmasked in shot 29
+pixar_birds,exclude,343,,,,,,2428,375,40,,,,,big bird face mask on small birds
+pixar_birds,exclude,343,,,,,,2428,855,40,,,,,big bird face mask on small birds
+pixar_birds,box,343,,,,,,2398,,,665,430,860,550,upside-down big bird face unmasked
+pixar_birds,box,343,,,,,,2444,,,620,560,815,690,upside-down big bird face unmasked
+pixar_birds,prompt,c50,small birds faces,face,30,,,,,,,,,,small birds on wire facing camera; no face prompt in shot 30
+pixar_birds,include,c50,,,,,,2398,262,30,,,,,
+pixar_birds,include,c50,,,,,,2398,320,58,,,,,
+pixar_birds,include,c50,,,,,,2398,375,82,,,,,
+pixar_birds,include,c50,,,,,,2398,430,110,,,,,
+pixar_birds,include,c50,,,,,,2398,478,125,,,,,
+pixar_birds,include,c50,,,,,,2398,530,150,,,,,
+pixar_birds,include,c50,,,,,,2398,650,160,,,,,
+pixar_birds,include,c50,,,,,,2398,700,135,,,,,
+pixar_birds,include,c50,,,,,,2398,752,135,,,,,
+pixar_birds,include,c50,,,,,,2398,815,100,,,,,
+pixar_birds,include,c50,,,,,,2398,860,80,,,,,
+pixar_birds,include,c50,,,,,,2398,898,55,,,,,
+pixar_birds,include,c50,,,,,,2398,962,30,,,,,
+pixar_birds,exclude,c50,,,,,,2398,810,505,,,,,big bird face belongs to 343
+pixar_birds,exclude,345,,,,,,2527,650,40,,,,,small birds seen from below; bellies/feet only
+pixar_birds,box,344,,,,,,2527,,,578,572,755,690,big bird face; beak missing from mask
+pixar_birds,box,350,,,,,,2615,,,250,0,720,480,dark bird face unmasked
+pixar_birds,box,350,,,,,,2615,,,690,0,1000,370,dark bird face unmasked
+pixar_birds,box,350,,,,,,2615,,,1020,0,1260,200,bird beak/face at top right unmasked
+pixar_birds,box,331,,,,,,1906,,,342,427,380,477,dark grey small bird face unmasked (left group)
+pixar_birds,box,331,,,,,,1906,,,382,440,424,494,dark grey small bird face unmasked (left group)
+pixar_birds,exclude,333,,,,,,1925,430,535,,,,,big bird face text track on dark grey small bird
+pixar_birds,exclude,333,,,,,,1925,487,565,,,,,big bird face text track on dark grey small bird
+pixar_birds,prompt,c51,small birds faces,none,24,,,,,,,,,,beaks (lower faces) seen from below; box-only so text cannot grab bellies
+pixar_birds,box,c51,,,,,,2044,,,238,0,570,232,left bird beak
+pixar_birds,box,c51,,,,,,2044,,,812,0,1140,222,right bird beak
+pixar_birds,exclude,343,,,,,,2318,995,22,,,,,big bird face text track on small bird at top right
+pixar_birds,box,341,,,,,,2318,,,960,0,1030,55,small bird face at top right (was labelled big bird face)
+pixar_birds,prompt,c52,small birds faces,none,30,,,,,,,,,,dark grey small birds on wire unmasked; c50 clicks on them did not take
+pixar_birds,box,c52,,,,,,2398,,,447,88,500,152,dark grey small bird face
+pixar_birds,box,c52,,,,,,2398,,,722,85,782,150,dark grey small bird face
+pixar_birds,box,c52,,,,,,2398,,,825,40,882,112,dark grey small bird face
+pixar_birds,box,345,,,,,,2471,,,880,0,1260,390,dark bird face: only beak masked
+pixar_birds,box,345,,,,,,2471,,,0,0,295,400,left bird face: beak and eyes masked separately
+pixar_birds,exclude,354,,,,,,2992,735,560,,,,,big bird face mask on plucked body
+pixar_birds,box,c52,,,,,,2413,,,565,130,628,210,shot 30 dark grey small bird with orange beak below centre of wire unmasked
+pixar_birds,prompt,c200,small birds faces,none,35,,,,,,,,,,dark grey bird face in front (closed eyes + orange beak) unmasked at f2610-f2617
+pixar_birds,box,c200,,,,,,2613,,,500,0,1040,480,dark grey bird face unmasked
+pixar_birds,box,c200,,,,,,2617,,,560,0,1060,440,dark grey bird face unmasked

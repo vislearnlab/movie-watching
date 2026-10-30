@@ -1,0 +1,3 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+slow_inanimate,prompt,c1,adult face,,3,,,,,,,,,,train driver in locomotive cab window; about 20 px
+slow_inanimate,box,c1,,,,,,1250,,,1030,336,1054,366,

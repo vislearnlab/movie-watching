@@ -1,0 +1,10 @@
+torch
+pandas>=2.3.3
+opencv-python==4.11.0.86
+numpy>=2.2.6
+setuptools==77.0.3
+einops
+pycocotools
+python-dotenv
+pillow
+pytest

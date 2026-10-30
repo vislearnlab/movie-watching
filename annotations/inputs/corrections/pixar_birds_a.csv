@@ -1,0 +1,75 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+pixar_birds,box,298,,,,,,250,,,195,340,345,525,shot 0 left bird only beak masked
+pixar_birds,box,298,,,,,,400,,,120,325,255,490,shot 0 left bird only beak masked
+pixar_birds,box,298,,,,,,400,,,1010,370,1200,565,shot 0 right bird mask covers whole body
+pixar_birds,box,298,,,,,,600,,,205,460,312,565,shot 0 beak-only mask
+pixar_birds,box,298,,,,,,600,,,380,465,492,570,shot 0 beak-only mask
+pixar_birds,box,298,,,,,,600,,,853,472,965,572,shot 0 beak-only mask
+pixar_birds,box,298,,,,,,600,,,1000,472,1105,572,shot 0 beak-only mask
+pixar_birds,prompt,c1,small birds faces,,7,,,,,,,,,,shot 7 has no prompt; 4 small birds on wire
+pixar_birds,box,c1,,,,,,1098,,,20,340,215,520,
+pixar_birds,box,c1,,,,,,1098,,,345,340,555,535,
+pixar_birds,box,c1,,,,,,1098,,,690,355,875,525,
+pixar_birds,box,c1,,,,,,1098,,,960,345,1150,525,
+pixar_birds,box,c1,,,,,,1136,,,40,345,250,530,
+pixar_birds,box,c1,,,,,,1136,,,405,372,625,570,
+pixar_birds,box,c1,,,,,,1136,,,810,352,1010,535,
+pixar_birds,prompt,c2,big bird face,,8,,,,,,,,,,big bird on pole ~30px; small birds <15px
+pixar_birds,box,c2,,,,,,1176,,,143,185,178,217,
+pixar_birds,box,317,,,,,,1233,,,110,395,310,560,beak-only mask
+pixar_birds,box,317,,,,,,1287,,,0,410,150,590,eye-only mask
+pixar_birds,box,317,,,,,,1287,,,155,405,345,590,beak-only mask
+pixar_birds,window,325,,,11,,,,,,,,,,big bird face prompt leaks onto small birds in shots 12-13
+pixar_birds,box,325,,,,,,1469,,,488,55,690,202,big bird face mask is beak only
+pixar_birds,box,325,,,,,,1487,,,595,185,720,355,big bird face mask is beak only
+pixar_birds,box,325,,,,,,1505,,,620,270,800,420,big bird face mask is beak only
+pixar_birds,box,321,,,,,,1397,,,485,485,600,585,partial mask
+pixar_birds,box,321,,,,,,1397,,,1115,490,1240,595,partial mask
+pixar_birds,box,321,,,,,,1433,,,100,488,215,585,partial mask
+pixar_birds,box,321,,,,,,1433,,,1110,488,1240,590,partial mask
+pixar_birds,box,322,,,,,,1532,,,470,55,715,340,small bird was labelled 325 big bird face
+pixar_birds,box,322,,,,,,1540,,,0,40,165,460,small bird at left edge unmasked
+pixar_birds,box,322,,,,,,1572,,,5,345,145,465,small bird labelled 327 big bird face
+pixar_birds,box,322,,,,,,1572,,,205,488,330,605,small bird labelled 327 big bird face
+pixar_birds,box,327,,,,,,1579,,,1010,220,1280,670,big bird face labelled 322 small birds faces
+pixar_birds,box,322,,,,,,1585,,,775,270,1100,720,small bird labelled 327 big bird face
+pixar_birds,box,327,,,,,,1585,,,1115,25,1280,500,big bird face labelled 322
+pixar_birds,box,327,,,,,,1600,,,0,0,210,300,big bird face labelled 322
+pixar_birds,box,327,,,,,,1609,,,0,0,300,495,big bird face labelled 322
+pixar_birds,box,322,,,,,,1600,,,665,265,1000,600,blurred small bird unmasked
+pixar_birds,box,327,,,,,,1617,,,575,115,695,275,big bird face labelled 326 small birds faces
+pixar_birds,box,332,,,,,,1814,,,592,365,708,458,big bird face labelled 331 small birds faces
+pixar_birds,exclude,332,,,,,,1814,450,460,,,,,332 big bird face mask covers left row of small birds
+pixar_birds,exclude,332,,,,,,1814,850,440,,,,,332 big bird face mask covers right row of small birds
+pixar_birds,box,331,,,,,,1814,,,340,375,390,445,small bird in row
+pixar_birds,box,331,,,,,,1814,,,375,392,423,465,small bird in row
+pixar_birds,box,331,,,,,,1814,,,410,412,453,485,small bird in row
+pixar_birds,box,331,,,,,,1814,,,447,427,493,498,small bird in row
+pixar_birds,box,331,,,,,,1814,,,485,440,525,515,small bird in row
+pixar_birds,box,331,,,,,,1814,,,515,462,555,530,small bird in row
+pixar_birds,box,331,,,,,,1814,,,550,480,590,555,small bird in row
+pixar_birds,box,331,,,,,,1814,,,670,482,715,565,small bird in row
+pixar_birds,box,331,,,,,,1814,,,705,465,750,540,small bird in row
+pixar_birds,box,331,,,,,,1814,,,740,450,785,522,small bird in row
+pixar_birds,box,331,,,,,,1814,,,775,430,820,500,small bird in row
+pixar_birds,box,331,,,,,,1814,,,810,412,853,483,small bird in row
+pixar_birds,box,331,,,,,,1814,,,840,390,885,465,small bird in row
+pixar_birds,box,331,,,,,,1814,,,870,367,918,445,small bird in row
+pixar_birds,box,331,,,,,,1814,,,910,350,968,423,small bird in row
+pixar_birds,box,298,,,,,,459,,,0,355,150,510,shot 0 left bird mask covers whole body incl. feet
+pixar_birds,box,298,,,,,,551,,,50,455,172,548,shot 0 left bird mask covers whole body incl. feet
+pixar_birds,box,298,,,,,,551,,,672,455,775,545,shot 0 bird mask covers beak only
+pixar_birds,box,298,,,,,,643,,,688,462,785,548,shot 0 bird mask covers beak only
+pixar_birds,box,298,,,,,,643,,,170,460,285,555,shot 0 bird mask covers whole body incl. feet
+pixar_birds,box,322,,,,,,1535,,,505,150,775,445,shot 12 white-headed bird still beak+one eye after f1532 box
+pixar_birds,exclude,327,,,,,,1531,5,50,,,,,shot 12 big bird face on small bird at left edge
+pixar_birds,exclude,327,,,,,,1552,60,450,,,,,shot 12 big bird face on small bird at left edge
+pixar_birds,box,322,,,,,,1552,,,0,300,180,580,shot 12 small bird at left edge (was labelled 327)
+pixar_birds,box,322,,,,,,1572,,,1055,360,1140,465,shot 13 blurred small bird at right unmasked
+pixar_birds,box,322,,,,,,1599,,,715,125,1000,440,shot 13 small bird mask includes feet
+pixar_birds,box,327,,,,,,1599,,,0,0,205,165,shot 13 big bird beak at top-left unmasked
+pixar_birds,box,327,,,,,,1604,,,0,185,260,720,shot 14 big bird face mask is beak only (eyes missing)
+pixar_birds,box,327,,,,,,1606,,,0,180,295,720,shot 14 big bird face mask is beak only (eyes missing)
+pixar_birds,box,331,,,,,,1887,,,235,40,680,480,shot 21 small bird mask covers whole body
+pixar_birds,box,331,,,,,,1892,,,150,10,620,430,shot 21 small bird mask covers whole body incl. legs
+pixar_birds,box,327,,,,,,1602,,,0,95,240,575,shot 14 big bird face beak only at f1602 (eyes unmasked); f1604 box fixed later frames

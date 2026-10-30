@@ -1,0 +1,19 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+frank_complex,exclude,121A,,,,,,338,435,215,,,,,shot 2: hand track (click_box obj) drifts from foreground hand onto the boy's face
+frank_complex,box,121,,,,,,338,,,395,200,510,298,boy's face (profile) was masked by the hands prompt; give it to faces (tightened: earlier box took the whole head incl. hair)
+frank_complex,exclude,141,,,,,,1031,298,360,,,,,shot 8: hands mask on the boy's bare foot
+frank_complex,exclude,144,,,,,,1072,433,277,,,,,shot 8: hands mask on the boy's bare foot
+frank_complex,box,150,,,,,,1300,,,285,140,565,425,shot 11: boy's face mask covers whole head incl. hair; tighten to face+ear
+frank_complex,exclude,154,,,,,,1450,780,437,,,,,shot 12: hands mask on the glass bowl rim
+frank_complex,box,121,,,,,,320,,,412,330,518,448,shot 2: boy's face mask covers whole head incl. hair; face only
+frank_complex,box,121,,,,,,374,,,92,50,248,202,shot 2: boy's face mask covers whole head incl. hair; face only
+frank_complex,box,121A,,,,,,320,,,1205,545,1272,612,shot 2: lying woman's hand; hands mask covers her forearm
+frank_complex,box,121A,,,,,,338,,,712,618,805,695,shot 2: hand with ring unmasked while hands mask sits on the sleeve next to it
+frank_complex,box,119,,,,,,174,,,185,420,400,658,shot 1: adult hand mask covers the whole forearm; hand only
+frank_complex,box,119,,,,,,230,,,185,425,400,645,shot 1: adult hand mask covers the whole forearm; hand only
+frank_complex,box,128,,,,,,571,,,805,95,1278,530,shot 4: right girl's face mask includes bangs and hair down the right side
+frank_complex,box,154,,,,,,1450,,,690,0,905,95,shot 12: mother's hand on the bowl; track covers her forearm through the glass
+frank_complex,box,154,,,,,,1450,,,632,372,712,442,shot 12: girl's left fingers holding the bowl unmasked
+frank_complex,box,154,,,,,,1450,,,795,395,895,448,shot 12: girl's right fingers holding the bowl unmasked
+frank_complex,box,153,,,,,,1450,,,300,170,520,445,shot 12: girl's face mask spills onto hair beside the ponytail (x195-300); face only
+frank_complex,box,121A,,,,,,338,,,660,330,728,395,shot 2: raised hand mask runs down the forearm to x590; hand only

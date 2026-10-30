@@ -1,0 +1,65 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+sesameus_2,prompt,c1,child face,,2,,,,,,,,,,wide field shot; no child faces labelled
+sesameus_2,box,c1,,,,,,166,,,1205,252,1245,296,boy striped shirt right
+sesameus_2,box,c1,,,,,,166,,,185,310,228,355,girl pink left
+sesameus_2,box,c1,,,,,,166,,,355,300,398,348,boy brown shirt
+sesameus_2,box,c1,,,,,,166,,,968,258,1008,302,girl flowered dress
+sesameus_2,window,45,,,3,,,,,,,,,,muppet face leaks into shot 2 on boy's hands
+sesameus_2,prompt,c2,llama face,,3,,,,,,,,,,llama behind muppet
+sesameus_2,box,c2,,,,,,268,,,600,370,775,600,
+sesameus_2,box,c2,,,,,,289,,,735,485,915,605,
+sesameus_2,prompt,c3,adult face,,4,,,,,,,,,,background man leaning on fence
+sesameus_2,box,c3,,,,,,306,,,295,20,400,100,
+sesameus_2,box,50a,,,,,,548,,,645,100,910,420,muppet face mask only covers eye/ear patch; box whole fur face
+sesameus_2,text,50,,face,,,,,,,,,,,shot 7 children faces; child and adult face finds none
+sesameus_2,box,53,,,,,,729,,,640,120,1045,435,muppet face mask includes raised paw
+sesameus_2,prompt,c5,hands,,9,,,,,,,,,,hands on hoes unmasked
+sesameus_2,box,c5,,,,,,783,,,95,40,200,135,
+sesameus_2,box,c5,,,,,,783,,,415,100,490,195,
+sesameus_2,box,55,,,,,,856,,,700,150,850,310,adult face unmasked
+sesameus_2,box,55,,,,,,856,,,85,235,140,300,girl face left unmasked
+sesameus_2,prompt,c6,hands,,10,,,,,,,,,,no hand prompt in shot
+sesameus_2,box,c6,,,,,,856,,,565,240,640,330,
+sesameus_2,box,c6,,,,,,856,,,715,400,810,505,
+sesameus_2,box,63,,,,,,1013,,,900,100,1080,340,muppet face missing first half of shot
+sesameus_2,prompt,c7,hands,,14,,,,,,,,,,no hand prompt in shot
+sesameus_2,box,c7,,,,,,1221,,,675,475,745,545,
+sesameus_2,prompt,c8,goat face,,16,,,,,,,,,,goat behind muppet
+sesameus_2,box,72,,,,,,1481,,,530,240,742,425,hand mask covers whole sleeved forearm
+sesameus_2,prompt,c9,hands,,19,,,,,,,,,,no hand prompt in shot
+sesameus_2,box,c9,,,,,,1589,,,180,420,262,525,
+sesameus_2,box,c9,,,,,,1589,,,685,185,795,280,
+sesameus_2,box,c8,,,,,,1412,,,635,435,710,512,
+sesameus_2,box,69,,,,,,1384,,,735,195,1115,442,muppet face incl right side fur; old box x0=568 grabbed goat head as left ear
+sesameus_2,exclude,45,,,,,,166,670,548,,,,,45 click at 8874ms lands in shot 2 on boy hand
+sesameus_2,prompt,c10,adult face,,2,,,,,,,,,,man on tractor
+sesameus_2,box,c10,,,,,,166,,,484,177,514,209,
+sesameus_2,prompt,c11,hands,,6,,,,,,,,,,girl hands unlabelled
+sesameus_2,box,c11,,,,,,548,,,388,586,538,690,
+sesameus_2,box,c11,,,,,,548,,,253,650,368,720,
+sesameus_2,prompt,c12,adult face,,6,,,,,,,,,,background man behind fence
+sesameus_2,box,c12,,,,,,487,,,442,6,503,43,
+sesameus_2,prompt,c13,hands,,8,,,,,,,,,,background person hand on fence
+sesameus_2,box,c13,,,,,,729,,,713,18,764,74,
+sesameus_2,prompt,c14,hands,,7,,,,,,,,,,kids hands unlabelled
+sesameus_2,box,c14,,,,,,658,,,1048,156,1147,224,
+sesameus_2,box,c14,,,,,,658,,,852,362,974,462,
+sesameus_2,prompt,c15,child face,,12,,,,,,,,,,background kids faces unlabelled
+sesameus_2,box,c15,,,,,,1067,,,502,204,543,243,
+sesameus_2,box,c15,,,,,,1067,,,1174,190,1213,221,
+sesameus_2,prompt,c16,child face,,14,,,,,,,,,,background kids faces unlabelled
+sesameus_2,box,c16,,,,,,1221,,,1120,203,1170,237,
+sesameus_2,box,c16,,,,,,1221,,,533,163,567,197,
+sesameus_2,exclude,72,,,,,,1445,490,40,,,,,text hand track covers whole sleeved forearm
+sesameus_2,exclude,78,,,,,,1637,612,95,,,,,stray child face blob on girl hair
+sesameus_2,exclude,c9,,,,,,1601,357,180,,,,,hand mask on red shirt shoulder
+sesameus_2,box,50a,,,,,,499,,,645,80,900,400,muppet face mask only eyes+nose off the f548 box frame; add snout fur
+sesameus_2,box,50a,,,,,,573,,,690,100,920,420,muppet face mask only eyes+nose; add snout fur
+sesameus_2,box,c8,,,,,,1384,,,605,210,750,365,goat head behind muppet (was inside 69 mask)
+sesameus_2,prompt,c17,hands,,4,,,,,,,,,,background man's hand on fence top (was hand unlabelled)
+sesameus_2,box,c17,,,,,,361,,,555,52,638,96,
+sesameus_2,exclude,c999,,,,,,917,752,384,,,,,face (unlabelled) track on man's arm/elbow (not a face)
+sesameus_2,exclude,c16,,,,,,1221,1268,700,,,,,child face track on blurry object at bottom-right corner f1221-f1232
+sesameus_2,prompt,c18,hands,,20,,,,,,,,,,girl's fingertips at bottom edge (was hand unlabelled)
+sesameus_2,box,c18,,,,,,1674,,,366,696,406,720,
+sesameus_2,exclude,c998,,,,,,60,547,717,,,,,hand (unlabelled) 111 px strip at bottom edge on jacket/animal; no hand visible

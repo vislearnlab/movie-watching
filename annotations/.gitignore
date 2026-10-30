@@ -1,0 +1,6 @@
+output/
+.env
+**/__pycache__/
+.pytest_cache/
+sam3
+SKILLS.md

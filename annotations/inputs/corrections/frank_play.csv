@@ -1,0 +1,35 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+frank_play,prompt,c1,hands,,0,,,,,,,,,,shot 0: no hands prompt; girl's two hands on the piano unmasked
+frank_play,box,c1,,,,,,53,,,540,265,595,315,right hand on piano lid
+frank_play,box,c1,,,,,,53,,,360,360,412,432,left hand on piano side
+frank_play,window,189a,,,7,,,,,,,,,,shot 7: extend so one face prompt covers the whole shot
+frank_play,text,189a,,face,,,,,,,,,,,shot 7: only the girl's face; child face finds nothing (no face mask at all)
+frank_play,box,189a,,,,,,655,,,490,110,810,475,girl's face (unoccluded)
+frank_play,box,189a,,,,,,690,,,440,110,770,420,girl's face behind flower
+frank_play,box,191b,,,,,,753,,,525,180,695,470,shot 8: hand mask covers whole forearm; tighten to hand
+frank_play,box,191b,,,,,,753,,,695,165,900,480,shot 8: second hand holding tissue unmasked
+frank_play,box,191a,,,,,,753,,,520,180,690,460,shot 8 iter2: 191a mask still on whole forearm; tight box on left hand (191b boxes lost to 191b's exclude click at f727)
+frank_play,box,191a,,,,,,775,,,480,225,655,470,shot 8: left hand only
+frank_play,prompt,c2,hands,none,8,,,,,,,,,,shot 8: right hand holding tissue still unmasked (191b box tracks dropped by its inherited exclude click)
+frank_play,box,c2,,,,,,753,,,690,160,895,470,right hand holding tissue
+frank_play,box,c2,,,,,,775,,,655,210,865,500,right hand holding tissue
+frank_play,exclude,207,,,,,,1053,556,668,,,,,shot 12: hands mask on poncho fold at bottom
+frank_play,box,207,,,,,,1053,,,590,340,715,505,shot 12: left glove holding handle only partly masked
+frank_play,text,213a,,none,,,,,,,,,,,shot 15: hand text grabs forearms and cymbals; keep boxes only
+frank_play,box,213a,,,,,,1236,,,535,105,820,495,shot 15: left hand (mask was ok)
+frank_play,box,213a,,,,,,1236,,,980,140,1180,470,shot 15: right hand without forearm
+frank_play,box,213a,,,,,,1366,,,325,180,515,385,shot 15: left hand on cymbal
+frank_play,box,213a,,,,,,1366,,,870,180,1035,480,shot 15: right hand without wrist/forearm
+frank_play,box,212,,,,,,1323,,,275,55,995,535,shot 15: face mask includes hair; tight box incl. ears
+frank_play,box,212,,,,,,1366,,,540,70,860,495,shot 15: face between cymbals without hair
+frank_play,exclude,c998,,,,,,1323,80,640,,,,,shot 15: cymbal at bottom-left is not a hand
+frank_play,exclude,c998,,,,,,1323,1240,640,,,,,shot 15: cymbal at bottom-right is not a hand
+frank_play,box,175,,,,,,298,,,92,443,160,518,shot 2: hands prompt has no masks; child face track 173 covers both hands - left hand on chair back
+frank_play,box,175,,,,,,298,,,294,467,338,508,shot 2: right hand on chair back
+frank_play,box,175,,,,,,317,,,76,486,162,580,shot 2: left hand on chair back
+frank_play,box,175,,,,,,317,,,280,430,320,476,shot 2: right hand on chair back
+frank_play,box,175,,,,,,340,,,418,683,522,720,shot 2: hand at bottom edge on chair seat
+frank_play,box,173,,,,,,253,,,515,90,710,262,shot 2: frontal face; replaces the child face track that also covers neck and both hands
+frank_play,box,173,,,,,,317,,,515,95,690,265,shot 2: profile face incl. ear; no neck or hands
+frank_play,box,212,,,,,,1257,,,625,0,895,400,shot 15: face visible between hand and cymbal but unmasked (face mask missing on alternate frames f1238-f1301)
+frank_play,box,212,,,,,,1345,,,480,85,830,520,shot 15: face mask misses eyes and forehead f1343-f1366

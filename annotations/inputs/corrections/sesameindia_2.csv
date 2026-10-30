@@ -1,0 +1,25 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+sesameindia_2,prompt,c1,hands,,14,,,,,,,,,,two girls' raised hands at bottom of frame
+sesameindia_2,box,c1,,,,,,1517,,,695,605,815,719,left hand
+sesameindia_2,box,c1,,,,,,1517,,,1195,570,1279,719,right hand
+sesameindia_2,prompt,c2,muppet hand,,0,,,,,,,,,,Grover's blue hand at bottom of frame
+sesameindia_2,box,c2,,,,,,87,,,755,605,855,719,
+sesameindia_2,box,c2,,,,,,262,,,680,630,765,719,
+sesameindia_2,prompt,c3,hands,,12,,,,,,,,,,yellow-shirt girl's hand
+sesameindia_2,box,c3,,,,,,1284,,,895,595,1025,700,
+sesameindia_2,box,283,,,,,,913,,,300,235,615,540,hand mask includes forearm
+sesameindia_2,box,291,,,,,,1242,,,255,255,500,478,muppet face mask includes Grover's arm
+sesameindia_2,box,291,,,,,,1327,,,190,170,395,395,muppet face mask includes Grover's arm
+sesameindia_2,box,293,,,,,,1371,,,200,165,615,535,whole blue fur head incl. sleep mask (iter2: widened; x0=300 cut off back of head)
+sesameindia_2,box,293,,,,,,1483,,,165,140,595,505,whole blue fur head incl. sleep mask (iter2: raised y0 from 205)
+sesameindia_2,box,293,,,,,,1427,,,205,185,615,545,whole blue fur head incl. sleep mask; back of head left of strap missing
+sesameindia_2,prompt,c4,hands,,11,,,,,,,,,,girl's hands (were hand (unlabelled))
+sesameindia_2,box,c4,,,,,,1135,,,405,580,450,640,girl's right hand
+sesameindia_2,box,c4,,,,,,1135,,,578,590,610,640,girl's left hand
+sesameindia_2,box,c4,,,,,,1147,,,128,565,232,645,right hand swung out (motion blur)
+sesameindia_2,exclude,c999,,,,,,1020,982,62,,,,,tiny faces in wall photo frame (<20 px)
+sesameindia_2,exclude,c999,,,,,,1020,877,90,,,,,tiny faces in wall photo frame (<20 px)
+sesameindia_2,exclude,c999,,,,,,1020,860,89,,,,,tiny faces in wall photo frame (<20 px)
+sesameindia_2,exclude,c999,,,,,,1020,955,75,,,,,tiny faces in wall photo frame (<20 px)
+sesameindia_2,exclude,c999,,,,,,1020,890,95,,,,,tiny faces in wall photo frame (<20 px)
+sesameindia_2,exclude,c999,,,,,,1020,902,87,,,,,tiny faces in wall photo frame (<20 px)

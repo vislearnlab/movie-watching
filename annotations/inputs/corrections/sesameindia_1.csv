@@ -1,0 +1,24 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+sesameindia_1,text,267B,,face,,,,,,,,,,,shot 23 only: 3 dancing girls; child face finds none
+sesameindia_1,box,267B,,,,,,1375,,,298,82,390,176,left girl face
+sesameindia_1,box,267B,,,,,,1375,,,610,118,670,202,middle girl face (iter2: tightened to exclude hair; old box seeded hair ring)
+sesameindia_1,box,267B,,,,,,1375,,,903,95,988,190,right girl face (iter2: tightened to exclude hair; old box seeded hair ring)
+sesameindia_1,prompt,c1,muppet hand,,1,,,,,,,,,,Grover hands (pen hand + hand resting on table) unmasked in shot 1
+sesameindia_1,box,c1,,,,,,60,,,960,455,1075,575,Grover right hand holding pen
+sesameindia_1,box,c1,,,,,,60,,,555,510,670,590,Grover left hand on table
+sesameindia_1,box,235,,,,,,757,,,1090,15,1280,345,right-edge boy face (iter2: y1 265->345; old box cut off mouth and chin)
+sesameindia_1,box,239,,,,,,838,,,0,325,160,520,blurry foreground hand mask covers forearm to frame bottom
+sesameindia_1,box,267B,,,,,,1390,,,620,92,678,175,middle girl face refine (face only no hair)
+sesameindia_1,box,267B,,,,,,1390,,,910,88,990,180,right girl face refine (face only no hair)
+sesameindia_1,include,267B,,,,,,1375,640,160,,,,,middle girl face centre
+sesameindia_1,include,267B,,,,,,1375,945,140,,,,,right girl face centre
+sesameindia_1,box,235,,,,,,768,,,1075,5,1280,365,right-edge boy face incl mouth+chin (not neck)
+sesameindia_1,exclude,267C,,,,,,940,1210,160,,,,,children faces grabs tiny painted mural figure face top right
+sesameindia_1,exclude,c999,,,,,,1050,1210,160,,,,,face (unlabelled) on painted mural figure (shot 17)
+sesameindia_1,exclude,c999,,,,,,1140,1210,160,,,,,face (unlabelled) on painted mural figure (shot 19)
+sesameindia_1,exclude,c999,,,,,,1096,1015,640,,,,,face (unlabelled) on blurry edge of boy's head (shot 18)
+sesameindia_1,prompt,c2,hands,,20,,,,,,,,,,left child's hand at bottom-left frame edge (was hand unlabelled)
+sesameindia_1,box,c2,,,,,,1270,,,0,695,32,720,
+sesameindia_1,box,239,,,,,,816,,,48,398,142,446,left boy's hand on table unmasked
+sesameindia_1,prompt,c3,hands,,12,,,,,,,,,,blurry foreground hand sweeping across bottom-left (f829-f836) unmasked
+sesameindia_1,box,c3,,,,,,829,,,0,390,450,705,blurry foreground hand

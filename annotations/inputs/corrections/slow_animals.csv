@@ -1,0 +1,30 @@
+video,kind,prompt_idx,prompt_name,sam_text,shot,start_s,end_s,frame,x,y,x0,y0,x1,y1,note
+slow_animals,prompt,c1,turtle face,,0,,,,,,,,,,sea turtle head; hidden when swimming away early in shot
+slow_animals,box,c1,,,,,,259,,,860,296,962,362,
+slow_animals,box,c1,,,,,,311,,,996,392,1050,456,
+slow_animals,prompt,c2,horse face,,1,,,,,,,,,,white horse in foreground
+slow_animals,box,c2,,,,,,416,,,405,215,530,548,head down eating hay
+slow_animals,box,c2,,,,,,573,,,438,85,562,405,
+slow_animals,box,c2,,,,,,677,,,990,42,1195,372,
+slow_animals,prompt,c3,horse face,,1,,,,,,,,,,brown horse grazing in background
+slow_animals,box,c3,,,,,,573,,,868,376,912,474,
+slow_animals,prompt,c4,bird face,,2,,,,,,,,,,male manakin perched left
+slow_animals,box,c4,,,,,,1043,,,330,474,360,502,
+slow_animals,prompt,c5,bird face,,2,,,,,,,,,,green female bird
+slow_animals,box,c5,,,,,,1043,,,678,482,706,506,
+slow_animals,prompt,c6,bird face,,2,,,,,,,,,,male manakin perched right
+slow_animals,box,c6,,,,,,1043,,,1010,398,1046,428,
+slow_animals,prompt,c7,penguin face,,3,,,,,,,,,,left foreground penguin
+slow_animals,box,c7,,,,,,1148,,,718,436,774,470,
+slow_animals,prompt,c8,penguin face,,3,,,,,,,,,,middle foreground penguin
+slow_animals,box,c8,,,,,,1148,,,812,420,870,460,
+slow_animals,prompt,c9,penguin face,,3,,,,,,,,,,right foreground penguin
+slow_animals,box,c9,,,,,,1148,,,862,412,914,456,
+slow_animals,prompt,c10,penguin face,,3,,,,,,,,,,penguin on rocks behind the group
+slow_animals,box,c10,,,,,,1148,,,990,325,1020,356,
+slow_animals,text,c1,,none,,,,,,,,,,,text tracks mask the front flipper (f174-344) and rear flipper (f347-360); the box track alone covers the head all shot
+slow_animals,prompt,c11,bird face,,2,,,,,,,,,,second male manakin on upper vines; c4 track hops between it and the perched male
+slow_animals,box,c11,,,,,,806,,,300,220,380,265,
+slow_animals,box,c11,,,,,,897,,,205,272,272,335,
+slow_animals,box,c11,,,,,,1040,,,345,150,445,205,
+slow_animals,box,c4,,,,,,806,,,545,480,612,522,anchor perched male; c4 was on the upper male here
