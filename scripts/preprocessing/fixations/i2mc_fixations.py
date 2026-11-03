@@ -8,8 +8,9 @@ eye-tracking sessions, which we have here (adults, infants, and kids).
 
 Per trial, builds an I2MC input frame from left/right eye pixel coordinates
 (NaN where left_valid/right_valid == 0), runs I2MC, and writes one row per
-detected fixation. If the block's calibration was accepted on one eye only
-(validation_summary eyes_used = left/right), only that eye is used.
+detected fixation. Both eyes are used whenever their averaged calibration error
+is <= max_calibration_deg; only if it isn't, and the experiment accepted one eye
+(validation_summary eyes_used = left/right), is that eye used alone.
 
 Outputs
 -------
@@ -178,18 +179,24 @@ def compute_param_code(params: dict) -> str:
 def find_participant_files(pdir: str) -> dict:
     csvs = glob.glob(os.path.join(pdir, "*.csv"))
     files = {"gaze": None, "trial_order": None, "validation_summary": None}
-    for f in csvs:
+    trial_orders = []
+    for f in sorted(csvs):
         bn = os.path.basename(f)
         if bn.startswith("."):
             continue
         if bn.endswith("_trial_order.csv"):
-            files["trial_order"] = f
+            trial_orders.append(f)
         elif bn.endswith("_validation_summary.csv"):
             files["validation_summary"] = f
         elif bn.endswith("_validation.csv"):
             pass
         elif bn.endswith(".csv"):
             files["gaze"] = f
+    # A restarted session leaves an extra trial_order; use the one from the same session as the gaze/summary file
+    session = files["gaze"] or files["validation_summary"]
+    stem = os.path.basename(session).rsplit(".csv")[0].removesuffix("_validation_summary") if session else None
+    matching = [f for f in trial_orders if stem and os.path.basename(f) == f"{stem}_trial_order.csv"]
+    files["trial_order"] = (matching or trial_orders or [None])[-1]
     return files
 
 
@@ -205,16 +212,17 @@ def read_csv_multi_encoding(path: str) -> pd.DataFrame | None:
 # ── block calibration (mirrors scripts/preprocessing/qc/dataQC_check.py's ──
 # parse_validation_summary + map_blocks_to_validations)
 
-def compute_block_calibration(trial_order_df: pd.DataFrame, validation_summary_df: pd.DataFrame) -> dict:
+def compute_block_calibration(trial_order_df: pd.DataFrame, validation_summary_df: pd.DataFrame,
+                              max_deg: float = MAX_CALIBRATION_DEG) -> dict:
     """Calibration accuracy and eyes to analyze for each block_index, from
     the last validation attempt before that block started (block 0 uses the
     last pre_validation attempt; later blocks use the last attempt of
     block_validation_trial{first_trial_of_block}_*).
 
     Accuracy is the mean error in degrees over the 5 validation points,
-    averaged over both eyes -- or for the accepted eye only, when the
-    experiment logged a 1-eye calibration (eyes_used = left/right). Older
-    summaries without eyes_used are treated as both eyes.
+    averaged over both eyes. Only if that average is > max_deg and the
+    experiment accepted one eye (eyes_used = left/right) is that eye's
+    accuracy used instead. Summaries without eyes_used are treated as both.
 
     Single validation per block, same as dataQC_check.py -- does not yet
     handle mid-block recalibration (see that file's TODO). Returns
@@ -225,11 +233,12 @@ def compute_block_calibration(trial_order_df: pd.DataFrame, validation_summary_d
     val_cal = {}
     for _, row in mean_rows.iterrows():
         eyes = row.get("eyes_used")
-        eyes = eyes if eyes in ("left", "right") else "both"
-        if eyes == "both":
-            deg = (row["Mean_accuracy_degrees_left"] + row["Mean_accuracy_degrees_right"]) / 2
-        else:
+        deg = (row["Mean_accuracy_degrees_left"] + row["Mean_accuracy_degrees_right"]) / 2
+        # 1-eye fallback only when the binocular average fails (METHODS_DECISIONS.md, 2026-11-03)
+        if eyes in ("left", "right") and not round(deg, 2) <= max_deg:
             deg = row[f"Mean_accuracy_degrees_{eyes}"]
+        else:
+            eyes = "both"
         val_cal[row["validation_step"]] = (deg, eyes)
 
     def attempt_num(step):
@@ -417,7 +426,7 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
         if files["validation_summary"] is not None:
             val_summary_df = read_csv_multi_encoding(files["validation_summary"])
             if val_summary_df is not None and "point" in val_summary_df.columns:
-                block_calibration = compute_block_calibration(trial_order, val_summary_df)
+                block_calibration = compute_block_calibration(trial_order, val_summary_df, max_calibration_deg)
                 calibration_unknown = False
 
         # Skip trials whose output file already exists, without paying to
