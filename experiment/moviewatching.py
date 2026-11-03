@@ -389,17 +389,19 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
         display_area = eye_tracker.get_display_area()
         screen_width_cm = display_area.width / 10
         screen_height_cm = display_area.height / 10
-        viewing_distance_mm = (
+        # Corner z is the screen plane's offset from the tracker, not the eye-to-screen distance
+        screen_offset_cm = (
             display_area.top_left[2] + 
             display_area.top_right[2] + 
             display_area.bottom_left[2] + 
             display_area.bottom_right[2]
-        ) / 4
-        viewing_distance_cm = viewing_distance_mm / 10
+        ) / 4 / 10
+        viewing_distance_cm = config_data["display"]["viewing_distance_cm"]
 
         logger.info(f"Screen width: {screen_width_cm} cm")
         logger.info(f"Screen height: {screen_height_cm} cm")
-        logger.info(f"Viewing distance: {viewing_distance_cm} cm")
+        logger.info(f"Screen-to-tracker offset (display area z): {screen_offset_cm} cm")
+        logger.info(f"Viewing distance (config): {viewing_distance_cm} cm")
     except Exception as e:
         log_exception(logger, e, "getting display area information")
         raise

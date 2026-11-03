@@ -16,3 +16,6 @@ trial_config:
   away_time: 20
 reuse_session:
   time_delta_hours: 1
+display:
+  # Eye-to-screen distance for PsychoPy deg<->pix conversions (Tobii display-area z is the screen-to-tracker offset, not this)
+  viewing_distance_cm: 70
