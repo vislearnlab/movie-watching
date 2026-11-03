@@ -19,8 +19,10 @@ for other analyses (e.g. `scripts/analysis/`) going forward. Newest at bottom.
   may vary slightly by session/machine. We're using one fixed nominal value for all
   degrees-of-visual-angle calculations rather than per-session values.
 - **Open question for user:** if you have the exact monitor model (e.g. ASUS ProArt PA24xx)
-  or a session log with the logged `screen_width_cm`/`viewing_distance_cm`, let me know and
-  I'll correct this constant.
+  or a session log with the logged `screen_width_cm`, let me know and I'll correct this
+  constant. (Correction 2026-11-03: the logged "Viewing distance" is NOT the eye-to-screen
+  distance — it's the screen's offset from the tracker, ~5 cm; see the 2026-11-03 entry on
+  viewing distance. Don't use it.)
 
 ## 2026-09-25 — Video files used for Task 1 inventory
 
@@ -1721,3 +1723,96 @@ byte-identical).
 - **Not covered:** `gaze_x`/`gaze_y` in the raw gaze CSV still average both eyes, so raw-gaze
   analyses don't yet follow `eyes_used`; I2MC also still ignores mid-block forced recalibrations
   (`lb_forced_validation_*`, `key_forced_validation_*`), as before.
+
+## 2026-10-30 — Backfilling 1-eye vs. 2-eye calibration for data collected before it was logged
+
+- **Decision:** sessions recorded before 2026-10-30 get the same `validation_passed` / `eyes_used` /
+  `outcome` columns in `*_validation_summary.csv`, reconstructed by
+  `scripts/preprocessing/qc/backfill_validation_outcomes.py`. Adults and kids first; infants not yet.
+- **How:** the old experiment decided pass/fail only from the per-point, per-eye accuracies that are
+  already saved, so re-applying the rule in force at the time gives the same verdict. It stopped at the
+  first pass, so each calibration routine's last attempt is the calibration in use (passed on the
+  average → both eyes; on one eye → that eye; failed all retries → both eyes, as it proceeded).
+- **Rule by session date** (from the file name): before 2025-12-12, fail only if either eye's mean error
+  was > 25° (no 1-eye pass existed, so all "both"); from 2025-12-12, the current per-point rule with
+  `config.yaml` thresholds (unchanged since then); baby point counts only for `--baby` sessions from
+  2026-06-02 (not applied to adults/kids).
+- **Ambiguity:** if both eyes passed individually but their average did not, the old code didn't record
+  which eye it relied on; the backfill uses the eye with the lower mean error.
+- **Effect:** superseded 2026-11-03 (next entry): I2MC uses the accepted eye alone only when the
+  both-eyes average fails the ≤ 2° check, so some blocks change inclusion status. Impacted
+  participants/blocks: `documentation/one_eye_calibration_impact.md`
+  (`scripts/preprocessing/qc/summarize_eye_calibration_impact.py`). Original files are backed up to
+  `data/local_cache/validation_summary_backup/` before being rewritten.
+
+## 2026-11-03 — Which eye(s) I2MC analyzes per block, and when a block is excluded
+
+Each block is judged on the last validation before it started (block 0: last `pre_validation_*`;
+later blocks: last `block_validation_trial{first trial}_*`). The analysis criterion is the mean error
+over the validation points ≤ 2° (`MAX_CALIBRATION_DEG`, rounded to 0.01°); the experiment's own
+per-point verdict decides only which single eye may be used as a fallback.
+
+- **Rule:**
+  1. Both-eyes average ≤ 2° → **both eyes**, whatever the experiment decided (both, one eye, or
+     failed and proceeded). Binocular data is preferred even when one eye alone also passes.
+  2. Else, if the experiment accepted one eye (`eyes_used` = left/right) and that eye's mean ≤ 2°
+     → **that eye only**.
+  3. Else → **excluded**. Includes NaN accuracy and a missing `*_validation_summary.csv`.
+- **Not allowed:** falling back to an eye the experiment didn't accept, even if it is ≤ 2° (adults/kids:
+  MW002 b1 right 1.91°, MW022 b3 left 1.92°, MWK03 b1 left 2.00° — all three at the threshold); picking
+  an eye after the fact this way would be a post-hoc choice.
+- **Why both eyes first:** in the 7 adult blocks accepted on one eye whose average still passes, the
+  "rejected" eye mostly missed the experiment's rule by one point (3 instead of 4 of 5 points under
+  1.5°, none over 4°), with mean errors of 1.08–1.50°; only MW027 b0 had a point over 4° (4.93°, eye
+  mean 2.15°, average 1.62°). Averaging both eyes also gives less noisy gaze to I2MC.
+- **Experiment-failed blocks:** blocks whose validation failed every retry, where the experimenter
+  proceeded anyway, are kept if the both-eyes average is ≤ 2° (22 adult/kid blocks), as before. The
+  experiment's per-point rule is an in-session check, not the analysis criterion.
+- **Looser later thresholds:** later-block validations use good < 3° / bad > 6° (block 0: 1.5° / 4°), so
+  a block can pass in the experiment and still fail ≤ 2° (8 adult/kid blocks); those are excluded.
+- **Effect (adults + kids):** 14 blocks were accepted on one eye; 7 are analyzed binocularly (unchanged),
+  4 on one eye (MW021 b1, MW031 b0 and b1, MWK020 b2 — previously excluded), 3 still excluded.
+  `documentation/one_eye_calibration_impact.md`.
+- **MW052 summary rebuilt:** it had no `*_validation_summary.csv` (so was excluded under rule 3), only
+  the raw `*_validation.csv` samples. `scripts/preprocessing/qc/rebuild_validation_summary.py`
+  recomputes each point's accuracy as the mean gaze-to-target angle over its valid samples, from an eye
+  assumed centered 70 cm in front of the screen (Tobii used the measured eye position, which isn't
+  saved). A validation's mean is the average of its points, which matches Tobii's exactly. Checked
+  against MW050/MW051/MW053's logged values: for points logged < 3.5°, rebuilt − logged = −0.03 ± 0.13°
+  (max 0.46°, n = 101); it underestimates large errors (4–6°) by up to ~0.65° on average. MW052's 4
+  validations average 0.65–1.57°, far enough from 2° that this doesn't affect inclusion; all 4 blocks
+  are analyzed on both eyes. Pixel columns are left blank (the logged ones use ~3 px/deg, not the
+  ~44 px/deg of this screen geometry, and nothing reads them).
+- **Trial order for restarted sessions:** `find_participant_files` used whichever `*_trial_order.csv`
+  it found last; MWK020 has two (an aborted 09:53 start and the 09:56 session). It now takes the one
+  with the same session timestamp as the gaze file. Earlier MWK020 outputs were unaffected: both files
+  have the same block layout, and gaze is cut by video event markers, not by trial order.
+- **Open:** mid-block forced recalibrations are still ignored (one 1-eye case, MWK004
+  `lb_forced_validation_3_2`).
+
+## 2026-11-03 — Experiment viewing distance: Tobii display-area z is not the eye-to-screen distance
+
+- **Problem:** `experiment/moviewatching.py` (and `practice_calibration.py`) set the PsychoPy monitor
+  distance to the mean z of the Tobii display-area corners. In Tobii's coordinate system, measured
+  from the tracker, that z is how far the screen plane sits from the tracker (~5 cm), not how far the
+  participant's eyes are from the screen. The logged validation ratios of 2.95–3.02 px/deg imply
+  4.7–4.8 cm; at the real 70 cm it is ~44 px/deg.
+- **Affected:** only `Mean_accuracy_pixels_left/right` in `*_validation_summary.csv` (and the
+  `_pixels_` fields of the per-point result buffer), which are ~15× too small for every session so
+  far. The window uses `pix` units and the text uses `height` units, so no stimulus was placed in
+  degrees. Degree accuracies come from Tobii (measured eye position) and are unaffected, as are the
+  experiment's pass/fail rule, I2MC and all analyses, which use the fixed 70 cm (2025-09-25 entry).
+- **Fix:** `config.yaml` `display.viewing_distance_cm: 70` is used for the monitor distance; the
+  display-area z is still logged, as "Screen-to-tracker offset". Old pixel columns are not corrected,
+  because nothing reads them; if needed, recompute from the degree columns (×~44 px/deg).
+
+## 2026-11-03 — I2MC re-run after the eye-selection change
+
+- **Re-run:** only the blocks that were excluded before and are now included: MW021 b1 (right eye),
+  MW031 b0 and b1 (right), MWK020 b2 (left), and MW052 (both eyes, summary rebuilt). This adds 24
+  files under code `f329476c`, with no `--overwrite`; existing files are unchanged because their eye
+  choice didn't change (both eyes).
+- **MW052 gaze file truncated:** the server's `MW052_20260420_155026.csv` is exactly 17 MiB and ends
+  mid-row, 12.3 s into frank_play (video length 60.9 s), with no pixar_birds. Those 2 trials have no
+  end marker, so I2MC skips them; MW052 has 10 of 12 videos. The full file may still be on the
+  testing PC.
