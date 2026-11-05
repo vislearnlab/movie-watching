@@ -22,7 +22,6 @@ from gaze_tiles import DISPLAY_H, DISPLAY_W, build_participant_arrays, load_vide
 from video_overlay import density_field, open_frame_writer, probe_video, read_frame  # noqa: E402
 
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "adults"
-SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
 STIMULI_DIR = PROJECT_ROOT / "stimuli" / "main_blocks"
 OUT_DIR = PROJECT_ROOT / "figures" / "presentations" / "group_gaze"
 OUT_W, OUT_H = 1280, 720
@@ -94,7 +93,7 @@ def main():
     fps = probe_video(str(path))["fps"]
     if a.frame is None and a.margin_frames:
         a.start, a.dur = a.start + a.margin_frames / fps, a.dur - 2 * a.margin_frames / fps
-    arrays = build_participant_arrays(load_video_fixations(FIXATION_DIR, a.video, "f329476c", SUMMARY_PATH))
+    arrays = build_participant_arrays(load_video_fixations(FIXATION_DIR, a.video, "f329476c"))
     pids = sorted(arrays)
     gx = (np.arange(OUT_W // GRID_SCALE) + 0.5) * DISPLAY_W / (OUT_W // GRID_SCALE)
     gy = (np.arange(OUT_H // GRID_SCALE) + 0.5) * DISPLAY_H / (OUT_H // GRID_SCALE)

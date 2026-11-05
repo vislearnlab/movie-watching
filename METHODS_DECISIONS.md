@@ -1834,3 +1834,41 @@ per-point verdict decides only which single eye may be used as a fallback.
 - **Checked:** the imports of all 99 Python files under `scripts/` resolve (except 5 that need the GPU/DeepMeaning
   packages, whose local imports didn't change); all 21 R files parse; no stale paths outside this log.
 
+## 2026-11-05 — Exclusion rules: block, movie and participant levels (replaces the `valid_data` filter)
+
+Exclusions happen at four levels, from finest to coarsest. Each level only removes data the levels before it kept.
+
+| Level | Rule | Where | Effect |
+|---|---|---|---|
+| Block | Calibration error ≤ 2° on the analyzed eye(s), from the last validation before the block (both eyes if their average passes, else the experiment-accepted eye; 2026-11-03 entry) | `i2mc_fixations.py` (`MAX_CALIBRATION_DEG = 2.0`) | No fixation files for that block's movies |
+| Movie | Dropped if > 80% of its samples have no valid analyzed eye | `i2mc_fixations.py` (`MAX_INVALID_FRAC = 0.8`) | No fixation file for that movie |
+| Participant | Fixation files for ≥ 2 movies after the two rules above | `gaze_tiles.eligible_pids` (`MIN_MOVIES = 2`); also `calc_isc_fixations.py`, `isc_analysis.qmd` | Participant dropped from every analysis |
+| Segment | Analysis-specific minimums (e.g. information gain: ≥ 3 fixations per participant × segment; within/between: `MIN_WINDOWS`) | each analysis | Participant skipped for that segment only |
+
+- **Replaces `valid_data`:** analyses no longer read `participant_summary.csv`. That file was built by hand (last on
+  2026-07-15) with `valid_data` = mean % valid ≥ ~50% (inferred: every TRUE ≥ 51.5%, every FALSE ≤ 43.9%; never
+  documented). It was coarse — one bad session average dropped good blocks — and anyone missing from it was silently
+  excluded (MW035, MW052–55). Kids used a hand-kept `KIDS_EXCLUDE = ["MWK005"]`; they now get the same rule as adults.
+- **Kept at 80%** for the movie rule (user, 2026-11-05); tightening it would change the I2MC parameter code and
+  require re-running I2MC for everyone.
+- **Population with the updated fixations (f329476c, incl. the 24 files from the 1-eye fix):** adults 51 (was 45:
+  adds MW031, MW035, MW052, MW053, MW054, MW055); kids 18 of 20 (drops MWK03 and MWK015, 1 movie each; MWK005 now
+  included with 6 movies that passed the block and movie rules).
+- **New participants added before the re-run (I2MC 2026-11-05):** MW056 (8 movies; Frank 4.02° and Pixar 18.9°
+  excluded), MW057–MW059 (12 each), MWK022 (3; only the Frank block passed). Re-run population: adults 55, kids 19.
+- **Not changed:** `visualize_heatmap.py` (viz tool, still has its own `--metadata` flag) and the decision-making
+  script `plot_fixation_density_by_patch.py` (reproduces a past decision made with `valid_data`).
+
+## 2026-11-05 — Results regenerated with updated fixations and the participant rule
+
+Inputs: f329476c fixations incl. the 1-eye-fix files and new MW056–59, MWK022; participants with ≥ 2 movies (adults 55,
+kids 19). Reran within/between (adults, kids, slow_chopped, kid-to-adult), kids-vs-adults quadrants, entropy (by segment,
+within/between, sensitivity sweep, outlier diagnostic), ISC (tile-peak, timecourse, fixations; trial_order metadata read
+from a local copy, `data/local_cache/trial_order/`), the full IG pipeline for adults and kids (all variants, subsets,
+bootstraps, sanity checks, uniform baseline, kids_adult_reference, knots sweep, dense grid), then all R figures,
+montages and schematics. `isc_analysis.qmd` was not rerun (reads and writes the server directly).
+- **Within/between (adults):** median people per segment 35 → 44; old vs. new r = 0.995 (within and between).
+  Kids r = 0.990 / 0.989.
+- **IG (adults, cuts, knots_floor):** 45 → 55 participants; ceiling 1.230 → 1.246 bits. All-three model 26.9% → 26.3%
+  of ceiling; unique motion +0.038, unique meaning 0.080 → 0.082, shared 0.254 → 0.249. slow_chopped: all three 28.0% →
+  27.5%. Kids (cuts): all three 28.1% → 27.3%; saliency alone drops most (15.5% → 13.8%). No conclusion changes.

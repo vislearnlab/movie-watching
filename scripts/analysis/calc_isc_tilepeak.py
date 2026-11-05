@@ -66,7 +66,6 @@ BLOCKS = {
 }
 
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "adults"
-PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "isc" / "isc_tilepeak.csv"
 
 centers, _ = compute_patch_grid(240, 15, DISPLAY_W, DISPLAY_H)  # 2026-10-22: moved from 180px to 240px (50% overlap)
@@ -85,7 +84,7 @@ def axis_isc(a, b):
 def clip_tilepeak_isc(video: str, dur: float) -> list[dict]:
     """Own peak vs. leave-one-out GROUP peak (not another person -- see module
     docstring), tracked across non-overlapping windows spanning the whole clip."""
-    fix = load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
+    fix = load_video_fixations(FIXATION_DIR, video, "f329476c")
     arrays = build_participant_arrays(fix)
     pids = sorted(arrays)
     n_windows = int(dur // WINDOW_S)

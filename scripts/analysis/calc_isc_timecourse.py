@@ -34,7 +34,6 @@ Usage
 -----
     python scripts/analysis/calc_isc_timecourse.py \\
         --fixation_dir data/local_cache/fixations/adults \\
-        --participant_summary_path data/local_cache/participant_summary.csv \\
         --param_code f329476c --duration_s 150.15
 """
 
@@ -83,8 +82,6 @@ def main():
     )
     parser.add_argument("--fixation_dir", required=True,
                          help="LOCAL COPY of the adult I2MC fixation CSVs directory (never the server mount).")
-    parser.add_argument("--participant_summary_path", required=True,
-                         help="LOCAL COPY of participant_summary.csv.")
     parser.add_argument("--param_code", required=True)
     parser.add_argument("--video", default="pixar_birds")
     parser.add_argument("--duration_s", type=float, required=True)
@@ -107,8 +104,7 @@ def main():
     results_dir = Path(args.results_dir) if args.results_dir else PROJECT_ROOT / "data" / "results" / "concordance"
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    fix_df = load_video_fixations(Path(args.fixation_dir), args.video, args.param_code,
-                                   Path(args.participant_summary_path))
+    fix_df = load_video_fixations(Path(args.fixation_dir), args.video, args.param_code)
     pids = sorted(fix_df["pid"].unique())
     print(f"{len(pids)} participants, bin_ms={args.bin_ms}")
 

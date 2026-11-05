@@ -54,7 +54,7 @@ def build_gaze(cells):
     G = np.zeros((len(cells), N), dtype=np.float32)
     segs = segment_table(SEGMENT_SET).set_index(["video", "seg_idx"])
     for clip, idx in cells.groupby("video").indices.items():
-        fix = load_video_fixations(C.FIXATION_DIR, clip, C.FIXATION_PARAM_CODE, C.PARTICIPANT_SUMMARY_PATH)
+        fix = load_video_fixations(C.FIXATION_DIR, clip, C.FIXATION_PARAM_CODE)
         arrays = build_participant_arrays(fix[(fix.endT - fix.startT) <= C.MAX_FIXATION_MS])
         for i in idx:
             r = cells.iloc[i]

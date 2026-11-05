@@ -58,6 +58,7 @@ RAW_DIR      = os.path.join(os.path.dirname(__file__), "..", "..", "data", "raw"
 FIXATION_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "preprocessed", "fixations")
 OUTPUT_DIR   = os.path.join(os.path.dirname(__file__), "..", "..", "data", "results", "isc")
 BIN_MS       = 20  # matches calc_isc_rawgaze.py's default so results stay comparable at defaults
+MIN_MOVIES   = 2   # same participant rule as gaze_tiles.MIN_MOVIES
 
 # ── file helpers ──────────────────────────────────────────────────────────────
 
@@ -148,8 +149,8 @@ def load_group_fixations(
             continue
 
         fix_paths = find_fixation_files(fix_group_dir, pid, code)
-        if not fix_paths:
-            print(f"  [{group_label}] {pid}: no fixation files for code {code} — skipping")
+        if len(fix_paths) < MIN_MOVIES:  # participant-level exclusion (METHODS_DECISIONS 2026-11-05)
+            print(f"  [{group_label}] {pid}: {len(fix_paths)} fixation file(s) for code {code} (< {MIN_MOVIES}) — skipping")
             continue
 
         pid_data: dict[str, pd.DataFrame] = {}

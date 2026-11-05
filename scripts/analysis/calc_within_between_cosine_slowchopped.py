@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from calc_within_between_cosine import (
-    BLOCKS, CUTS_PATH, DURATIONS, FIXATION_DIR, MIN_WINDOWS, N_CAP, N_DRAWS, PARTICIPANT_SUMMARY_PATH,
+    BLOCKS, CUTS_PATH, DURATIONS, FIXATION_DIR, MIN_WINDOWS, N_CAP, N_DRAWS,
     PROJECT_ROOT, RNG_SEED, SIGMA, WINDOW_S, cx, cy, within_between_for_windows,
 )
 from gaze_tiles import build_participant_arrays, closed_form_tile_values, load_video_fixations
@@ -30,7 +30,7 @@ OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "within_between_cosine" / "slo
 
 
 def clip_chopped_rows(video: str, dur: float, cuts_df: pd.DataFrame, rng: np.random.Generator) -> list[dict]:
-    fix = load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
+    fix = load_video_fixations(FIXATION_DIR, video, "f329476c")
     fix = fix[(fix["endT"] - fix["startT"]) <= MAX_FIXATION_MS].copy()
     arrays = build_participant_arrays(fix)
     pids = sorted(arrays)

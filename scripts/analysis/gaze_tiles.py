@@ -13,26 +13,24 @@ import numpy as np
 import pandas as pd
 
 DISPLAY_W, DISPLAY_H = 1920, 1080
+MIN_MOVIES = 2  # participant-level exclusion: fewer usable movies than this -> dropped (METHODS_DECISIONS 2026-11-05)
 
 
-def load_video_fixations(fixation_dir: Path, video: str, param_code: str,
-                          participant_summary_path: Path) -> pd.DataFrame:
-    """All valid adults' fixation rows for one video, from a LOCAL COPY only."""
+def eligible_pids(fixation_dir: Path, param_code: str, min_movies: int = MIN_MOVIES) -> set[str]:
+    """Participants with fixation files for >= min_movies movies; I2MC writes none for excluded blocks/movies."""
+    counts = pd.Series([p.name.split("_")[0] for p in fixation_dir.glob(f"*_{param_code}.csv")], dtype=str).value_counts()
+    return set(counts[counts >= min_movies].index)
+
+
+def load_video_fixations(fixation_dir: Path, video: str, param_code: str) -> pd.DataFrame:
+    """Eligible participants' fixation rows for one video, from a LOCAL COPY only."""
     fix_paths = sorted(fixation_dir.glob(f"*_{video}_{param_code}.csv"))
     assert fix_paths, f"No fixation CSVs found in {fixation_dir} for video={video!r}, code={param_code!r}."
 
-    summary = pd.read_csv(participant_summary_path)
-    valid_ids = set(
-        summary.loc[
-            (summary["participant_type"] == "adults") & (summary["valid_data"] == True),
-            "participant_id",
-        ]
-    )
-
     dfs = [pd.read_csv(p) for p in fix_paths]
     fix_df = pd.concat(dfs, ignore_index=True)
-    fix_df = fix_df[fix_df["pid"].isin(valid_ids)].copy()
-    print(f"Loaded {len(fix_df)} fixations from {fix_df['pid'].nunique()} valid adults for {video}.")
+    fix_df = fix_df[fix_df["pid"].isin(eligible_pids(fixation_dir, param_code))].copy()
+    print(f"Loaded {len(fix_df)} fixations from {fix_df['pid'].nunique()} participants for {video}.")
     return fix_df
 
 

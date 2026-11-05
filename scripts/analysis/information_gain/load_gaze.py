@@ -15,7 +15,7 @@ from segments import segment_table
 
 sys.path.insert(0, str(C.PROJECT_ROOT / "scripts" / "analysis"))
 sys.path.insert(0, str(C.PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
-from gaze_tiles import build_participant_arrays, closed_form_tile_values, load_video_fixations  # noqa: E402
+from gaze_tiles import build_participant_arrays, closed_form_tile_values, eligible_pids, load_video_fixations  # noqa: E402
 from tile_pooling import CENTERS  # noqa: E402
 
 TILE_COLS = [f"tile_{i:03d}" for i in range(120)]
@@ -24,10 +24,10 @@ CX, CY = CENTERS["center_x"].to_numpy(), CENTERS["center_y"].to_numpy()
 
 def load_fixations(clip: str, group: str) -> pd.DataFrame:
     if group == "adults":
-        return load_video_fixations(C.FIXATION_DIR, clip, C.FIXATION_PARAM_CODE, C.PARTICIPANT_SUMMARY_PATH)
+        return load_video_fixations(C.FIXATION_DIR, clip, C.FIXATION_PARAM_CODE)
     fix = pd.concat([pd.read_csv(p) for p in sorted(C.KIDS_FIXATION_DIR.glob(f"*_{clip}_{C.FIXATION_PARAM_CODE}.csv"))],
                     ignore_index=True)
-    return fix[~fix.pid.isin(C.KIDS_EXCLUDE)]
+    return fix[fix.pid.isin(eligible_pids(C.KIDS_FIXATION_DIR, C.FIXATION_PARAM_CODE))]
 
 
 def build(segment_set: str, group: str = C.GROUP) -> pd.DataFrame:

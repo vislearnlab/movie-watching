@@ -98,7 +98,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 
 from gaze_tiles import (  # noqa: E402
-    DISPLAY_H, DISPLAY_W, build_participant_arrays, closed_form_tile_values, load_video_fixations,
+    DISPLAY_H, DISPLAY_W, build_participant_arrays, closed_form_tile_values, eligible_pids, load_video_fixations,
 )
 from patch_grid import compute_patch_grid  # noqa: E402
 
@@ -140,11 +140,9 @@ BLOCKS = {
 }
 
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "adults"
-PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
 CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts_frame_corrected.csv"  # see METHODS_DECISIONS 2026-10-24
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "within_between_cosine" / "all_clips_by_segment.csv"
 KIDS_FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "kids"
-KIDS_EXCLUDE = ["MWK005"]  # same kid set as the IG pipeline (information_gain/config.py)
 
 centers, grid_info = compute_patch_grid(240, 15, DISPLAY_W, DISPLAY_H)  # 2026-10-22: moved from 180px (~29-31% overlap) to 240px (exactly 50% overlap on both axes), see METHODS_DECISIONS.md
 cx, cy = centers["center_x"].to_numpy(), centers["center_y"].to_numpy()
@@ -193,9 +191,9 @@ def within_between_for_windows(pids: list[str], seg_vecs: np.ndarray) -> dict[st
 
 def load_fixations(video: str, group: str) -> pd.DataFrame:
     if group == "adults":
-        return load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
+        return load_video_fixations(FIXATION_DIR, video, "f329476c")
     fix = pd.concat([pd.read_csv(p) for p in sorted(KIDS_FIXATION_DIR.glob(f"*_{video}_f329476c.csv"))], ignore_index=True)
-    return fix[~fix.pid.isin(KIDS_EXCLUDE)]
+    return fix[fix.pid.isin(eligible_pids(KIDS_FIXATION_DIR, "f329476c"))]
 
 
 def clip_within_between(video: str, dur: float, cuts_df: pd.DataFrame, rng: np.random.Generator,

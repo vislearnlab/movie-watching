@@ -73,7 +73,6 @@ VIDEO = "pixar_birds"
 DUR = 150.15
 
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "adults"
-PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
 CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts_frame_corrected.csv"  # see METHODS_DECISIONS 2026-10-24
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "entropy_within_between" / "pixar_birds_by_segment.csv"
 
@@ -92,7 +91,7 @@ def entropy_from_vec(vec):
 
 
 def main():
-    fix = load_video_fixations(FIXATION_DIR, VIDEO, "f329476c", PARTICIPANT_SUMMARY_PATH)
+    fix = load_video_fixations(FIXATION_DIR, VIDEO, "f329476c")
     arrays = build_participant_arrays(fix)
     cuts_df = pd.read_csv(CUTS_PATH)
     cut_times = sorted(cuts_df[cuts_df.video_name == VIDEO].cut_time_s.tolist())

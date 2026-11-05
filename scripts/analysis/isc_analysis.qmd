@@ -1194,11 +1194,11 @@ EXPORT_STEP_S    <- 0.25   # matches calc_concordance_group.R's STEP_S
 EXPORT_MIN_VALID <- 30     # same bin-validity gate as Part 7's MIN_VALID; concordance has
                            # no equivalent minimum-data gate by design (METHODS_DECISIONS.md)
 
-participant_summary <- read_csv(here("data", "local_cache", "participant_summary.csv"), show_col_types = FALSE)
-valid_adult_pids <- participant_summary |>
-  filter(participant_type == "adults", valid_data == TRUE) |>
-  pull(participant_id)
-cat(glue("{length(valid_adult_pids)} valid adults (matches concordance's population)\n"))
+# Same participant rule as gaze_tiles.eligible_pids: fixation files for >= 2 movies (METHODS_DECISIONS 2026-11-05)
+fix_files <- list.files(here("data", "local_cache", "fixations", "adults"), pattern = "_f329476c\\.csv$")
+movies_per_pid <- table(sub("_.*", "", fix_files))
+valid_adult_pids <- names(movies_per_pid)[movies_per_pid >= 2]
+cat(glue("{length(valid_adult_pids)} adults with >= 2 movies (matches the tile analyses' population)\n"))
 ```
 
 ```{r export-compute}

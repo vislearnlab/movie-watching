@@ -66,7 +66,6 @@ BLOCKS = {
 }
 
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "adults"
-PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
 CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts_frame_corrected.csv"  # see METHODS_DECISIONS 2026-10-24
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "entropy_by_segment" / "entropy_by_segment.csv"
 
@@ -95,7 +94,7 @@ def entropy_from_vec(vec):
 def rarefied_entropy_series(video: str, dur: float, rng: np.random.Generator):
     """One entry per window: mean entropy across N_DRAWS random subsamples of exactly
     N_FIX_FIXED pooled fixations (no replacement, across all participants together)."""
-    fix = load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
+    fix = load_video_fixations(FIXATION_DIR, video, "f329476c")
     arrays = build_participant_arrays(fix)
     pids = sorted(arrays)
     n_windows = max(0, int((dur - WINDOW_S) // STEP_S) + 1)

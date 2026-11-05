@@ -62,7 +62,6 @@ def main():
     p.add_argument("--label", default="", help="Extra text for the HUD (e.g. entropy value).")
     p.add_argument("--code", default="f329476c")
     p.add_argument("--fixation_dir", default="data/local_cache/fixations/adults")
-    p.add_argument("--participant_summary_path", default="data/local_cache/participant_summary.csv")
     p.add_argument("--stimuli_dir", default="stimuli/main_blocks")
     p.add_argument("--window_s", type=float, default=1.0)
     p.add_argument("--step_s", type=float, default=0.25)
@@ -91,8 +90,7 @@ def main():
     info = probe_video(str(video_path))
     fps = info["fps"]
 
-    fix_df = load_video_fixations(PROJECT_ROOT / args.fixation_dir, args.video, args.code,
-                                   PROJECT_ROOT / args.participant_summary_path)
+    fix_df = load_video_fixations(PROJECT_ROOT / args.fixation_dir, args.video, args.code)
     pid_arrays = build_participant_arrays(fix_df)
     pids = sorted(pid_arrays)
 

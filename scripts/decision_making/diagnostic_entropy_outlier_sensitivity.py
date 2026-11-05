@@ -46,7 +46,6 @@ for v, b in BLOCKS.items():
     BLOCK_VIDEOS[b].append(v)
 
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "adults"
-PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
 CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts_frame_corrected.csv"  # see METHODS_DECISIONS 2026-10-24
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "entropy_by_segment" / "entropy_outlier_sensitivity.csv"
 
@@ -148,7 +147,7 @@ def main():
         video_data = {}
         block_pids = set()
         for video in videos:
-            fix = load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
+            fix = load_video_fixations(FIXATION_DIR, video, "f329476c")
             arrays = build_participant_arrays(fix)
             dur = DURATIONS[video]
             n_windows = max(0, int((dur - WINDOW_S) // STEP_S) + 1)

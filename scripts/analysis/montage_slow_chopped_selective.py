@@ -25,7 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 
 from calc_within_between_cosine import (  # noqa: E402
-    FIXATION_DIR, MAX_FIXATION_MS, PARTICIPANT_SUMMARY_PATH, SIGMA, WINDOW_S, cx, cy,
+    FIXATION_DIR, MAX_FIXATION_MS, SIGMA, WINDOW_S, cx, cy,
     within_between_for_windows,
 )
 from gaze_tiles import (  # noqa: E402
@@ -65,7 +65,7 @@ def extract_frame(video_path: Path, time_s: float, out_path: Path):
 
 
 def build_clip_vectors(video: str):
-    fix = load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
+    fix = load_video_fixations(FIXATION_DIR, video, "f329476c")
     fix = fix[(fix["endT"] - fix["startT"]) <= MAX_FIXATION_MS].copy()
     arrays = build_participant_arrays(fix)
     pids = sorted(arrays)

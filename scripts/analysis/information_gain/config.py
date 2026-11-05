@@ -44,8 +44,6 @@ FIXATION_PARAM_CODE = "f329476c"
 # Inputs
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / GROUP
 KIDS_FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "kids"
-KIDS_EXCLUDE = ["MWK005"]  # valid_data=False in participant_summary; MWK011-021 have no summary row yet, all included
-PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
 CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts_frame_corrected.csv"  # see METHODS_DECISIONS 2026-10-24
 FEATURE_TILE_DIR = PROJECT_ROOT / "data" / "results"  # <feature>/<clip>_<feature>_tiles_frames.csv
 MEANING_DIR = PROJECT_ROOT / "data" / "local_cache"

@@ -52,7 +52,6 @@ BLOCKS = {
 }
 
 FIXATION_DIR = PROJECT_ROOT / "data" / "local_cache" / "fixations" / "adults"
-PARTICIPANT_SUMMARY_PATH = PROJECT_ROOT / "data" / "local_cache" / "participant_summary.csv"
 CUTS_PATH = PROJECT_ROOT / "annotations" / "scene-cuts" / "all_clips_cuts_frame_corrected.csv"  # see METHODS_DECISIONS 2026-10-24
 OUTPUT_PATH = PROJECT_ROOT / "data" / "results" / "entropy_by_segment" / "entropy_sensitivity_sweep.csv"
 
@@ -115,7 +114,7 @@ def main():
     cuts_df = pd.read_csv(CUTS_PATH)
     all_arrays = {}
     for video in DURATIONS:
-        fix = load_video_fixations(FIXATION_DIR, video, "f329476c", PARTICIPANT_SUMMARY_PATH)
+        fix = load_video_fixations(FIXATION_DIR, video, "f329476c")
         all_arrays[video] = build_participant_arrays(fix)
     print("fixations loaded for all 12 clips\n")
 
