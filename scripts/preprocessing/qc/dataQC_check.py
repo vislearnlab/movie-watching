@@ -43,6 +43,10 @@ from pathlib import Path    # another way to work with file paths
 # Project root: three levels up from this script (scripts/preprocessing/qc/ -> project root)
 MAIN_DIR = Path(__file__).resolve().parents[3]
 
+GROUP_FOLDERS = ['adults', 'kids', 'infants']
+STUDY_ID_PATTERN = r'^MW[KB]?\d+$'   # adults MW###, kids MWK###, infants MWB###
+PILOT_IDS = ['MW000']                  # lives in data/raw/pilots/
+
 
 def resolve_path(p):
     """Resolve p relative to MAIN_DIR if it is not already absolute."""
@@ -440,14 +444,16 @@ def process_all_participants(data_dir, output_path, existing_df=None):
     If existing_df is provided, participants already present in it are skipped
     and their rows are carried forward into the output unchanged.
     """
-    # Find all participant folders (exclude qc_checks folder)
+    # Only this study's participants: data_dir/{adults,kids,infants}/MW* (skips pilots, demos, other studies' HMET infants)
     participant_dirs = sorted([
-        d for d in glob.glob(os.path.join(data_dir, '**', '*'), recursive=True)
-        if os.path.isdir(d) and not os.path.basename(d) in ['qc_checks', 'adults', 'infants', 'kids']
+        d for d in glob.glob(os.path.join(data_dir, '*', 'MW*'))
+        if os.path.isdir(d) and os.path.basename(os.path.dirname(d)) in GROUP_FOLDERS
     ])
 
     already_done = set()
     if existing_df is not None and not existing_df.empty:
+        existing_df = existing_df[existing_df['participant_id'].str.match(STUDY_ID_PATTERN)
+                                  & ~existing_df['participant_id'].isin(PILOT_IDS)]  # drop rows from older, broader runs
         already_done = set(existing_df['participant_id'].unique())
         print(f"Loaded {len(already_done)} already-processed participant(s) from existing report.")
 
