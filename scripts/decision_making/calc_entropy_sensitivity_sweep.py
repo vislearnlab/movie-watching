@@ -26,7 +26,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 
 from gaze_tiles import DISPLAY_H, DISPLAY_W, build_participant_arrays, load_video_fixations  # noqa: E402
-from plot_patch_grid import compute_patch_grid  # noqa: E402
+from patch_grid import compute_patch_grid  # noqa: E402
 
 STEP_S, SIGMA = 0.25, 46.0
 N_DRAWS, RNG_SEED = 100, 0

@@ -27,7 +27,7 @@ figures/checks/fixation_density_by_patch.png -- the current grid's circular patc
 
 Usage
 -----
-    python scripts/preprocessing/stimulus_prep/plot_fixation_density_by_patch.py \\
+    python scripts/decision_making/plot_fixation_density_by_patch.py \\
         --fixation_dir data/local_cache/fixations/adults \\
         --participant_summary_path data/local_cache/participant_summary.csv \\
         --param_code f329476c
@@ -42,9 +42,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _video_utils as vu
-from plot_patch_grid import compute_patch_grid, px_per_degree
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "preprocessing" / "stimulus_prep"))
+import _video_utils as vu  # noqa: E402
+from patch_grid import compute_patch_grid, px_per_degree  # noqa: E402
 
 
 def load_adult_fixations(fixation_dir: Path, param_code: str, participant_summary_path: Path) -> pd.DataFrame:

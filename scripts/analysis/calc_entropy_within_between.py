@@ -61,7 +61,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_pr
 from gaze_tiles import (  # noqa: E402
     DISPLAY_H, DISPLAY_W, build_participant_arrays, closed_form_tile_values, load_video_fixations,
 )
-from plot_patch_grid import compute_patch_grid  # noqa: E402
+from patch_grid import compute_patch_grid  # noqa: E402
 
 SIGMA = 46.0
 N_FIX_PERSON = 2   # per-person-per-segment p5, floor(p5) convention -- see module docstring

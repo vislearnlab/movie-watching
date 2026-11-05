@@ -27,7 +27,7 @@ from calc_within_between_cosine import BLOCKS, MIN_WINDOWS, WINDOW_S  # noqa: E4
 from calc_motion_gaze_correlation import group_mean_vector, segment_list_for  # noqa: E402
 from montage_best_examples import ALL_CLIPS, build_clip_vectors  # noqa: E402
 from plot_within_between_timecourse import classify_quadrant, pooled_quantile_split  # noqa: E402
-from plot_patch_grid import compute_patch_grid  # noqa: E402
+from patch_grid import compute_patch_grid  # noqa: E402
 
 CANONICAL_PATH = PROJECT_ROOT / "data" / "results" / "within_between_cosine" / "all_clips_by_segment.csv"
 MOTION_DIR = PROJECT_ROOT / "data" / "results" / "motion"

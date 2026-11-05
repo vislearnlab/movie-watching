@@ -3,7 +3,7 @@
 ## White bars outlined in the slide feature colors (all three in black), no CIs or value labels.
 ##
 ## Output: figures/presentations/analysis schematics/waterfall_schematic.png
-## Usage:  Rscript scripts/analysis/information_gain/plot_waterfall_schematic.R
+## Usage:  Rscript scripts/schematics/plot_waterfall_schematic.R
 
 suppressPackageStartupMessages({
   library(dplyr)

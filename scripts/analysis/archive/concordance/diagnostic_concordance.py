@@ -61,7 +61,7 @@ from scipy.stats import pearsonr
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
-from plot_patch_grid import compute_patch_grid  # noqa: E402
+from patch_grid import compute_patch_grid  # noqa: E402
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 from gaze_tiles import load_video_fixations, closed_form_tile_values  # noqa: E402
 

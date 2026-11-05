@@ -2,18 +2,21 @@
 Check: held-out information gain of single-feature models vs. number of knots (plus exp, 1 parameter).
 Selection on the same leave-one-clip-out scores used for reporting, so treat as a robustness check.
 
-Usage: python scripts/analysis/information_gain/knots_sweep.py [--segment-set cuts]
+Usage: python scripts/decision_making/knots_sweep.py [--segment-set cuts]
 """
 
 import argparse
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-import config as C
-import feature_models as FM
-from common import group_average
-from scoring import score
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "analysis" / "information_gain"))
+import config as C  # noqa: E402
+import feature_models as FM  # noqa: E402
+from common import group_average  # noqa: E402
+from scoring import score  # noqa: E402
 
 KNOT_COUNTS = [3, 5, 10, 20, 40]
 

@@ -3,7 +3,7 @@
 ## plot_within_between_scatter.R) with the four types named in their quadrants. No data.
 ##
 ## Output: figures/presentations/analysis schematics/quadrants_empty.png
-## Usage:  Rscript scripts/analysis/plot_quadrant_schematic.R
+## Usage:  Rscript scripts/schematics/plot_quadrant_schematic.R
 
 suppressPackageStartupMessages({
   library(ggplot2)

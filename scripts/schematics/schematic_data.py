@@ -5,20 +5,23 @@ fixations, and the per-map log-likelihoods. Recomputed from the caches and check
 
 Output: data/results/information_gain/schematic/<clip>_seg<idx>_<pid>_{maps,fixations,scores}.csv,
         figures/presentations/ig_schematic/frames/<clip>_seg<idx>.png
-Usage:  python scripts/analysis/information_gain/schematic_data.py [--clip sesameus_1 --seg 15 --pid MW012 --feature motion]
+Usage:  python scripts/schematics/schematic_data.py [--clip sesameus_1 --seg 15 --pid MW012 --feature motion]
 """
 
 import argparse
 import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-import config as C
-from common import TILE_COLS, load_gaze, log_lik
-from load_features import TILE_XY
-from load_gaze import load_fixations
-from segments import segment_table
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "analysis" / "information_gain"))
+import config as C  # noqa: E402
+from common import TILE_COLS, load_gaze, log_lik  # noqa: E402
+from load_features import TILE_XY  # noqa: E402
+from load_gaze import load_fixations  # noqa: E402
+from segments import segment_table  # noqa: E402
 
 OUT_DIR = C.RESULTS_DIR / "schematic"
 FRAME_DIR = C.PROJECT_ROOT / "figures" / "presentations" / "ig_schematic" / "frames"

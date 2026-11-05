@@ -31,7 +31,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_pr
 from gaze_tiles import (  # noqa: E402
     DISPLAY_H, DISPLAY_W, build_participant_arrays, load_video_fixations,
 )
-from plot_patch_grid import compute_patch_grid  # noqa: E402
+from patch_grid import compute_patch_grid  # noqa: E402
 from video_overlay import (  # noqa: E402
     cloud_overlay, density_field, load_hud_font, open_frame_writer, probe_video, read_frame,
 )

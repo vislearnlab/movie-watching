@@ -6,7 +6,7 @@
 ##
 ## - For every participant and sliding window, computes a duration-weighted Gaussian
 ##   density value at each of 120 scene-tile centers (same patch grid as
-##   scripts/preprocessing/stimulus_prep/plot_patch_grid.py: 180px diameter, 15x8,
+##   scripts/preprocessing/stimulus_prep/patch_grid.py: 180px diameter, 15x8,
 ##   edge-touching), for that participant and for the leave-one-out group, then correlates
 ##   the two 120-value vectors (Pearson r).
 ## - Computed in CLOSED FORM (no raster image, no Gaussian blur of a full frame): each

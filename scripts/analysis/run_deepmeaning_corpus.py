@@ -39,7 +39,7 @@ CLIPS = [
 
 
 def compute_patch_centers(diameter_px: float, n_cols: int, display_width: int, display_height: int):
-    """Same edge-touching grid formula as plot_patch_grid.compute_patch_grid, inlined to avoid
+    """Same edge-touching grid formula as patch_grid.compute_patch_grid, inlined to avoid
     that module's matplotlib/PIL dependency (not installed in the DeepMeaning venv)."""
     radius = diameter_px / 2
     usable_w = display_width - diameter_px

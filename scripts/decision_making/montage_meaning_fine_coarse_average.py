@@ -14,7 +14,7 @@ equivalent to building the dense overlap-averaged map and sampling it, for this 
 case).
 
 Usage:
-    python scripts/analysis/montage_meaning_fine_coarse_average.py --clip frank_complex \
+    python scripts/decision_making/montage_meaning_fine_coarse_average.py --clip frank_complex \
         --fine-csv data/local_cache/deepmeaning_frank_complex_fine240/frank_complex.csv \
         --coarse-csv data/local_cache/deepmeaning_frank_complex_coarse479/frank_complex.csv \
         --fine-patch-size 240 --coarse-patch-size 479 --n 8

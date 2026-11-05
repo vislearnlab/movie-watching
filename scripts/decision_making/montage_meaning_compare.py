@@ -5,7 +5,7 @@ per-tile difference (diverging colormap centered at 0). A/B share one color scal
 directly comparable; the diff row uses its own symmetric scale.
 
 Usage:
-    python scripts/analysis/montage_meaning_compare.py --clip frank_complex \
+    python scripts/decision_making/montage_meaning_compare.py --clip frank_complex \
         --csv-a data/local_cache/deepmeaning_frank_review_patch240/frank_complex.csv --label-a fp32 \
         --csv-b data/local_cache/deepmeaning_frank_review_patch240_fp16/frank_complex.csv --label-b fp16 \
         --n 10

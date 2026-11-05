@@ -3,7 +3,7 @@
 ## ceiling (everyone else's gaze), with the 0% (floor) to 100% (ceiling) scale underneath. Data from schematic_data.py.
 ##
 ## Output: figures/presentations/ig_schematic/<clip>_seg<idx>_<pid>.png
-## Usage:  Rscript scripts/analysis/information_gain/plot_ig_schematic.R [--tag sesameus_1_seg15_MW012]
+## Usage:  Rscript scripts/schematics/plot_ig_schematic.R [--tag sesameus_1_seg15_MW012]
 
 suppressPackageStartupMessages({
   library(dplyr)

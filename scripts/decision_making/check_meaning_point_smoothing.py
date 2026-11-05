@@ -2,8 +2,11 @@
 Check figure: meaning plotted at patch centers, Gaussian-smoothed (fine sigma=46, coarse sigma=92,
 normalized weighted average), sampled at the 120 tile centers. Rows: frame, fine, coarse, average.
 
-Usage: python scripts/analysis/information_gain/check_meaning_point_smoothing.py
+Usage: python scripts/decision_making/check_meaning_point_smoothing.py
 """
+
+import sys
+from pathlib import Path
 
 import cv2
 import matplotlib
@@ -11,8 +14,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-import config as C
-from load_features import load_meaning_raw
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "analysis" / "information_gain"))
+import config as C  # noqa: E402
+from load_features import load_meaning_raw  # noqa: E402
 
 SIGMA_FINE, SIGMA_COARSE = 46.0, 92.0
 EXAMPLES = [("pixar_birds", 1.33), ("pixar_birds", 60.0), ("frank_complex", 20.0), ("sesameus_1", 30.0)]

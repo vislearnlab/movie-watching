@@ -19,7 +19,7 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
-from plot_patch_grid import compute_patch_grid  # noqa: E402
+from patch_grid import compute_patch_grid  # noqa: E402
 
 STIMULI_DIR = PROJECT_ROOT / "stimuli" / "main_blocks"
 MOTION_DIR = PROJECT_ROOT / "data" / "results" / "motion"

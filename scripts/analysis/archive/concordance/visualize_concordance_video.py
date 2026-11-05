@@ -10,7 +10,7 @@ Same windowing as the analysis, not a re-invention
 --------------------------------------------------
 Every quantity on screen comes from the concordance pipeline's own functions, imported
 directly from scripts/analysis/calc_concordance_group.py (load_video_fixations,
-build_participant_arrays, closed_form_tile_values) and plot_patch_grid.compute_patch_grid,
+build_participant_arrays, closed_form_tile_values) and patch_grid.compute_patch_grid,
 so the math cannot drift from the metric being illustrated:
 
 - window = 1.0s, step = 0.25s, sigma = 46px, fixations weighted by their overlap duration
@@ -77,7 +77,7 @@ from gaze_tiles import (  # noqa: E402
     closed_form_tile_values,
     load_video_fixations,
 )
-from plot_patch_grid import compute_patch_grid  # noqa: E402
+from patch_grid import compute_patch_grid  # noqa: E402
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "viz"))
 from video_overlay import (  # noqa: E402
     cloud_overlay, density_field, load_hud_font, open_frame_reader, open_frame_writer, probe_video, read_frame,

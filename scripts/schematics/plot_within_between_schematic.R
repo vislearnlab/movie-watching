@@ -5,7 +5,7 @@
 ##   between = each person's segment-mean vector vs. the leave-one-out mean of everyone else's, averaged over people
 ##
 ## Output: figures/presentations/{within,between}_schematic.png
-## Usage: Rscript scripts/preprocessing/viz/plot_within_between_schematic.R
+## Usage: Rscript scripts/schematics/plot_within_between_schematic.R
 
 suppressPackageStartupMessages({
   library(dplyr)

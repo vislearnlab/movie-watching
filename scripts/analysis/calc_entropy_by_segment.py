@@ -44,7 +44,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
 
 from gaze_tiles import DISPLAY_H, DISPLAY_W, build_participant_arrays, load_video_fixations  # noqa: E402
-from plot_patch_grid import compute_patch_grid  # noqa: E402
+from patch_grid import compute_patch_grid  # noqa: E402
 
 WINDOW_S, STEP_S, SIGMA = 1.0, 0.25, 46.0
 N_FIX_FIXED = 75   # see module docstring for why this value, not another, was chosen

@@ -20,7 +20,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 import sys  # noqa: E402
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "preprocessing" / "stimulus_prep"))
-from plot_patch_grid import compute_patch_grid  # noqa: E402
+from patch_grid import compute_patch_grid  # noqa: E402
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "analysis"))
 from tile_pooling import tile_box_means  # noqa: E402
 

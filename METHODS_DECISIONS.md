@@ -1816,3 +1816,21 @@ per-point verdict decides only which single eye may be used as a fallback.
   mid-row, 12.3 s into frank_play (video length 60.9 s), with no pixar_birds. Those 2 trials have no
   end marker, so I2MC skips them; MW052 has 10 of 12 videos. The full file may still be on the
   testing PC.
+
+## 2026-11-05 — scripts/ reorganized: schematics/ and decision_making/
+
+- **`scripts/schematics/`:** every script that draws a presentation schematic, plus the scripts that export its data
+  (from `preprocessing/viz/`, `analysis/` and `analysis/information_gain/`): `export_{loo,tile}_schematic.py`,
+  `plot_{loo,tile,within_between,quadrant,development_slope,ig,waterfall}_schematic.R`, `schematic_data.py`.
+- **`scripts/decision_making/`:** scripts used to choose a parameter or check that a result is robust to one:
+  `plot_patch_grid.py`, `plot_fixation_density_by_patch.py` (patch size), `montage_meaning_fine_coarse_average.py`,
+  `montage_meaning_compare.py`, `check_meaning_point_smoothing.py` (meaning maps), `calc_entropy_sensitivity_sweep.py`,
+  `diagnostic_entropy_outlier_sensitivity.py` (entropy), `knots_sweep.py`, `explore_dense_grid.py` (information gain).
+- **Patch grid split:** `compute_patch_grid` and `px_per_degree` moved from `plot_patch_grid.py` to
+  `scripts/preprocessing/stimulus_prep/patch_grid.py`, because ~15 analysis scripts import them; the preview figure
+  stays in `plot_patch_grid.py`. Grid math unchanged.
+- **Unchanged:** output locations, and pipeline checks that other scripts depend on (`check_cut_frame_accuracy.py`,
+  `information_gain/sanity_checks.py`, `uniform_baseline.py`).
+- **Checked:** the imports of all 99 Python files under `scripts/` resolve (except 5 that need the GPU/DeepMeaning
+  packages, whose local imports didn't change); all 21 R files parse; no stale paths outside this log.
+

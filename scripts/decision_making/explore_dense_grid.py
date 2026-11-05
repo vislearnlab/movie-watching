@@ -5,21 +5,23 @@ smoothing (gaze sigma=46 from fixations; features plotted at patch centers, sigm
 
 Output: data/results/information_gain/summary_dense_<n>[_faceclips].csv (plotted by plot_information_gain_checks.R)
 
-Usage: python scripts/analysis/information_gain/explore_dense_grid.py [NX NY]  (default 133 75)
+Usage: python scripts/decision_making/explore_dense_grid.py [NX NY]  (default 133 75)
 """
 
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize, minimize_scalar
 
-import config as C
-from common import group_average
-from load_features import frame_feature, load_meaning_raw, meaning_frames, segment_mean
-from partition import models_of, partition
-from scoring import MODELS
-from segments import segment_table
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "analysis" / "information_gain"))
+import config as C  # noqa: E402
+from common import group_average  # noqa: E402
+from load_features import frame_feature, load_meaning_raw, meaning_frames, segment_mean  # noqa: E402
+from partition import models_of, partition  # noqa: E402
+from scoring import MODELS  # noqa: E402
+from segments import segment_table  # noqa: E402
 
 sys.path.insert(0, str(C.PROJECT_ROOT / "scripts" / "analysis"))
 from gaze_tiles import build_participant_arrays, closed_form_tile_values, load_video_fixations  # noqa: E402
