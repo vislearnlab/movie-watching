@@ -63,14 +63,17 @@ for (pid in PIDS) {
     group_by(block_index) |> mutate(pos = row_number()) |> ungroup() |>
     mutate(status = factor(ifelse(included, "Recorded and usable", "Recorded but NOT usable (calibration > 2°)"),
                            c("Recorded and usable", "Recorded but NOT usable (calibration > 2°)")))
-  targets <- distinct(s, strip, target_x, target_y, point_deg) |>
-    mutate(label = sprintf("%.1f°", point_deg), lx = target_x + ifelse(target_x > W / 2, -70, 70),
+  targets <- distinct(s, strip, target_x, target_y, point_deg, presentation_order) |>
+    mutate(label = ifelse(is.na(presentation_order), sprintf("%.1f°", point_deg),
+                          sprintf("#%d · %.1f°", as.integer(presentation_order), point_deg)), lx = target_x + ifelse(target_x > W / 2, -70, 70),
            ly = target_y + ifelse(target_y > H / 2, 75, -75))
   thr <- filter(rings, kind == "threshold") |> tidyr::crossing(distinct(qc, strip)) |> arrange(strip, target_x, target_y, order)
+  sequence <- targets |> filter(!is.na(presentation_order)) |> arrange(strip, presentation_order)  # target order on screen
   landed <- s |> group_by(strip, target_x, target_y) |> summarise(gx = median(x), gy = median(y), .groups = "drop")
 
   p_blocks <- ggplot() + screen_base() +
     geom_path(data = thr, aes(x, y, group = interaction(target_x, target_y)), color = "white", linewidth = 0.4, linetype = "22") +
+    geom_path(data = sequence, aes(target_x, target_y, group = strip), color = "white", linewidth = 0.3, linetype = "11", alpha = 0.6) +
     geom_point(data = s, aes(x, y), color = GAZE, size = 0.6, alpha = 0.7) +
     geom_segment(data = landed, aes(target_x, target_y, xend = gx, yend = gy), color = GAZE, linewidth = 0.6,
                  arrow = arrow(length = unit(5, "pt"), type = "closed")) +
@@ -80,7 +83,7 @@ for (pid in PIDS) {
     facet_wrap(~strip, nrow = 1) +
     labs(title = sprintf("%s — where is the participant looking, and is the tracker recording?", pid),
          subtitle = paste0("Top: the validation check before each block. + = target · yellow dots = gaze samples · arrow = target → where gaze landed · ",
-                           "dashed ring = 2°, the cutoff for a block to be analyzed · labels = error at that target.\n",
+                           "dashed ring = 2°, the cutoff for a block to be analyzed · labels = #presentation order · error at that target.\nDotted line = order the targets were shown in. ",
                            "Bottom: % of samples with valid gaze in each movie of that block."))
 
   p_valid <- ggplot(trials, aes(pos, pct_valid_samples, fill = status)) +

@@ -149,14 +149,15 @@ def validation_samples(pid, files, qc):
 
 
 def point_accuracy(vs, qc):
-    """Per-target accuracy (deg) of the analyzed eye(s) for each block's validation."""
+    """Per-target accuracy (deg) of the analyzed eye(s) and presentation order for each block's validation."""
     pts = vs[vs["point"].astype(str).str.startswith("Point")]
     out = []
     for _, r in qc.iterrows():
         p = pts[pts["validation_step"] == r["validation_step"]]
         cols = [f"Mean_accuracy_degrees_{e}" for e in (["left", "right"] if r["eyes_analyzed"] == "both" else [r["eyes_analyzed"]])]
+        order = p["presentation_order"] if "presentation_order" in p else np.nan  # missing in pre-2026-03 summaries
         out.append(pd.DataFrame(dict(block_index=r["block_index"], target_x=p["stimulus_x"], target_y=p["stimulus_y"],
-                                     point_deg=p[cols].mean(axis=1).round(2))))
+                                     point_deg=p[cols].mean(axis=1).round(2), presentation_order=order)))
     return pd.concat(out)
 
 
