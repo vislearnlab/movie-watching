@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Missing faces tool</title>
+<style>
+  :root {
+    --bg: #fafaf9; --panel: #ffffff; --border: #e2e2df; --text: #0b0b0b; --muted: #6b6a66;
+    --accent: #2a78d6; --danger: #c23b3b; --done: #2f7d4f; --changed: #a35a00;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 0 0 8px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(330px, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .spacer { flex: 1; }
+  label { font-size: 13px; color: var(--muted); }
+  select, input[type=text] {
+    font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text);
+  }
+  input[type=text] { width: 100%; }
+  input[type=range] { width: 100%; }
+  button {
+    font-size: 13px; padding: 6px 11px; border-radius: 6px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); cursor: pointer;
+  }
+  button:hover { background: #f3f3f1; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.on { background: var(--text); color: #fff; border-color: var(--text); }
+  button.small { font-size: 12px; padding: 2px 8px; }
+  .kbd { font-family: ui-monospace, monospace; font-size: 11px; border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: #f6f6f4; color: var(--text); }
+  button.on .kbd { background: #333; color: #fff; border-color: #555; }
+  .stage { position: relative; }
+  video { width: 100%; display: block; border-radius: 8px; background: #000; }
+  canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+  canvas.drawing { pointer-events: auto; cursor: crosshair; }
+  .shothead { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .err { font-size: 12px; color: var(--danger); min-height: 16px; margin-top: 6px; }
+  .pending { background: #fff8e6; border: 1px solid #f0dca0; border-radius: 6px; padding: 10px; margin-top: 10px; }
+  .boxlist { margin-top: 10px; }
+  .boxitem { display: flex; gap: 6px; align-items: center; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 4px 7px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #f8f8f6; }
+  tr.active { background: #eef2f7; }
+  .done { color: var(--done); font-weight: 600; }
+  .changed { color: var(--changed); font-weight: 600; }
+  .tablewrap { max-height: 340px; overflow-y: auto; }
+  .warn { display: none; font-size: 12px; color: #8a6400; background: #fff8e6; border: 1px solid #f0dca0;
+    border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Missing faces tool</h1>
+  <p class="sub">
+    Each row is one shot. Play the shot and check that every human, Muppet and animal face has a white box.
+    If they all do, press <b>Enter</b> ("All faces boxed", then the next shot).
+    If a face has no box, press <b>f</b> ("Face missing"), stop on a frame where that face is clearly visible,
+    <b>drag a box around it</b> on the video, then press <b>c</b> (child), <b>d</b> (adult), <b>m</b> (Muppet) or <b>a</b> (animal; also type which animal).
+    Add one box for each missing face. Your work saves in this browser automatically, but <b>click Export CSV</b> when you stop for the day.
+  </p>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <div class="row">
+          <label for="raterInput">Rater initials</label>
+          <input type="text" id="raterInput" style="width:80px" placeholder="e.g. RB">
+          <label for="clipSelect">Clip</label>
+          <select id="clipSelect"></select>
+          <span class="spacer"></span>
+          <span class="muted" id="progress"></span>
+        </div>
+        <div class="stage">
+          <video id="player" preload="auto"></video>
+          <canvas id="overlay" width="1280" height="720"></canvas>
+        </div>
+        <div class="warn" id="videoWarning"></div>
+        <input type="range" id="scrub" style="margin-top:10px">
+        <div class="row" style="margin-top:6px">
+          <button id="prevBtn"><span class="kbd">&larr;</span> Previous shot</button>
+          <button id="playBtn"><span class="kbd">space</span> Play / pause</button>
+          <button id="backFrameBtn"><span class="kbd">,</span> Back 1 frame</button>
+          <button id="fwdFrameBtn">Forward 1 frame <span class="kbd">.</span></button>
+          <button id="nextBtn">Next shot <span class="kbd">&rarr;</span></button>
+          <span class="spacer"></span>
+          <span class="muted" id="frameLabel"></span>
+        </div>
+        <div class="muted">White boxes = faces SAM3 found. Yellow boxes = missing faces you marked (shown on the frame you drew them).</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <div class="shothead" id="shotHead"></div>
+        <div class="muted" id="shotInfo"></div>
+
+        <h2 style="margin-top:14px">Does every face have a box?</h2>
+        <div class="row">
+          <button class="status" data-status="all_boxed"><span class="kbd">Enter</span> All faces boxed</button>
+          <button class="status" data-status="missing"><span class="kbd">f</span> Face missing</button>
+        </div>
+
+        <div id="missingSection">
+          <div class="muted">Pause on a frame where the missing face is clear, then drag a box around it on the video.</div>
+          <div class="pending" id="pendingBox">
+            <b>New box on frame <span id="pendingFrame"></span>. What is it?</b>
+            <div class="row" style="margin-top:8px">
+              <button class="newType" data-type="child"><span class="kbd">c</span> Child</button>
+              <button class="newType" data-type="adult"><span class="kbd">d</span> Adult</button>
+              <button class="newType" data-type="muppet"><span class="kbd">m</span> Muppet</button>
+              <button class="newType" data-type="animal"><span class="kbd">a</span> Animal</button>
+              <button id="cancelBoxBtn"><span class="kbd">esc</span> Cancel</button>
+            </div>
+            <input type="text" id="boxNote" placeholder='Note: for an animal, which one ("goat"); otherwise optional'>
+          </div>
+          <div class="boxlist" id="boxList"></div>
+        </div>
+        <div class="err" id="errBox"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Shots in this clip</h2>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Shot</th><th>Time (s)</th><th>Faces boxed</th><th>Check</th></tr></thead>
+            <tbody id="shotTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="row">
+          <button class="primary" id="exportBtn">Export CSV</button>
+          <button id="importBtn">Load CSV to continue</button>
+          <input type="file" id="importFile" accept=".csv" style="display:none">
+        </div>
+        <div class="muted">Export saves <code>rb_shot_checks_&lt;initials&gt;.csv</code> to Downloads. Load CSV restores a previous export.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="face_tracks.js"></script>
+<script>
+const VIDEO_DIR = "../../../stimuli/main_blocks/";
+const STORAGE_KEY = "rb_missing_faces_tool_v1";
+const CLIPS = ["sesameus_1", "sesameus_2", "sesameindia_1", "sesameindia_2"];
+const FRAME_MS = { sesameus_1: 1001 / 30, sesameus_2: 1001 / 30, sesameindia_1: 40, sesameindia_2: 40 };
+const W = 1280, H = 720;
+const PROMPT_NAMES = { child: "child face", adult: "adult face", muppet: "muppet face", animal: "animal face" };  // labels SAM3 corrections use
+const TYPE_KEYS = { c: "child", d: "adult", m: "muppet", a: "animal" };
+const SHOT_COLS = ["rater", "video", "shot_idx", "start_s", "end_s", "n_faces_boxed", "shot_check",
+  "face_type", "prompt_name", "frame", "time_s", "x0", "y0", "x1", "y1", "note"];
+
+const $ = (id) => document.getElementById(id);
+const player = $("player"), overlay = $("overlay"), ctx = overlay.getContext("2d");
+
+// checks["<video>_<shot_idx>"] = { status: "all_boxed" | "missing", boxes: [{ frame, x0, y0, x1, y1, type, note }] }
+let checks = {};
+let clip = CLIPS[0], shot = 0, playUntil = null, rater = "";
+let pending = null, dragStart = null, waitingType = null;  // waitingType: animal chosen, note still needed
+
+const clipTracks = () => TRACKS.filter((t) => t.video_name === clip);
+const clipShots = () => SHOTS.filter((s) => s.video_name === clip);
+const shotKey = (s) => `${s.video_name}_${s.shot_idx}`;
+const current = () => clipShots()[shot];
+const check = () => checks[shotKey(current())];
+const frameMs = () => FRAME_MS[clip];
+const frameNow = () => Math.floor(player.currentTime * 1000 / frameMs() + 0.001);
+const firstFrame = (s) => Math.round(s.start_ms / FRAME_MS[s.video_name]);
+const lastFrame = (s) => Math.round(s.end_ms / FRAME_MS[s.video_name]);
+
+// each rater's work is saved separately in the browser
+function loadState() {
+  checks = {};
+  if (!rater) return;
+  try { checks = JSON.parse(localStorage.getItem(`${STORAGE_KEY}_${rater}`) || "{}"); }
+  catch (e) { console.warn("localStorage unavailable:", e); }
+}
+function saveState() {
+  if (!rater) return;
+  try { localStorage.setItem(`${STORAGE_KEY}_${rater}`, JSON.stringify(checks)); } catch (e) { /* best effort */ }
+}
+
+// ---- video + boxes ----
+function boxAt(track, ms) {
+  // only the box for the frame on screen, so boxes never spill into the next shot
+  const dur = FRAME_MS[track.video_name];
+  return track.boxes.find((b) => ms >= b[0] - 0.5 && ms < b[0] + dur - 0.5) || null;
+}
+
+function drawRect(x0, y0, x1, y1, color, width, text, dashed) {
+  ctx.setLineDash(dashed ? [12, 8] : []);
+  ctx.strokeStyle = color; ctx.lineWidth = width;
+  ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  ctx.setLineDash([]);
+  if (text) {
+    ctx.font = "bold 22px -apple-system, sans-serif";
+    const w = ctx.measureText(text).width + 10;
+    const y = Math.max(0, y0 - 28);
+    ctx.fillStyle = color; ctx.fillRect(x0, y, w, 28);
+    ctx.fillStyle = "#000";
+    ctx.fillText(text, x0 + 5, y + 21);
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const ms = player.currentTime * 1000;
+  for (const t of clipTracks()) {
+    if (ms < t.start_ms - 1 || ms > t.end_ms + 41) continue;
+    const b = boxAt(t, ms);
+    if (b) drawRect(b[1], b[2], b[1] + b[3], b[2] + b[4], "#ffffff", 3);
+  }
+  const c = check();
+  if (c && c.boxes) {
+    c.boxes.forEach((b, i) => {
+      if (b.frame === frameNow()) drawRect(b.x0, b.y0, b.x1, b.y1, "#ffd400", 4, `${i + 1}. ${b.type}`);
+    });
+  }
+  if (pending) drawRect(pending.x0, pending.y0, pending.x1, pending.y1, "#ffd400", 4, "", true);
+  // stop on the shot's last frame, then snap back to it so playback never rests on the next shot
+  if (playUntil !== null && ms >= playUntil) {
+    player.pause();
+    player.currentTime = playUntil / 1000 + 0.005;
+    playUntil = null;
+  }
+  if (!player.paused) $("scrub").value = ms;
+  $("frameLabel").textContent = `frame ${frameNow()}`;
+  requestAnimationFrame(draw);
+}
+
+function seekFrame(f) {
+  const s = current();
+  f = Math.max(firstFrame(s), Math.min(lastFrame(s), f));
+  player.pause(); playUntil = null;
+  player.currentTime = (f * frameMs() + 5) / 1000;
+  $("scrub").value = f * frameMs();
+}
+
+function togglePlay() {
+  if (!player.paused) { player.pause(); playUntil = null; return; }
+  const s = current();
+  if (frameNow() >= lastFrame(s)) player.currentTime = s.start_ms / 1000 + 0.005;
+  playUntil = s.end_ms;
+  pending = null; renderPending();
+  player.play();
+}
+
+// ---- drawing a box ----
+function toVideo(e) {
+  const r = overlay.getBoundingClientRect();
+  return [Math.round(Math.max(0, Math.min(W, (e.clientX - r.left) / r.width * W))),
+          Math.round(Math.max(0, Math.min(H, (e.clientY - r.top) / r.height * H)))];
+}
+overlay.addEventListener("mousedown", (e) => {
+  player.pause(); playUntil = null;
+  dragStart = toVideo(e);
+  pending = null;
+});
+overlay.addEventListener("mousemove", (e) => {
+  if (!dragStart) return;
+  const [x, y] = toVideo(e);
+  pending = { frame: frameNow(), x0: Math.min(dragStart[0], x), y0: Math.min(dragStart[1], y),
+              x1: Math.max(dragStart[0], x), y1: Math.max(dragStart[1], y) };
+});
+window.addEventListener("mouseup", () => {
+  if (!dragStart) return;
+  dragStart = null;
+  if (pending && (pending.x1 - pending.x0 < 8 || pending.y1 - pending.y0 < 8)) pending = null;  // a click, not a box
+  renderPending();
+});
+
+function renderPending() {
+  waitingType = null;
+  $("pendingBox").style.display = pending ? "block" : "none";
+  if (pending) { $("pendingFrame").textContent = pending.frame; $("boxNote").value = ""; }
+}
+
+function saveBox(type) {
+  if (!pending) return;
+  if (type === "animal" && !$("boxNote").value.trim()) {
+    $("errBox").textContent = "Type which animal in the note box, then press Enter.";
+    waitingType = type;
+    $("boxNote").focus();
+    return;
+  }
+  waitingType = null;
+  $("errBox").textContent = "";
+  check().boxes.push({ ...pending, type, note: $("boxNote").value.trim() });
+  pending = null;
+  saveState();
+  render();
+}
+
+function deleteBox(i) {
+  check().boxes.splice(i, 1);
+  saveState();
+  render();
+}
+
+// ---- form ----
+function goTo(i) {
+  shot = Math.max(0, Math.min(clipShots().length - 1, i));
+  pending = null;
+  $("errBox").textContent = "";
+  const s = current();
+  $("scrub").min = s.start_ms; $("scrub").max = s.end_ms; $("scrub").step = frameMs();
+  seekFrame(firstFrame(s));
+  render();
+}
+
+function setStatus(status) {
+  if (!rater) { $("errBox").textContent = "Type your initials at the top first."; return; }
+  const c = check();
+  if (status === "all_boxed" && c && c.boxes && c.boxes.length) {
+    $("errBox").textContent = "This shot has missing-face boxes. Delete them first if every face is boxed."; return;
+  }
+  checks[shotKey(current())] = { status, boxes: c && c.boxes ? c.boxes : [] };
+  saveState();
+  $("errBox").textContent = "";
+  if (status === "all_boxed" && shot < clipShots().length - 1) { goTo(shot + 1); return; }
+  render();
+}
+
+function render() {
+  const s = current();
+  const c = check() || { status: "", boxes: [] };
+  $("shotHead").textContent = `Shot ${s.shot_idx} (${shot + 1} of ${clipShots().length})`;
+  $("shotInfo").textContent = `${(s.start_ms / 1000).toFixed(2)}–${(s.end_ms / 1000).toFixed(2)} s · ` +
+    `frames ${firstFrame(s)}–${lastFrame(s)} · SAM3 boxed ${s.n_faces} face(s)`;
+  document.querySelectorAll("button.status").forEach((b) => b.classList.toggle("on", b.dataset.status === c.status));
+
+  const missing = c.status === "missing";
+  $("missingSection").style.display = missing ? "block" : "none";
+  overlay.classList.toggle("drawing", missing);
+  renderPending();
+  const list = $("boxList");
+  list.innerHTML = "";
+  c.boxes.forEach((b, i) => {
+    const div = document.createElement("div");
+    div.className = "boxitem";
+    div.innerHTML = `<b>${i + 1}.</b> ${b.type} · frame ${b.frame}${b.note ? " · " + escapeHtml(b.note) : ""}` +
+      `<span class="spacer"></span><button class="small">show</button><button class="small">delete</button>`;
+    const [showBtn, delBtn] = div.querySelectorAll("button");
+    showBtn.onclick = () => seekFrame(b.frame);
+    delBtn.onclick = () => deleteBox(i);
+    list.appendChild(div);
+  });
+  if (missing && !c.boxes.length && !$("errBox").textContent) $("errBox").textContent = "Draw a box around each missing face.";
+  if (c.boxes.length && $("errBox").textContent === "Draw a box around each missing face.") $("errBox").textContent = "";
+
+  const body = $("shotTable");
+  body.innerHTML = "";
+  clipShots().forEach((sh, i) => {
+    const ch = checks[shotKey(sh)];
+    let text = "";
+    if (ch && ch.status === "all_boxed") text = "all boxed";
+    if (ch && ch.status === "missing") text = `missing: ${ch.boxes.length ? ch.boxes.map((b) => b.type).join(", ") : "no box yet"}`;
+    const tr = document.createElement("tr");
+    if (i === shot) tr.className = "active";
+    tr.innerHTML = `<td>${sh.shot_idx}</td><td>${(sh.start_ms / 1000).toFixed(1)}–${(sh.end_ms / 1000).toFixed(1)}</td>` +
+      `<td>${sh.n_faces}</td><td class="${ch && ch.status === "missing" ? "changed" : "done"}">${escapeHtml(text)}</td>`;
+    tr.onclick = () => goTo(i);
+    body.appendChild(tr);
+  });
+  const active = body.querySelector("tr.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
+  const done = clipShots().filter((sh) => checks[shotKey(sh)]).length;
+  const all = SHOTS.filter((sh) => checks[shotKey(sh)]).length;
+  $("progress").textContent = `${done}/${clipShots().length} shots done in this clip · ${all}/${SHOTS.length} overall`;
+}
+
+// ---- CSV in/out ----
+function csvCell(v) {
+  const s = v === undefined || v === null ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportCsv() {
+  if (!rater) { $("errBox").textContent = "Type your initials at the top first."; return; }
+  // one row per shot, except shots with missing faces get one row per box
+  const lines = [SHOT_COLS.join(",")];
+  for (const sh of SHOTS) {
+    const c = checks[shotKey(sh)] || { status: "", boxes: [] };
+    const base = [rater, sh.video_name, sh.shot_idx, (sh.start_ms / 1000).toFixed(3), (sh.end_ms / 1000).toFixed(3), sh.n_faces, c.status];
+    if (!c.boxes.length) { lines.push([...base, "", "", "", "", "", "", "", "", ""].map(csvCell).join(",")); continue; }
+    for (const b of c.boxes) {
+      const t = (b.frame * FRAME_MS[sh.video_name] / 1000).toFixed(3);
+      lines.push([...base, b.type, PROMPT_NAMES[b.type], b.frame, t, b.x0, b.y0, b.x1, b.y1, b.note].map(csvCell).join(","));
+    }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }));
+  a.download = `rb_shot_checks_${rater}.csv`;
+  a.click();
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') q = false;
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+function importCsv(text) {
+  const rows = parseCsv(text);
+  const head = rows[0];
+  const col = (name) => head.indexOf(name);
+  if (col("shot_check") < 0 || col("shot_idx") < 0) throw new Error("not an export");
+  if (!rater) { $("errBox").textContent = "Type your initials at the top first."; return; }
+  const fileRater = col("rater") >= 0 && rows[1] ? rows[1][col("rater")] : "";
+  if (fileRater && fileRater !== rater) {
+    $("errBox").textContent = `That file belongs to rater ${fileRater}, but the initials box says ${rater}.`; return;
+  }
+  checks = {};
+  for (const r of rows.slice(1)) {
+    const status = r[col("shot_check")];
+    if (!status) continue;
+    const key = `${r[col("video")]}_${r[col("shot_idx")]}`;
+    if (!checks[key]) checks[key] = { status, boxes: [] };
+    if (r[col("frame")] !== "" && r[col("frame")] !== undefined) {
+      checks[key].boxes.push({ frame: +r[col("frame")], x0: +r[col("x0")], y0: +r[col("y0")], x1: +r[col("x1")],
+                               y1: +r[col("y1")], type: r[col("face_type")], note: r[col("note")] || "" });
+    }
+  }
+  saveState();
+  goTo(shot);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+// ---- wiring ----
+function loadClip(name) {
+  clip = name;
+  $("videoWarning").style.display = "none";
+  player.src = `${VIDEO_DIR}${name}.mp4`;
+  player.addEventListener("loadeddata", () => goTo(0), { once: true });
+}
+
+for (const name of CLIPS) {
+  const o = document.createElement("option");
+  o.value = name; o.textContent = name;
+  $("clipSelect").appendChild(o);
+}
+$("clipSelect").addEventListener("change", (e) => loadClip(e.target.value));
+$("raterInput").addEventListener("change", (e) => {
+  rater = e.target.value.trim().toUpperCase();
+  e.target.value = rater;
+  try { localStorage.setItem(`${STORAGE_KEY}_last_rater`, rater); } catch (err) { /* best effort */ }
+  loadState();
+  goTo(shot);
+});
+document.querySelectorAll("button.status").forEach((b) => (b.onclick = () => setStatus(b.dataset.status)));
+document.querySelectorAll("button.newType").forEach((b) => (b.onclick = () => saveBox(b.dataset.type)));
+$("cancelBoxBtn").onclick = () => { pending = null; renderPending(); };
+$("boxNote").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === "Escape") {
+    e.preventDefault(); e.stopPropagation(); $("boxNote").blur();
+    if (e.key === "Enter" && waitingType) saveBox(waitingType);
+  }
+});
+$("scrub").addEventListener("input", (e) => seekFrame(Math.round(+e.target.value / frameMs())));
+$("prevBtn").onclick = () => goTo(shot - 1);
+$("nextBtn").onclick = () => goTo(shot + 1);
+$("playBtn").onclick = togglePlay;
+$("backFrameBtn").onclick = () => seekFrame(frameNow() - 1);
+$("fwdFrameBtn").onclick = () => seekFrame(frameNow() + 1);
+$("exportBtn").onclick = exportCsv;
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { importCsv(reader.result); }
+    catch (err) { $("errBox").textContent = "Could not read that file. Load a CSV made with Export CSV."; }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+player.addEventListener("error", () => {
+  $("videoWarning").style.display = "block";
+  $("videoWarning").textContent = `Could not load ${VIDEO_DIR}${clip}.mp4. Open this file from inside the repo ` +
+    `(scripts/rb-thesis/face_tools/) and check that stimuli/main_blocks/ has the mp4s.`;
+});
+
+// buttons give focus back after a click, so space/Enter never press the last-clicked button again
+document.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) b.blur(); });
+
+document.addEventListener("keydown", (e) => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName) && document.activeElement.type !== "range") return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (pending && TYPE_KEYS[k]) { e.preventDefault(); saveBox(TYPE_KEYS[k]); }
+  else if (e.key === "Escape") { pending = null; renderPending(); }
+  else if (e.key === "Enter") {
+    e.preventDefault();
+    const c = check();
+    if (c && c.status === "missing") goTo(shot + 1);  // never overwrite a missing-face shot by accident
+    else setStatus("all_boxed");
+  }
+  else if (k === "f") { e.preventDefault(); setStatus("missing"); }
+  else if (e.key === " ") { e.preventDefault(); togglePlay(); }
+  else if (e.key === ",") { e.preventDefault(); seekFrame(frameNow() - 1); }
+  else if (e.key === ".") { e.preventDefault(); seekFrame(frameNow() + 1); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); goTo(shot + 1); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); goTo(shot - 1); }
+});
+
+try { rater = localStorage.getItem(`${STORAGE_KEY}_last_rater`) || ""; } catch (e) { /* best effort */ }
+$("raterInput").value = rater;
+loadState();
+loadClip(clip);
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

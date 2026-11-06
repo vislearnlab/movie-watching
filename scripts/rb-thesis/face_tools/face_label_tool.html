@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Face label tool</title>
+<style>
+  :root {
+    --bg: #fafaf9; --panel: #ffffff; --border: #e2e2df; --text: #0b0b0b; --muted: #6b6a66;
+    --accent: #2a78d6; --danger: #c23b3b; --done: #2f7d4f; --changed: #a35a00;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 0 0 8px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(330px, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .spacer { flex: 1; }
+  label { font-size: 13px; color: var(--muted); }
+  select, input[type=text] {
+    font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text);
+  }
+  input[type=text] { width: 100%; }
+  button {
+    font-size: 13px; padding: 6px 11px; border-radius: 6px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); cursor: pointer;
+  }
+  button:hover { background: #f3f3f1; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.on { background: var(--text); color: #fff; border-color: var(--text); }
+  .kbd { font-family: ui-monospace, monospace; font-size: 11px; border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: #f6f6f4; color: var(--text); }
+  button.on .kbd { background: #333; color: #fff; border-color: #555; }
+  .stage { position: relative; }
+  video { width: 100%; display: block; border-radius: 8px; background: #000; }
+  canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+  .trackhead { font-size: 15px; font-weight: 600; margin: 10px 0 2px; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .sam3 { font-size: 13px; margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: #f6f6f4; }
+  .err { font-size: 12px; color: var(--danger); min-height: 16px; margin-top: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 4px 7px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #f8f8f6; }
+  tr.active { background: #eef2f7; }
+  .done { color: var(--done); font-weight: 600; }
+  .changed { color: var(--changed); font-weight: 600; }
+  .tablewrap { max-height: 360px; overflow-y: auto; }
+  .warn { display: none; font-size: 12px; color: #8a6400; background: #fff8e6; border: 1px solid #f0dca0;
+    border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Face label tool</h1>
+  <p class="sub">
+    Each row in <b>Faces in this clip</b> is one face that SAM3 tracked through one shot. SAM3's prompt already says
+    whether most faces are human, Muppet or animal, and that answer is pre-selected. Check the blue box: if the answer
+    is right, press <b>Enter</b>; if not, pick the right one (or <b>Not a face</b> if the box is wrong), then Enter.
+    Some faces came from a generic prompt and have no answer yet, so you pick one.
+    (Faces SAM3 missed entirely are checked in a separate tool, <code>missing_faces_tool.html</code>.)
+    Your work saves in this browser automatically, but <b>click Export CSV</b> when you stop for the day.
+  </p>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <div class="row">
+          <label for="raterInput">Rater initials</label>
+          <input type="text" id="raterInput" style="width:80px" placeholder="e.g. RB">
+          <label for="clipSelect">Clip</label>
+          <select id="clipSelect"></select>
+          <span class="spacer"></span>
+          <span class="muted" id="progress"></span>
+        </div>
+        <div class="stage">
+          <video id="player" preload="auto"></video>
+          <canvas id="overlay" width="1280" height="720"></canvas>
+        </div>
+        <div class="warn" id="videoWarning"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="prevBtn"><span class="kbd">&larr;</span> Previous face</button>
+          <button id="playBtn"><span class="kbd">space</span> Play this face</button>
+          <button id="nextBtn">Next face <span class="kbd">&rarr;</span></button>
+          <span class="spacer"></span>
+          <label><input type="checkbox" id="showOthers" checked> show other faces</label>
+        </div>
+        <div class="muted">Blue box = the face you are labeling. White boxes = other faces in the same frame (with their label, if they have one).</div>
+      </div>
+
+      <div class="panel">
+        <h2>Faces in this clip</h2>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>#</th><th>Shot</th><th>Time (s)</th><th>SAM3 prompt</th><th>Your label</th></tr></thead>
+            <tbody id="trackTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <div class="trackhead" id="trackHead"></div>
+        <div class="muted" id="trackInfo"></div>
+        <div class="sam3" id="sam3Says"></div>
+
+        <h2 style="margin-top:14px">What kind of face is in the blue box?</h2>
+        <div class="row">
+          <button class="type" data-type="human"><span class="kbd">h</span> Human</button>
+          <button class="type" data-type="muppet"><span class="kbd">m</span> Muppet</button>
+          <button class="type" data-type="animal"><span class="kbd">a</span> Animal</button>
+          <button class="type" data-type="not_a_face"><span class="kbd">x</span> Not a face</button>
+        </div>
+
+        <h2 style="margin-top:14px">Notes (optional)</h2>
+        <input type="text" id="notes" placeholder="anything unusual about this face">
+
+        <div class="row" style="margin-top:14px">
+          <button class="primary" id="saveBtn"><span class="kbd">Enter</span> Confirm and go to next</button>
+          <button id="clearBtn">Clear label</button>
+        </div>
+        <div class="err" id="errBox"></div>
+      </div>
+
+      <div class="panel">
+        <div class="row">
+          <button class="primary" id="exportBtn">Export CSV</button>
+          <button id="importBtn">Load CSV to continue</button>
+          <input type="file" id="importFile" accept=".csv" style="display:none">
+        </div>
+        <div class="muted">Export saves <code>rb_face_labels_&lt;initials&gt;.csv</code> to Downloads. Load CSV restores a previous export.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="face_tracks.js"></script>
+<script>
+const VIDEO_DIR = "../../../stimuli/main_blocks/";
+const STORAGE_KEY = "rb_face_label_tool_v1";
+const CLIPS = ["sesameus_1", "sesameus_2", "sesameindia_1", "sesameindia_2"];
+const FRAME_MS = { sesameus_1: 1001 / 30, sesameus_2: 1001 / 30, sesameindia_1: 40, sesameindia_2: 40 };
+const TYPE_KEYS = { h: "human", m: "muppet", a: "animal", x: "not_a_face" };
+const TYPE_NAMES = { human: "Human", muppet: "Muppet", animal: "Animal", not_a_face: "Not a face" };
+const FACE_COLS = ["rater", "video", "track_id", "prompt_idx", "prompt", "shot_idx", "obj_id", "start_s", "end_s", "n_frames",
+  "sam3_type", "face_type", "notes"];
+
+const $ = (id) => document.getElementById(id);
+const player = $("player"), overlay = $("overlay"), ctx = overlay.getContext("2d");
+
+// labels[track_id] = { face_type, notes }  (only faces she has confirmed)
+let labels = {};
+let clip = CLIPS[0], idx = 0, playUntil = null, rater = "";
+let draft = { face_type: "", notes: "" };
+
+const clipTracks = () => TRACKS.filter((t) => t.video_name === clip);
+const current = () => clipTracks()[idx];
+
+// each rater's work is saved separately in the browser
+function loadState() {
+  labels = {};
+  if (!rater) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(`${STORAGE_KEY}_${rater}`) || "{}");
+    labels = saved.labels || {};
+  } catch (e) { console.warn("localStorage unavailable:", e); }
+}
+function saveState() {
+  if (!rater) return;
+  try { localStorage.setItem(`${STORAGE_KEY}_${rater}`, JSON.stringify({ labels })); } catch (e) { /* best effort */ }
+}
+
+function labelText(id) {
+  const l = labels[id];
+  return l ? TYPE_NAMES[l.face_type].toLowerCase() : "";
+}
+
+// ---- video + boxes ----
+function boxAt(track, ms) {
+  // only the box for the frame on screen, so boxes never spill into the next shot
+  const dur = FRAME_MS[track.video_name];
+  return track.boxes.find((b) => ms >= b[0] - 0.5 && ms < b[0] + dur - 0.5) || null;
+}
+
+function drawBox(b, color, width, text) {
+  ctx.strokeStyle = color; ctx.lineWidth = width;
+  ctx.strokeRect(b[1], b[2], b[3], b[4]);
+  if (text) {
+    ctx.font = "bold 22px -apple-system, sans-serif";
+    const w = ctx.measureText(text).width + 10;
+    const y = Math.max(0, b[2] - 28);
+    ctx.fillStyle = color; ctx.fillRect(b[1], y, w, 28);
+    ctx.fillStyle = color === "#ffffff" ? "#000" : "#fff";
+    ctx.fillText(text, b[1] + 5, y + 21);
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  const ms = player.currentTime * 1000;
+  const cur = current();
+  if ($("showOthers").checked) {
+    for (const t of clipTracks()) {
+      if (t === cur || ms < t.start_ms - 1 || ms > t.end_ms + 41) continue;
+      const b = boxAt(t, ms);
+      if (b) drawBox(b, "#ffffff", 2, labelText(t.track_id));
+    }
+  }
+  if (cur) {
+    const b = boxAt(cur, ms);
+    if (b) drawBox(b, "#2a78d6", 5, `#${idx + 1}`);
+  }
+  // stop on the last frame, then snap back to it so playback never rests on the next shot
+  if (playUntil !== null && ms >= playUntil) {
+    player.pause();
+    player.currentTime = playUntil / 1000 + 0.005;
+    playUntil = null;
+  }
+  requestAnimationFrame(draw);
+}
+
+function playFrom(startMs, endMs) {
+  player.currentTime = startMs / 1000 + 0.005;
+  playUntil = endMs;
+  player.play();
+}
+
+// ---- face form ----
+function goTo(i) {
+  const n = clipTracks().length;
+  idx = Math.max(0, Math.min(n - 1, i));
+  const t = current();
+  const l = labels[t.track_id];
+  draft = l ? { ...l } : { face_type: t.sam3_type, notes: "" };  // start from SAM3's answer
+  $("errBox").textContent = "";
+  player.pause(); playUntil = null;
+  player.currentTime = t.best_ms / 1000 + 0.005;
+  renderAll();
+}
+
+function renderForm() {
+  const t = current();
+  $("trackHead").textContent = `Face #${idx + 1} of ${clipTracks().length}`;
+  $("trackInfo").textContent = `Shot ${t.shot_idx} · ${(t.start_ms / 1000).toFixed(2)}–${(t.end_ms / 1000).toFixed(2)} s · ` +
+    `${t.n_frames} frames`;
+  $("sam3Says").innerHTML = t.sam3_type
+    ? `SAM3 prompt "${escapeHtml(t.prompt)}" says: <b>${TYPE_NAMES[t.sam3_type]}</b>`
+    : `SAM3 prompt "${escapeHtml(t.prompt)}" is generic, so <b>you pick</b>.`;
+  document.querySelectorAll("button.type").forEach((b) => b.classList.toggle("on", b.dataset.type === draft.face_type));
+  $("notes").value = draft.notes || "";
+}
+
+function renderTable() {
+  const body = $("trackTable");
+  body.innerHTML = "";
+  clipTracks().forEach((t, i) => {
+    const l = labels[t.track_id];
+    let cell = "";
+    if (l && l.face_type === t.sam3_type) cell = `<span class="done">${labelText(t.track_id)}</span>`;
+    else if (l) cell = `<span class="changed">${labelText(t.track_id)}</span>`;
+    const tr = document.createElement("tr");
+    if (i === idx) tr.className = "active";
+    tr.innerHTML = `<td>${i + 1}</td><td>${t.shot_idx}</td><td>${(t.start_ms / 1000).toFixed(1)}–${(t.end_ms / 1000).toFixed(1)}</td>` +
+      `<td>${escapeHtml(t.prompt)}</td><td>${cell}</td>`;
+    tr.onclick = () => goTo(i);
+    body.appendChild(tr);
+  });
+  const active = body.querySelector("tr.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
+  const done = clipTracks().filter((t) => labels[t.track_id]).length;
+  const all = TRACKS.filter((t) => labels[t.track_id]).length;
+  $("progress").textContent = `${done}/${clipTracks().length} faces done in this clip · ${all}/${TRACKS.length} overall`;
+}
+
+function renderAll() { renderForm(); renderTable(); }
+
+function setType(type) {
+  draft.face_type = type;
+  renderForm();
+}
+
+function saveCurrent() {
+  if (!rater) { $("errBox").textContent = "Type your initials at the top first."; return; }
+  draft.notes = $("notes").value.trim();
+  if (!draft.face_type) { $("errBox").textContent = "Pick a face type first."; return; }
+  labels[current().track_id] = { ...draft };
+  saveState();
+  if (idx < clipTracks().length - 1) goTo(idx + 1); else renderAll();
+}
+
+function clearCurrent() {
+  delete labels[current().track_id];
+  saveState();
+  goTo(idx);
+}
+
+// ---- CSV in/out ----
+function csvCell(v) {
+  const s = v === undefined || v === null ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function download(filename, lines) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }));
+  a.download = filename;
+  a.click();
+}
+
+function exportCsv() {
+  if (!rater) { $("errBox").textContent = "Type your initials at the top first."; return; }
+  const faceLines = [FACE_COLS.join(",")];
+  for (const t of TRACKS) {
+    const l = labels[t.track_id] || {};
+    faceLines.push([rater, t.video_name, t.track_id, t.prompt_idx, t.prompt, t.shot_idx, t.obj_id, (t.start_ms / 1000).toFixed(3),
+      (t.end_ms / 1000).toFixed(3), t.n_frames, t.sam3_type, l.face_type, l.notes].map(csvCell).join(","));
+  }
+  download(`rb_face_labels_${rater}.csv`, faceLines);
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') q = false;
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+function importCsv(text) {
+  const rows = parseCsv(text);
+  const head = rows[0];
+  const col = (name) => head.indexOf(name);
+  if (col("track_id") < 0 || col("face_type") < 0) throw new Error("not an export");
+  if (!rater) { $("errBox").textContent = "Type your initials at the top first."; return; }
+  const fileRater = col("rater") >= 0 && rows[1] ? rows[1][col("rater")] : "";
+  if (fileRater && fileRater !== rater) {
+    $("errBox").textContent = `That file belongs to rater ${fileRater}, but the initials box says ${rater}.`; return;
+  }
+  labels = {};
+  for (const r of rows.slice(1)) {
+    const type = r[col("face_type")];
+    if (type) labels[r[col("track_id")]] = { face_type: type, notes: r[col("notes")] || "" };
+  }
+  saveState();
+  goTo(idx);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+// ---- wiring ----
+function loadClip(name) {
+  clip = name;
+  $("videoWarning").style.display = "none";
+  player.src = `${VIDEO_DIR}${name}.mp4`;
+  player.addEventListener("loadeddata", () => goTo(0), { once: true });
+}
+
+for (const name of CLIPS) {
+  const o = document.createElement("option");
+  o.value = name; o.textContent = name;
+  $("clipSelect").appendChild(o);
+}
+$("clipSelect").addEventListener("change", (e) => loadClip(e.target.value));
+$("raterInput").addEventListener("change", (e) => {
+  rater = e.target.value.trim().toUpperCase();
+  e.target.value = rater;
+  try { localStorage.setItem(`${STORAGE_KEY}_last_rater`, rater); } catch (err) { /* best effort */ }
+  loadState();
+  goTo(idx);
+});
+document.querySelectorAll("button.type").forEach((b) => (b.onclick = () => setType(b.dataset.type)));
+$("saveBtn").onclick = saveCurrent;
+$("clearBtn").onclick = clearCurrent;
+$("prevBtn").onclick = () => goTo(idx - 1);
+$("nextBtn").onclick = () => goTo(idx + 1);
+$("playBtn").onclick = () => playFrom(current().start_ms, current().end_ms);
+$("exportBtn").onclick = exportCsv;
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { importCsv(reader.result); }
+    catch (err) { $("errBox").textContent = "Could not read that file. Load a CSV made with Export CSV."; }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+player.addEventListener("error", () => {
+  $("videoWarning").style.display = "block";
+  $("videoWarning").textContent = `Could not load ${VIDEO_DIR}${clip}.mp4. Open this file from inside the repo ` +
+    `(scripts/rb-thesis/face_tools/) and check that stimuli/main_blocks/ has the mp4s.`;
+});
+
+// buttons give focus back after a click, so space/Enter never press the last-clicked button again
+document.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) b.blur(); });
+
+document.addEventListener("keydown", (e) => {
+  const tag = document.activeElement.tagName;
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(tag)) {
+    if (e.key === "Enter" && document.activeElement === $("notes")) { e.preventDefault(); $("notes").blur(); saveCurrent(); }
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (TYPE_KEYS[k]) { e.preventDefault(); setType(TYPE_KEYS[k]); }
+  else if (e.key === "Enter") { e.preventDefault(); saveCurrent(); }
+  else if (e.key === " ") { e.preventDefault(); playFrom(current().start_ms, current().end_ms); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); goTo(idx + 1); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); goTo(idx - 1); }
+});
+
+try { rater = localStorage.getItem(`${STORAGE_KEY}_last_rater`) || ""; } catch (e) { /* best effort */ }
+$("raterInput").value = rater;
+loadState();
+loadClip(clip);
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
