@@ -1,8 +1,9 @@
 """
 Per-segment 120-tile feature vectors. Patch values (240px box means for motion/saliency, DeepMeaning
-ratings for meaning, face-box coverage for face, from ~2 Hz review frames) are averaged over the segment's frames, plotted at their patch centers,
+ratings for meaning) are averaged over the segment's frames, plotted at their patch centers,
 Gaussian-smoothed (normalized weighted average; fine sigma=46, coarse meaning sigma=92), and sampled
-at the 120 tile centers. Cached as a long table: smoothed unscaled columns (saliency_raw, motion_raw,
+at the 120 tile centers. Face is already a blurred face mask (sigma=46) sampled at the tile centers
+(calc_face_tiles.py), so it is only segment-averaged, not smoothed again. Cached as a long table: smoothed unscaled columns (saliency_raw, motion_raw,
 face_raw, meaning_fine, meaning_coarse) plus the scaled saliency, motion, meaning, face used by the models.
 
 Usage: python scripts/analysis/information_gain/load_features.py
@@ -88,11 +89,11 @@ def build(segment_set: str) -> pd.DataFrame:
         w_coarse = point_smoothing_matrix(m[3], C.SIGMA_FEATURE_COARSE) if m else None
         for seg in segs[segs.video == clip].itertuples():
             s, e = seg.seg_start_s, seg.seg_end_s
-            # Segment-mean patch values -> plotted at centers, smoothed, sampled (linear, so order doesn't matter).
+            # Segment-mean patch values -> plotted at centers, smoothed, sampled (linear, so order doesn't matter); face pre-smoothed.
             sv, mv, fv = segment_mean(sal, s, e), segment_mean(mot, s, e, needs_prev=True), segment_mean(face, s, e)
             vec = dict(saliency=w_fine @ sv if sv is not None else nan120,
                        motion=w_fine @ mv if mv is not None else nan120,
-                       face=w_fine @ fv if fv is not None else nan120,
+                       face=fv if fv is not None else nan120,  # already smoothed (calc_face_tiles.py)
                        meaning_fine=w_fine @ segment_mean((m[0], m[1]), s, e) if m else nan120,
                        meaning_coarse=w_coarse @ segment_mean((m[0], m[2]), s, e) if m else nan120)
             rows.append(pd.DataFrame(dict(segment_set=segment_set, video=clip, seg_idx=seg.seg_idx,

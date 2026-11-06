@@ -2,6 +2,7 @@
 Exploratory: the Overall IG pipeline (unchopped, 20 knots, floor) rebuilt on a dense grid of
 ~10,000 locations instead of the 120 tiles. Same cells, same nested leave-one-clip-out, same
 smoothing (gaze sigma=46 from fixations; features plotted at patch centers, sigma 46/92).
+Checked with 3 features (saliency, motion, meaning) only; not yet checked with face.
 
 Output: data/results/information_gain/summary_dense_<n>[_faceclips].csv (plotted by plot_information_gain_checks.R)
 

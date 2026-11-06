@@ -102,7 +102,7 @@ for (path in list.files(DATA_DIR, pattern = "^summary_dense_[0-9]+(_faceclips)?\
     scale_x_discrete(labels = sprintf("%s\n%+.1f%%", ifelse(parts == "shared", "shared", paste0("unique\n", parts)), 100 * d$prop)) +
     scale_y_continuous(labels = scales::label_percent()) +
     labs(x = NULL, y = sprintf("proportion of ceiling (ceiling = %.2f bits)", s[["ceiling"]]),
-         title = sprintf("Overall IG on a %s-location grid (%sunchopped, 20 knots, floor)", n, if (face) "7 clips with faces, " else "")) +
+         title = sprintf("Overall IG on a %s-location grid (%sunchopped, 20 knots, floor)", n, if (face) "8 clips with faces, " else "")) +
     theme_ig
   save(p, paste0("overall_ig_dense_", n, if (face) "_faceclips" else ""), 6.5, 4.6)
 }

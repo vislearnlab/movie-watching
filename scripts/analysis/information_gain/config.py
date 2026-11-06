@@ -24,7 +24,7 @@ CV_UNIT = "clip"  # leave-one-clip-out for floor, epsilon, lambda, feature param
 FEATURES = ["saliency", "motion", "meaning", "face"]  # face added 2026-10-24 (see METHODS_DECISIONS)
 ABBR = {"saliency": "S", "motion": "M", "meaning": "X", "face": "F"}
 ALL = "".join(ABBR[f] for f in FEATURES)  # the all-features mixture
-FACE_CLIPS = ["frank_complex", "frank_play", "sesameindia_1", "sesameindia_2", "sesameus_1", "sesameus_2", "slow_people"]
+FACE_CLIPS = ["frank_complex", "frank_play", "pixar_birds", "sesameindia_1", "sesameindia_2", "sesameus_1", "sesameus_2", "slow_people"]
 SUBSETS = {"": ("SMX", None), "_faceclips": ("SMXF", FACE_CLIPS), "_allclips4": ("SMXF", None)}  # output tag suffix: (features, clips); None = all clips
 FEATURE_SCALING = "corpus"  # joint [0, 1] rescale across all segments (Kümmerer 2015); "segment_z" = alternative
 NONLINEARITY = "knots"  # 20 equidistant knots, monotone piecewise-linear (Kümmerer 2015); "exp" = comparison

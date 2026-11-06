@@ -1582,64 +1582,6 @@ frank `#2a78d6`, pixar `#eda100`, sesame `#006414`, slow `#e85a32`. Defined once
 which `plot_information_gain.R`, `plot_within_between_scatter.R`, `plot_within_between_marginals.R` and
 `plot_entropy.qmd` source. Python `plot_quadrant_scatter.py` still has its old per-clip shades (pending R conversion).
 
-## 2026-10-24 — Face feature: human-reviewed boxes, area-weighted
-
-Faces = humans and Muppets only (no Pixar birds or other animals), per the user. YuNet (OpenCV, score ≥ 0.5) proposed
-boxes on ~2 Hz review frames per segment (`prepare_face_review.py`); the user reviewed every segment of all 12 clips in
-a local GUI (`face_review_server.py`), accepting/rejecting/drawing boxes. Muppets were almost all hand-drawn. The 5 clips
-the user listed as face-free (slow_hands, slow_animals, slow_inanimate, frank_objects, pixar_birds) were pre-set to
-no faces; detector-confident segments were flagged for review. All flags were false hits (hands, a train front,
-birds). Annotations: `annotations/faces/<clip>_faces.json`.
-- **Feature value = fraction of each 240px tile footprint covered by face boxes** (`calc_face_tiles.py`, same box-mean
-  pooling as motion/saliency → `data/results/face/`), then segment mean, σ=46 smoothing and 120-tile sampling as for the
-  other features. User decision: keep it **area-weighted** rather than a size-independent presence map, because a
-  larger face is more likely to be looked at, and the probability map should reflect that. So small faces in wide shots
-  (e.g. slow_people, frank_complex segments 2/3/6/7) carry little weight.
-- Feature is sampled at review frames (~2 Hz), not every frame. Boxes are clipped at the frame edge.
-- Visual check: `figures/face_maps/<clip>_face_map.png` (`montage_face_maps.py`).
-
-## 2026-10-24 — Face added to IG as a 4th feature
-
-`config.FEATURES` now saliency, motion, meaning, face (abbrev. F). Face is scaled like the others (corpus min-max).
-Every subset is scored as a fixed equal-weight mixture (15 models). The partition is generalized to N features:
-unique_k = all-four − the mixture without k, shared = the rest. The commonality formula for any subset (checked
-against the old 3-feature formulas, exact match) gives common_<letters> columns, which replace common_all3/common_SM/....
-plot_data writes `ig_all`/`prop_all` (= the all-features model) instead of `ig_SMX`/`prop_SMX`. Gaze, floor and ceiling
-are untouched; all old 3-feature numbers reproduce exactly. Face color in figures `#b5459b` (passes all-pairs CVD).
-- **Segments without faces stay in.** There face = 0 everywhere, so the face-only model = floor (IG 0). But the
-  equal-weight all-four mixture is diluted toward the floor there, so unique face can be negative in those segments.
-- **Adults, cuts, knots_floor (% of 1.23-bit ceiling):** face alone 15.4% (saliency 13.3, motion 19.1, meaning 24.0);
-  shuffled face −18.1%; all three 26.9% → all four 28.4%; unique face +1.5%. Uniques shrink because they are now
-  over the other three: meaning 6.5 → 3.9%, motion 3.1 → 1.3%, saliency −3.4 → −1.9%; shared 20.7 → 23.7%.
-  slow_chopped: face alone 12.3%, all three 28.0% → all four 28.1%, unique face +0.0%. Dense grid (9975 locations):
-  unique face +1.3%; coarse grid (28): +0.8%.
-- **Kids (kids reference):** face alone 12.2% (cuts) / 9.0% (slow_chopped); unique face −0.0% / −1.6%.
-  Kids vs adult models: unique face −0.4%.
-- Fitted face curve: smooth and monotone, ~40× at full coverage, consistent across held-out clips.
-
-## 2026-10-24 — Face analyzed on face clips only; all-clips analysis stays 3-feature
-
-User decision: all 12 clips → saliency, motion, meaning (+ all three); the face analysis uses only the 7 clips with faces
-(frank_complex, frank_play, sesameindia_1/2, sesameus_1/2, slow_people) and all four features. This removes the
-dilution from face-free clips described in the previous entry. `config.SUBSETS` drives this:
-partition/plot_data/kids_adult_reference/explore_dense_grid write `<tag>` (all clips, 3 features) and
-`<tag>_faceclips`. `plot_information_gain.R --subset all|faceclips` draws each. The face-clip numbers reuse the
-same leave-one-clip-out fits (curves trained on all other clips); only the scored cells are restricted. The mixtures
-have fixed equal weights, and face-free segments carry no information for the face curve, so no refit is needed.
-Some segments within the face clips still have no faces (they stay in).
-- **Adults, cuts (113 segments, ceiling 1.29 bits):** saliency 5.1%, motion 15.3%, meaning 21.5%, **face 25.1%**,
-  all three 23.7%, all four 29.5%; unique face +5.9%, meaning +3.9%, motion +0.0%, saliency −4.0%; shuffled face −14.1%.
-  slow_chopped: face 22.5%, all four 29.8%, unique face +4.4%. Dense grid 9975: unique face +5.5%; coarse 28: +4.7%.
-- **Kids (kids reference), cuts:** face 19.6% (meaning 18.3, motion 18.1); all three 23.2% → all four 27.0%; unique
-  face +3.8%. slow_chopped +1.9%. Kids vs adult models: unique face +3.3%.
-- All-clips (3-feature) numbers are unchanged from before face was added.
-- Added facet "faces" (clips with vs. without faces) to plot_data; `supplementary_by_faces_<tag>.png` shows the
-  3-feature bars per group, each against its own ceiling. Adults, cuts: with faces 1.29-bit ceiling, saliency 5% /
-  motion 15% / meaning 22% / all three 24%; without faces 1.14-bit ceiling, 26% / 25% / 29% / 32%.
-- Added subset `_allclips4` (all 12 clips, 4 features) for the faces facet only: `overall_ig[_people]_by_faces_<tag>_allclips4.png`.
-  Adults, cuts: in face-free clips, unique face −5.5% (pure dilution), all four 26.5% vs all three 32.0%. In face clips
-  the numbers equal `_faceclips`.
-
 ## 2026-10-25 — Center-bias check: uniform baseline, spatial prior as a feature
 
 Prompted by a reviewer-style concern: every feature model is feature × floor (β=1), so all models share the floor,
@@ -1872,3 +1814,77 @@ montages and schematics. `isc_analysis.qmd` was not rerun (reads and writes the 
 - **IG (adults, cuts, knots_floor):** 45 → 55 participants; ceiling 1.230 → 1.246 bits. All-three model 26.9% → 26.3%
   of ceiling; unique motion +0.038, unique meaning 0.080 → 0.082, shared 0.254 → 0.249. slow_chopped: all three 28.0% →
   27.5%. Kids (cuts): all three 28.1% → 27.3%; saliency alone drops most (15.5% → 13.8%). No conclusion changes.
+
+## 2026-11-06 — Face as a 4th IG feature, from Tarun's SAM3 face masks
+
+**Source.** Per-frame SAM3 masks from Tarun's pipeline (`annotations/output/current` on the server, copied to
+`data/local_cache/face_masks/<clip>/`). Included: human faces, Muppet faces, Pixar bird faces, and generic "face" labels
+(counted as human). Excluded: all other animal faces (penguin, horse, turtle, bird, dog, sheep, chicken, goat, turkey,
+cow, llama). frank_objects has no SAM3 output, so it is all zeros.
+- **Face clips (8):** frank_complex, frank_play, pixar_birds, sesameindia_1/2, sesameus_1/2, slow_people
+  (`config.FACE_CLIPS`; pixar_birds added). **No-face clips:** slow_hands, slow_animals, slow_inanimate, frank_objects.
+
+**Face map** (`calc_face_tiles.py` → `data/results/face/<clip>_face_tiles_frames.csv`):
+1. Each frame: union of the included masks (binary).
+2. Gaussian blur at σ = 46 display px (≈1°, the same as gaze smoothing), with zeros outside the frame.
+3. Sample the blurred map at the 120 tile centers.
+4. Average within each segment, then scale 0–1 across the whole corpus (min-max), like the other features.
+
+Face is not re-smoothed in `load_features.py`.
+- **Approach chosen: B (blur the binary mask).** The alternative, A, set a tile to 1 if any face pixel fell in its 240px
+  circle, then smoothed. Comparison: `figures/checks/face_map_smoothing_sigma{46,92}_p{1,2}.png`
+  (`decision_making/compare_face_map_smoothing.py`).
+- **B was kept after the resolution check** (10 frames per block, all four features beside the frame:
+  `figures/checks/feature_resolution_<block>.png`, `decision_making/compare_feature_resolution.py`). In that check,
+  face is spatially sharper than motion/saliency (240px box means + σ=46).
+
+**Subsets** (`config.SUBSETS`; `bootstrap_ci.py` and both waterfall R scripts take `--subset all|faceclips|allclips4`):
+- **Main face analysis: all 12 clips, 4 features (`_allclips4`).** Face = 0 in the no-face clips.
+- `_faceclips`: 8 face clips, 4 features.
+- `""`: all 12 clips, 3 features (unchanged).
+
+**Adults, cuts, knots_floor (55 adults; % of ceiling, 95% CI from a segment bootstrap):**
+
+| Subset | Segments | Ceiling | Face alone | All three | All four | Unique face | Shared |
+|---|---|---|---|---|---|---|---|
+| All 12 clips | 181 | 1.246 bits | 25.2 [20.0, 30.4] | 26.3 [23.4, 29.0] | **30.8 [28.0, 33.7]** | **+4.6 [3.2, 6.1]** | 25.9 |
+| Face clips | 156 | 1.289 bits | 28.6 [23.0, 33.8] | 26.1 [23.0, 29.1] | 32.0 [28.9, 35.1] | +5.9 [4.4, 7.4] | 26.9 |
+
+**All clips, split by face / no-face clips** (the split is clip-level):
+- No-face clips (25 segments): all four 22.9%, unique face −5.2%. This is dilution: face = 0 there, so the
+  equal-weight mixtures that include face are pulled toward the floor.
+- Some segments inside face clips also have no faces; they stay in the face-clip group.
+
+**All clips, by block (unique face):**
+
+| Block | Unique face [95% CI] |
+|---|---|
+| Frank | +6.0 [2.9, 9.0] |
+| Pixar | +2.1 [0.1, 4.3] |
+| Sesame | +7.6 [5.4, 9.7] |
+| Slow | −3.9 (3 of its 4 clips have no faces) |
+
+**All clips, by quadrant (40/60 split):**
+
+| Quadrant | Unique face [95% CI] | All four |
+|---|---|---|
+| Selective | +3.1 [−0.7, 9.0] | 12.6% |
+| Scattered | +3.4 [0.4, 6.6] | 30.5% |
+| Concentrated | +3.7 [0.7, 6.9] | 34.5% |
+| Coordinated | +2.9 [−0.7, 6.3] | 31.1% |
+
+- **Kids (face clips, cuts):**
+  - Kids' own curves: face alone 25.6%; all three 27.1% → all four 32.1%; unique face +5.0 [3.5, 6.7].
+  - Adult curves: face 21.3%; 27.4% → 31.4%; unique face +4.1%.
+- **Pipeline:** `scoring.py` must run after `feature_models.py`; skipping it leaves stale scores.
+- **Dense grid:** `explore_dense_grid.py` was checked with 3 features only, not yet with face.
+  It also still re-smooths face, so its face numbers are stale.
+- **Figures:** `figures/information_gain/adults/ig_ci_waterfall_*_allclips4.png` and
+  `ig_waterfall_by_{face,block,quadrant}_*_allclips4*.png`, plus the `_faceclips` versions.
+
+## 2026-11-06 — QC plots: calibration targets labeled with presentation order
+
+`participant_block_qc.py` writes `presentation_order` per validation target. It is NaN for summaries from before
+2026-03, which didn't log it. `plot_participant_qc.R` labels each target "#order · error°" and draws a dotted white
+path through the targets in presentation order. Purpose: tell slow responses apart from predictive looks, by showing
+where the eyes were coming from.

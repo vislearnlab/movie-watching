@@ -3,8 +3,8 @@
 ## bootstrap 95% CIs (default: resampling segments); (B) waterfall from 0 through shared and each unique component to the all-three model.
 ## Data from bootstrap_ci.py.
 ##
-## Output: figures/information_gain/adults/ig_ci_waterfall_<set>_<variant>.png
-## Usage:  Rscript scripts/analysis/information_gain/plot_ig_ci_waterfall.R [--set cuts --variant knots_floor --unit segment|participant|clip --q 0.4|0.5]
+## Output: figures/information_gain/adults/ig_ci_waterfall_<set>_<variant>[_faceclips].png
+## Usage:  Rscript scripts/analysis/information_gain/plot_ig_ci_waterfall.R [--set cuts --variant knots_floor --unit segment|participant|clip --q 0.4|0.5 --subset faceclips]
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -20,14 +20,23 @@ VARIANT <- if ("--variant" %in% a) a[match("--variant", a) + 1] else "knots_floo
 UNIT <- if ("--unit" %in% a) a[match("--unit", a) + 1] else "segment"
 Q <- if ("--q" %in% a) as.numeric(a[match("--q", a) + 1]) else 0.4  # quadrant split quantile
 QTAG <- if (Q == 0.4) "" else sprintf("_q%d", round(100 * Q))
+SUBSET <- if ("--subset" %in% a) a[match("--subset", a) + 1] else "all"
+STAG <- if (SUBSET == "all") "" else paste0("_", SUBSET)  # bootstrap_ci.py --subset
+FEATS <- if (SUBSET == "all") "SMX" else "SMXF"
+ALL_LABEL <- if (FEATS == "SMX") "all three" else "all four"
 OUT_DIR <- here("figures", "information_gain", "adults")
-COLORS <- c(saliency = "#1e4c7c", motion = "#357a76", meaning = "#f09937", shared = "#8a8984", all = "white")  # slide colors; all three = outlined
+COLORS <- c(saliency = "#1e4c7c", motion = "#357a76", meaning = "#f09937", face = "#b5459b", shared = "#8a8984", all = "white")  # slide colors (face as in plot_information_gain.R); all = outlined
 INK <- "#0b0b0b"; INK2 <- "#52514e"
-FACE_CLIPS <- c("frank_complex", "frank_play", "sesameindia_1", "sesameindia_2", "sesameus_1", "sesameus_2", "slow_people")  # config.FACE_CLIPS
+FACE_CLIPS <- c("frank_complex", "frank_play", "pixar_birds", "sesameindia_1", "sesameindia_2", "sesameus_1", "sesameus_2", "slow_people")  # config.FACE_CLIPS
 
-b <- read_csv(here("data", "results", "information_gain", sprintf("bootstrap_%s_%s%s.csv", SET, VARIANT, if (UNIT == "participant") "" else paste0("_", UNIT))), show_col_types = FALSE) |>
+b <- read_csv(here("data", "results", "information_gain", sprintf("bootstrap_%s_%s%s%s.csv", SET, VARIANT, STAG, if (UNIT == "participant") "" else paste0("_", UNIT))), show_col_types = FALSE) |>
   mutate(across(c(estimate, lo, hi), ~ 100 * .x))
 get <- function(q) filter(b, quantity == q)
+YMAX <- max(35, 5 * ceiling((max(b$hi[startsWith(b$quantity, "prop_")]) + 4) / 5))  # room for the top whisker + label
+counts <- read_csv(here("data", "results", "information_gain", sprintf("plotdata_groups_%s_%s%s.csv", SET, VARIANT, STAG)),
+                   show_col_types = FALSE)
+N_ADULTS <- counts$n_participants[counts$facet_type == "overall"][1]
+WHICH <- c(all = "", faceclips = sprintf(" Face clips only (%d).", length(FACE_CLIPS)), allclips4 = " All 12 clips (face = 0 in the 4 no-face clips).")[[SUBSET]]
 
 theme_ig <- theme_classic(base_size = 13) +
   theme(axis.text = element_text(color = INK2), axis.text.x = element_text(color = INK, size = 12),
@@ -35,9 +44,10 @@ theme_ig <- theme_classic(base_size = 13) +
         legend.position = "none")
 
 ## ---- A: single models + all three ---------------------------------------------------------------------
-models <- tibble(quantity = c("prop_S", "prop_M", "prop_X", "prop_SMX"),
-                 label = c("salience", "motion", "semantics", "all three"),
-                 key = c("saliency", "motion", "meaning", "all")) |>
+models <- tibble(quantity = c("prop_S", "prop_M", "prop_X", "prop_F", paste0("prop_", FEATS)),
+                 label = c("salience", "motion", "semantics", "face", ALL_LABEL),
+                 key = c("saliency", "motion", "meaning", "face", "all")) |>
+  filter(quantity %in% b$quantity) |>
   left_join(b, by = "quantity") |> mutate(label = factor(label, label))
 pA <- ggplot(models, aes(label, estimate, fill = key)) +
   geom_col(aes(color = key == "all"), width = 0.6, linewidth = 0.7) +
@@ -45,19 +55,19 @@ pA <- ggplot(models, aes(label, estimate, fill = key)) +
   geom_errorbar(aes(ymin = lo, ymax = hi), width = 0.18, linewidth = 0.6, color = INK) +
   geom_text(aes(y = hi, label = sprintf("%.1f%%", estimate)), vjust = -0.7, size = 4.2, color = INK) +
   scale_fill_manual(values = COLORS) +
-  scale_y_continuous(limits = c(0, 35), expand = c(0, 0), labels = function(x) paste0(x, "%")) +
+  scale_y_continuous(limits = c(0, YMAX), expand = c(0, 0), labels = function(x) paste0(x, "%")) +
   labs(title = "A. Each model", x = NULL, y = "information gain explained (% of ceiling)") +
   theme_ig
 
-## ---- B: waterfall 0 -> shared -> uniques -> all three --------------------------------------------------
-waterfall <- function(bb, title, ymax = 35, ylab = NULL, ymin = NULL) {
-  total <- filter(bb, quantity == "prop_SMX")
-  steps <- tibble(quantity = c("shared", "unique_saliency", "unique_motion", "unique_meaning"),
-                  label = c("shared", "+ unique\nsalience", "+ unique\nmotion", "+ unique\nsemantics"),
-                  key = c("shared", "saliency", "motion", "meaning")) |>
-    left_join(bb, by = "quantity") |>
+## ---- B: waterfall 0 -> shared -> uniques -> all features --------------------------------------------------
+waterfall <- function(bb, title, ymax = YMAX, ylab = NULL, ymin = NULL) {
+  total <- filter(bb, quantity == paste0("prop_", FEATS))
+  steps <- tibble(quantity = c("shared", "unique_saliency", "unique_motion", "unique_meaning", "unique_face"),
+                  label = c("shared", "+ unique\nsalience", "+ unique\nmotion", "+ unique\nsemantics", "+ unique\nface"),
+                  key = c("shared", "saliency", "motion", "meaning", "face")) |>
+    inner_join(bb, by = "quantity") |>
     mutate(end = cumsum(estimate), start = lag(end, default = 0), i = row_number())
-  wf <- bind_rows(steps, tibble(label = "= all\nthree", key = "all", start = 0, end = total$estimate,
+  wf <- bind_rows(steps, tibble(label = paste0("= ", sub(" ", "\n", ALL_LABEL)), key = "all", start = 0, end = total$estimate,
                                 estimate = total$estimate, lo = total$lo, hi = total$hi, i = nrow(steps) + 1)) |>
     mutate(label = factor(label, label), ci_lo = start + lo, ci_hi = start + hi,
            ci_lo = if_else(key == "all", lo, ci_lo), ci_hi = if_else(key == "all", hi, ci_hi),
@@ -77,13 +87,13 @@ waterfall <- function(bb, title, ymax = 35, ylab = NULL, ymin = NULL) {
     labs(title = title, x = NULL, y = ylab) +
     theme_ig
 }
-pB <- waterfall(b, "B. How the all-three model breaks down")
+pB <- waterfall(b, sprintf("B. How the %s model breaks down", ALL_LABEL))
 
-p <- pA + pB + plot_layout(widths = c(1, 1.3)) +
-  plot_annotation(caption = sprintf("Bars = group value (participants weighted equally); whiskers = 95%% CI, bootstrap over %ss (2,000 draws). Unchopped segments, 45 adults.", UNIT),
+p <- pA + pB + plot_layout(widths = c(if (FEATS == "SMX") 1 else 1.2, 1.3)) +
+  plot_annotation(caption = sprintf("Bars = group value (participants weighted equally); whiskers = 95%% CI, bootstrap over %ss (2,000 draws). Unchopped segments, %d adults.%s", UNIT, N_ADULTS, WHICH),
                   theme = theme(plot.caption = element_text(color = INK2, size = 10, hjust = 0)))
-out <- file.path(OUT_DIR, sprintf("ig_ci_waterfall_%s_%s%s.png", SET, VARIANT, if (UNIT == "segment") "" else paste0("_", UNIT)))
-ggsave(out, p, width = 12, height = 5.2, dpi = 200, bg = "white")
+out <- file.path(OUT_DIR, sprintf("ig_ci_waterfall_%s_%s%s%s.png", SET, VARIANT, STAG, if (UNIT == "segment") "" else paste0("_", UNIT)))
+ggsave(out, p, width = if (FEATS == "SMX") 12 else 14, height = 5.2, dpi = 200, bg = "white")
 cat("Saved", out, "\n")
 
 ## ---- Waterfall per block / per quadrant, 2 x 2 (bootstrap_ci.py --by block|quadrant) -----------------------
@@ -91,28 +101,26 @@ GROUPINGS <- list(block = c("frank", "pixar", "sesame", "slow"),
                   quadrant = c("selective", "scattered", "concentrated", "coordinated"),  # quadrant layout as the schematic
                   face = c("face", "no_face"))
 TITLES <- c(face = "Face clips", no_face = "No-face clips")
-counts <- read_csv(here("data", "results", "information_gain", sprintf("plotdata_groups_%s_%s.csv", SET, VARIANT)),
-                   show_col_types = FALSE)
 for (by in names(GROUPINGS)) {
-  path <- here("data", "results", "information_gain", sprintf("bootstrap_%s_%s%s_by_%s%s.csv", SET, VARIANT,
+  path <- here("data", "results", "information_gain", sprintf("bootstrap_%s_%s%s%s_by_%s%s.csv", SET, VARIANT, STAG,
                                                              if (UNIT == "participant") "" else paste0("_", UNIT), by, if (by == "quadrant") QTAG else ""))
   if (!file.exists(path)) next
   bb <- read_csv(path, show_col_types = FALSE) |> mutate(across(c(estimate, lo, hi), ~ 100 * .x))
   n_seg <- if ("n_segments" %in% names(bb)) distinct(bb, facet = group, n_segments) else counts |> filter(facet_type == by)
-  ymax <- 5 * ceiling((max(bb$hi[bb$quantity == "prop_SMX"], bb$estimate[bb$quantity == "shared"] + 12) + 4) / 5)
+  ymax <- 5 * ceiling((max(bb$hi[bb$quantity == paste0("prop_", FEATS)], bb$estimate[bb$quantity == "shared"] + 12) + 4) / 5)
   ymin <- min(0, 5 * floor(min(bb$lo[bb$quantity == "shared"]) / 5))
   levs <- GROUPINGS[[by]]
   panels <- lapply(levs, function(g)
     waterfall(filter(bb, group == g), sprintf("%s (%d segments)", if (g %in% names(TITLES)) TITLES[[g]] else tools::toTitleCase(g), n_seg$n_segments[n_seg$facet == g]),
               ymax, if (g %in% levs[c(1, 3)]) "information gain explained (% of ceiling)" else NULL, ymin))
-  cap <- sprintf("%% of ceiling = group's average information gain / group's average ceiling (ceiling measured per segment).\nWhiskers = 95%% CI, bootstrap over %ss within the group (2,000 draws). Unchopped segments, 45 adults.", UNIT)
+  cap <- sprintf("%% of ceiling = group's average information gain / group's average ceiling (ceiling measured per segment).\nWhiskers = 95%% CI, bootstrap over %ss within the group (2,000 draws). Unchopped segments, %d adults.%s", UNIT, N_ADULTS, WHICH)
   if (by == "quadrant") cap <- paste0(cap, if (Q == 0.5) "\nQuadrants: pooled median (50/50) split on within/between distance; every segment with a within/between value classified."
                                        else sprintf("\nQuadrants: pooled %.0f/%.0f split on within/between distance; middle-band segments unclassified and left out.", 100 * Q, 100 * (1 - Q)))
   p4 <- wrap_plots(panels, ncol = 2) +
     plot_annotation(caption = cap, theme = theme(plot.caption = element_text(color = INK2, size = 10, hjust = 0)))
-  out4 <- file.path(OUT_DIR, sprintf("ig_waterfall_by_%s_%s_%s%s%s.png", by, SET, VARIANT, if (UNIT == "segment") "" else paste0("_", UNIT),
+  out4 <- file.path(OUT_DIR, sprintf("ig_waterfall_by_%s_%s_%s%s%s%s.png", by, SET, VARIANT, STAG, if (UNIT == "segment") "" else paste0("_", UNIT),
                                      if (by == "quadrant") QTAG else ""))
-  if (by == "face") p4 <- p4 + plot_annotation(caption = paste0(cap, sprintf("\nFace clips: %s. Same three-feature (SMX) models in both.", paste(FACE_CLIPS, collapse = ", "))))
+  if (by == "face") p4 <- p4 + plot_annotation(caption = paste0(cap, sprintf("\nFace clips: %s. Same %s-feature (%s) models in both.", paste(FACE_CLIPS, collapse = ", "), if (FEATS == "SMX") "three" else "four", FEATS)))
   ggsave(out4, p4, width = 13, height = if (length(levs) == 2) 5.6 else 10, dpi = 200, bg = "white")
   cat("Saved", out4, "\n")
 }

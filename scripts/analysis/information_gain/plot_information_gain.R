@@ -6,7 +6,7 @@
 ## Usage:
 ##   Rscript scripts/analysis/information_gain/plot_information_gain.R --group adults --segment-set cuts
 ##   --group: adults | kids-kidref | kids-adultref;  --segment-set: cuts | slow_chopped;  --only <regex>
-##   --subset: all (12 clips; saliency, motion, meaning) | faceclips (7 clips with faces; + face) | allclips4 (12 clips; + face)
+##   --subset: all (12 clips; saliency, motion, meaning) | faceclips (8 clips with faces; + face) | allclips4 (12 clips; + face)
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -81,7 +81,7 @@ units <- read_csv(file.path(DATA_DIR, paste0("plotdata_units_", DATA_TAG, ".csv"
 overall <- filter(groups, facet_type == "overall")
 who <- if (GROUP == "adults") "adults" else "kids"
 
-subtitle <- paste0(c(all = "", faceclips = "7 clips with faces, ", allclips4 = "all 12 clips, face as 4th feature, ")[[SUBSET]], c(cuts = "unchopped", slow_chopped = "slow chopped")[[SEGMENT_SET]], ", ",
+subtitle <- paste0(c(all = "", faceclips = "8 clips with faces, ", allclips4 = "all 12 clips, face as 4th feature, ")[[SUBSET]], c(cuts = "unchopped", slow_chopped = "slow chopped")[[SEGMENT_SET]], ", ",
                    c(knots_floor = "20 knots, floor", exp_floor = "exp, floor", knots_nofloor = "20 knots, no floor",
                      uniform = "uniform baseline, spatial prior as a feature")[[VARIANT]],
                    c(adults = "", `kids-kidref` = "; KIDS, kids reference", `kids-adultref` = "; KIDS vs adult models")[[GROUP]])
@@ -185,7 +185,7 @@ for (ut in c("segment", "participant")) {
   extra <- if (ut == "segment") " (dots = segments)" else " (dots = participants, mean within FACET)"
   save(faceted("block", ut, title_extra = extra), paste0(stem, "block_", FIG_TAG), 13.5, 5.2)
   save(faceted("quadrant", ut, title_extra = extra, caption_extra = q_cap), paste0(stem, "quadrant_", FIG_TAG), 13.5, 5.2)
-  if (SUBSET != "faceclips") save(faceted("faces", ut, ncol = 2, title_extra = extra, caption_extra = " Clips with faces = the 7 clips with human or Muppet faces; without = slow_hands, slow_animals, slow_inanimate, frank_objects, pixar_birds."),
+  if (SUBSET != "faceclips") save(faceted("faces", ut, ncol = 2, title_extra = extra, caption_extra = " Clips with faces = the 8 clips with human, Muppet or Pixar bird faces; without = slow_hands, slow_animals, slow_inanimate, frank_objects."),
                            paste0(stem, "faces_", FIG_TAG), 9.5, 5.2)
   if (GROUP == "adults") save(faceted("clip", ut, ncol = 3, title_extra = extra), paste0(stem, "clip_", FIG_TAG), 10.5,
                                  4.75 * ceiling(sum(groups$facet_type == "clip") / 3))
