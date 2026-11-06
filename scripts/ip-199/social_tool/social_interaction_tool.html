@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Social interaction tool</title>
+<style>
+  :root {
+    --bg: #fafaf9; --panel: #ffffff; --border: #e2e2df; --text: #0b0b0b; --muted: #6b6a66;
+    --accent: #2a78d6; --danger: #c23b3b; --done: #2f7d4f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .spacer { flex: 1; }
+  label { font-size: 13px; color: var(--muted); }
+  select, input[type=text], input[type=number] {
+    font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text);
+  }
+  input[type=range] { width: 100%; }
+  button {
+    font-size: 13px; padding: 6px 11px; border-radius: 6px; border: 1px solid var(--border);
+    background: #fff; color: var(--text); cursor: pointer;
+  }
+  button:hover { background: #f3f3f1; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.on { background: var(--text); color: #fff; border-color: var(--text); }
+  .kbd { font-family: ui-monospace, monospace; font-size: 11px; border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: #f6f6f4; color: var(--text); }
+  button.on .kbd { background: #333; color: #fff; border-color: #555; }
+  video { width: 100%; display: block; border-radius: 8px; background: #000; }
+  .seghead { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .item { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+  .item .muted { margin-bottom: 6px; }
+  .err { font-size: 12px; color: var(--danger); min-height: 16px; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 4px 7px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #f8f8f6; }
+  tr.active { background: #eef2f7; }
+  .done { color: var(--done); font-weight: 600; }
+  .tablewrap { max-height: 300px; overflow-y: auto; }
+  .warn { display: none; font-size: 12px; color: #8a6400; background: #fff8e6; border: 1px solid #f0dca0;
+    border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Social interaction tool</h1>
+  <p class="sub">
+    Each row is one segment (the stretch between two cuts). Play the segment (<b>space</b>), then answer the four questions.
+    <b>People</b> means humans and Muppets (not animals). Count everyone who appears at any point in the segment.
+    The videos have no sound: judge talking from <b>mouth movement</b>.
+    Press <b>Enter</b> to save and go to the next segment. Your work saves in this browser automatically,
+    but <b>click Export CSV</b> when you stop for the day.
+  </p>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <div class="row">
+          <label for="raterInput">Rater initials</label>
+          <input type="text" id="raterInput" style="width:80px" placeholder="e.g. IP">
+          <label for="clipSelect">Clip</label>
+          <select id="clipSelect"></select>
+          <span class="spacer"></span>
+          <span class="muted" id="progress"></span>
+        </div>
+        <video id="player" preload="auto" muted></video>
+        <div class="warn" id="videoWarning"></div>
+        <input type="range" id="scrub" style="margin-top:10px">
+        <div class="row" style="margin-top:6px">
+          <button id="prevBtn"><span class="kbd">&larr;</span> Previous segment</button>
+          <button id="playBtn"><span class="kbd">space</span> Play / pause</button>
+          <button id="backFrameBtn"><span class="kbd">,</span> Back 1 frame</button>
+          <button id="fwdFrameBtn">Forward 1 frame <span class="kbd">.</span></button>
+          <button id="nextBtn">Next segment <span class="kbd">&rarr;</span></button>
+          <span class="spacer"></span>
+          <span class="muted" id="frameLabel"></span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <div class="seghead" id="segHead"></div>
+        <div class="muted" id="segInfo"></div>
+
+        <div class="item">
+          <h2>1. How many people are in this segment?</h2>
+          <div class="muted">Humans + Muppets, everyone who appears at any point. Type a number, or press a number key 0–9.</div>
+          <input type="number" id="nPeople" min="0" step="1" style="width:90px">
+        </div>
+
+        <div class="item">
+          <h2>2. Is someone talking to the viewer?</h2>
+          <div class="muted">A person looks at the camera and their mouth moves as if speaking to you.</div>
+          <div class="row">
+            <button class="yn" data-item="talking_to_viewer" data-val="1"><span class="kbd">v</span> Yes</button>
+            <button class="yn" data-item="talking_to_viewer" data-val="0">No</button>
+          </div>
+        </div>
+
+        <div class="item">
+          <h2>3. Communicative interaction?</h2>
+          <div class="muted">Two or more people talking with each other (mouths moving, taking turns).</div>
+          <div class="row">
+            <button class="yn" data-item="communicative" data-val="1"><span class="kbd">c</span> Yes</button>
+            <button class="yn" data-item="communicative" data-val="0">No</button>
+          </div>
+        </div>
+
+        <div class="item">
+          <h2>4. Physical interaction?</h2>
+          <div class="muted">Two or more people doing something together without talking: touching, playing, dancing, passing things.
+            Can be Yes along with question 3.</div>
+          <div class="row">
+            <button class="yn" data-item="physical" data-val="1"><span class="kbd">p</span> Yes</button>
+            <button class="yn" data-item="physical" data-val="0">No</button>
+          </div>
+        </div>
+
+        <div class="item">
+          <div class="row">
+            <button id="noneBtn"><span class="kbd">n</span> None of these happen (No to 2–4)</button>
+          </div>
+          <input type="text" id="notes" style="width:100%" placeholder="Notes (optional)">
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button class="primary" id="saveBtn"><span class="kbd">Enter</span> Save + next segment</button>
+        </div>
+        <div class="err" id="errBox"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Segments in this clip</h2>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Segment</th><th>Time (s)</th><th>People</th><th>Viewer</th><th>Comm.</th><th>Phys.</th></tr></thead>
+            <tbody id="segTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="row">
+          <button class="primary" id="exportBtn">Export CSV</button>
+          <button id="importBtn">Load CSV to continue</button>
+          <input type="file" id="importFile" accept=".csv" style="display:none">
+        </div>
+        <div class="muted">Export saves <code>ip_social_&lt;initials&gt;.csv</code> to Downloads. Load CSV restores a previous export.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="segments.js"></script>
+<script>
+const VIDEO_DIR = "../../../stimuli/main_blocks/";
+const STORAGE_KEY = "ip_social_tool_v1";
+const CLIPS = [...new Set(SEGMENTS.map((s) => s.clip))];
+const ITEMS = ["talking_to_viewer", "communicative", "physical"];
+const COLS = ["rater", "clip", "block", "segment", "segment_start_ms", "segment_dur", "n_people", ...ITEMS, "notes"];
+
+const $ = (id) => document.getElementById(id);
+const player = $("player");
+
+// codes["<clip>_<segment>"] = { n_people, talking_to_viewer, communicative, physical, notes }
+let codes = {};
+// draft = answers for the segment on screen, saved into codes on Enter
+let draft = {};
+let clip = CLIPS[0], seg = 0, stopFrame = null, rater = "";
+
+const clipSegs = () => SEGMENTS.filter((s) => s.clip === clip);
+const current = () => clipSegs()[seg];
+const segKey = (s) => `${s.clip}_${s.segment}`;
+const frameMs = () => 1000 / current().fps;
+const frameNow = () => Math.floor(player.currentTime * 1000 / frameMs() + 0.001);
+
+// each rater's work is saved separately in the browser
+function loadState() {
+  codes = {};
+  if (!rater) return;
+  try { codes = JSON.parse(localStorage.getItem(`${STORAGE_KEY}_${rater}`) || "{}"); }
+  catch (e) { console.warn("localStorage unavailable:", e); }
+}
+function saveState() {
+  if (!rater) return;
+  try { localStorage.setItem(`${STORAGE_KEY}_${rater}`, JSON.stringify(codes)); } catch (e) { /* best effort */ }
+}
+
+// ---- playback that never shows the next segment ----
+function stopAtLastFrame() {
+  const s = current();
+  player.pause();
+  stopFrame = null;
+  player.currentTime = (s.last_frame * frameMs() + 5) / 1000;
+}
+// called for every frame the browser actually shows: pause as soon as the segment's last frame is on screen
+function onVideoFrame(now, meta) {
+  if (stopFrame === null) return;
+  if (Math.round(meta.mediaTime * 1000 / frameMs()) >= stopFrame) { stopAtLastFrame(); return; }
+  player.requestVideoFrameCallback(onVideoFrame);
+}
+function tick() {
+  // backup check in case a frame callback is missed
+  if (stopFrame !== null && frameNow() >= stopFrame) stopAtLastFrame();
+  if (!player.paused) $("scrub").value = player.currentTime * 1000;
+  $("frameLabel").textContent = `frame ${frameNow()}`;
+  requestAnimationFrame(tick);
+}
+
+function seekFrame(f) {
+  const s = current();
+  f = Math.max(s.first_frame, Math.min(s.last_frame, f));
+  player.pause(); stopFrame = null;
+  player.currentTime = (f * frameMs() + 5) / 1000;
+  $("scrub").value = f * frameMs();
+}
+
+function togglePlay() {
+  if (!player.paused) { player.pause(); stopFrame = null; return; }
+  const s = current();
+  if (frameNow() >= s.last_frame) player.currentTime = (s.first_frame * frameMs() + 5) / 1000;
+  stopFrame = s.last_frame;
+  if ("requestVideoFrameCallback" in player) player.requestVideoFrameCallback(onVideoFrame);
+  player.play();
+}
+
+// ---- answers ----
+function goTo(i) {
+  seg = Math.max(0, Math.min(clipSegs().length - 1, i));
+  const s = current();
+  draft = { ...(codes[segKey(s)] || {}) };
+  $("errBox").textContent = "";
+  $("scrub").min = s.first_frame * frameMs(); $("scrub").max = s.last_frame * frameMs(); $("scrub").step = frameMs();
+  seekFrame(s.first_frame);
+  render();
+}
+
+function setPeople(n) {
+  draft.n_people = n;
+  // nobody on screen means nothing else can happen
+  if (n === 0) ITEMS.forEach((k) => (draft[k] = 0));
+  render();
+}
+
+function setItem(item, val) {
+  draft[item] = val;
+  render();
+}
+
+function noneOfThese() {
+  ITEMS.forEach((k) => (draft[k] = 0));
+  render();
+}
+
+function save() {
+  if (!rater) { $("errBox").textContent = "Type your initials at the top first."; return; }
+  if (draft.n_people === undefined || draft.n_people === null || isNaN(draft.n_people)) {
+    $("errBox").textContent = "Enter the number of people first."; return;
+  }
+  const missing = ITEMS.filter((k) => draft[k] !== 0 && draft[k] !== 1);
+  if (missing.length) { $("errBox").textContent = `Answer every question first (missing: ${missing.join(", ")}).`; return; }
+  if (draft.n_people < 2 && (draft.communicative || draft.physical)) {
+    $("errBox").textContent = "An interaction needs at least 2 people. Check the count or questions 3–4."; return;
+  }
+  if (draft.n_people === 0 && draft.talking_to_viewer) {
+    $("errBox").textContent = "Someone talking to the viewer needs at least 1 person."; return;
+  }
+  draft.notes = $("notes").value.trim();
+  codes[segKey(current())] = { ...draft };
+  saveState();
+  if (seg < clipSegs().length - 1) goTo(seg + 1);
+  else { $("errBox").textContent = "Last segment of this clip saved. Pick the next clip at the top."; render(); }
+}
+
+const yn = (v) => (v === 1 ? "yes" : v === 0 ? "no" : "");
+
+function render() {
+  const s = current();
+  $("segHead").textContent = `${clip}: segment ${s.segment} (${seg + 1} of ${clipSegs().length})`;
+  $("segInfo").textContent = `${(s.segment_start_ms / 1000).toFixed(2)} s, ${(s.segment_dur / 1000).toFixed(2)} s long · ` +
+    `frames ${s.first_frame}–${s.last_frame}` + (codes[segKey(s)] ? " · saved" : "");
+  $("nPeople").value = draft.n_people ?? "";
+  $("notes").value = draft.notes ?? "";
+  document.querySelectorAll("button.yn").forEach((b) => b.classList.toggle("on", draft[b.dataset.item] === +b.dataset.val));
+
+  const body = $("segTable");
+  body.innerHTML = "";
+  clipSegs().forEach((sg, i) => {
+    const c = codes[segKey(sg)];
+    const tr = document.createElement("tr");
+    if (i === seg) tr.className = "active";
+    tr.innerHTML = `<td class="${c ? "done" : ""}">${sg.segment}</td>` +
+      `<td>${(sg.segment_start_ms / 1000).toFixed(1)}–${((sg.segment_start_ms + sg.segment_dur) / 1000).toFixed(1)}</td>` +
+      (c ? `<td>${c.n_people}</td><td>${yn(c.talking_to_viewer)}</td><td>${yn(c.communicative)}</td><td>${yn(c.physical)}</td>`
+         : `<td></td><td></td><td></td><td></td>`);
+    tr.onclick = () => goTo(i);
+    body.appendChild(tr);
+  });
+  const active = body.querySelector("tr.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
+  const done = clipSegs().filter((sg) => codes[segKey(sg)]).length;
+  const all = SEGMENTS.filter((sg) => codes[segKey(sg)]).length;
+  $("progress").textContent = `${done}/${clipSegs().length} segments done in this clip · ${all}/${SEGMENTS.length} overall`;
+}
+
+// ---- CSV in/out ----
+function csvCell(v) {
+  const s = v === undefined || v === null ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportCsv() {
+  if (!rater) { $("errBox").textContent = "Type your initials at the top first."; return; }
+  const lines = [COLS.join(",")];
+  for (const s of SEGMENTS) {
+    const c = codes[segKey(s)] || {};
+    lines.push([rater, s.clip, s.block, s.segment, s.segment_start_ms, s.segment_dur,
+                c.n_people, c.talking_to_viewer, c.communicative, c.physical, c.notes].map(csvCell).join(","));
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }));
+  a.download = `ip_social_${rater}.csv`;
+  a.click();
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') q = false;
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+function importCsv(text) {
+  const rows = parseCsv(text);
+  const head = rows[0];
+  const col = (name) => head.indexOf(name);
+  if (col("n_people") < 0 || col("segment") < 0) throw new Error("not an export");
+  if (!rater) { $("errBox").textContent = "Type your initials at the top first."; return; }
+  const fileRater = col("rater") >= 0 && rows[1] ? rows[1][col("rater")] : "";
+  if (fileRater && fileRater !== rater) {
+    $("errBox").textContent = `That file belongs to rater ${fileRater}, but the initials box says ${rater}.`; return;
+  }
+  codes = {};
+  for (const r of rows.slice(1)) {
+    if (!r[col("n_people")]) continue;
+    const c = { n_people: +r[col("n_people")], notes: r[col("notes")] || "" };
+    ITEMS.forEach((k) => (c[k] = +r[col(k)]));
+    codes[`${r[col("clip")]}_${r[col("segment")]}`] = c;
+  }
+  saveState();
+  goTo(seg);
+}
+
+// ---- wiring ----
+function loadClip(name) {
+  clip = name;
+  $("videoWarning").style.display = "none";
+  player.src = `${VIDEO_DIR}${name}_stripped.mp4`;
+  player.addEventListener("loadeddata", () => goTo(0), { once: true });
+}
+
+for (const name of CLIPS) {
+  const o = document.createElement("option");
+  o.value = name; o.textContent = name;
+  $("clipSelect").appendChild(o);
+}
+$("clipSelect").addEventListener("change", (e) => { loadClip(e.target.value); e.target.blur(); });
+$("raterInput").addEventListener("change", (e) => {
+  rater = e.target.value.trim().toUpperCase();
+  e.target.value = rater;
+  try { localStorage.setItem(`${STORAGE_KEY}_last_rater`, rater); } catch (err) { /* best effort */ }
+  loadState();
+  goTo(seg);
+});
+$("nPeople").addEventListener("input", (e) => {
+  const n = e.target.value === "" ? undefined : Math.max(0, Math.round(+e.target.value));
+  draft.n_people = n;
+  if (n === 0) setPeople(0);
+});
+$("notes").addEventListener("input", (e) => (draft.notes = e.target.value));
+// Enter / Escape in a text box leaves the box, so the keyboard shortcuts work again
+for (const id of ["nPeople", "notes", "raterInput"]) {
+  $(id).addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === "Escape") {
+      e.preventDefault(); e.stopPropagation(); $(id).blur();
+      if (id === "raterInput") $(id).dispatchEvent(new Event("change"));
+    }
+  });
+}
+document.querySelectorAll("button.yn").forEach((b) => (b.onclick = () => setItem(b.dataset.item, +b.dataset.val)));
+$("noneBtn").onclick = noneOfThese;
+$("saveBtn").onclick = save;
+$("scrub").addEventListener("input", (e) => seekFrame(Math.round(+e.target.value / frameMs())));
+$("prevBtn").onclick = () => goTo(seg - 1);
+$("nextBtn").onclick = () => goTo(seg + 1);
+$("playBtn").onclick = togglePlay;
+$("backFrameBtn").onclick = () => seekFrame(frameNow() - 1);
+$("fwdFrameBtn").onclick = () => seekFrame(frameNow() + 1);
+$("exportBtn").onclick = exportCsv;
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { importCsv(reader.result); }
+    catch (err) { $("errBox").textContent = "Could not read that file. Load a CSV made with Export CSV."; }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+player.addEventListener("error", () => {
+  $("videoWarning").style.display = "block";
+  $("videoWarning").textContent = `Could not load ${VIDEO_DIR}${clip}_stripped.mp4. Open this file from inside the repo ` +
+    `(scripts/ip-199/social_tool/) and check that stimuli/main_blocks/ has the mp4s.`;
+});
+
+// buttons give focus back after a click, so space/Enter never press the last-clicked button again
+document.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) b.blur(); });
+
+// v / c / p switch that question between Yes and No
+const TOGGLE_KEYS = { v: "talking_to_viewer", c: "communicative", p: "physical" };
+document.addEventListener("keydown", (e) => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName) && document.activeElement.type !== "range") return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (/^[0-9]$/.test(e.key)) { e.preventDefault(); setPeople(+e.key); }
+  else if (TOGGLE_KEYS[k]) { e.preventDefault(); setItem(TOGGLE_KEYS[k], draft[TOGGLE_KEYS[k]] === 1 ? 0 : 1); }
+  else if (k === "n") { e.preventDefault(); noneOfThese(); }
+  else if (e.key === "Enter") { e.preventDefault(); save(); }
+  else if (e.key === " ") { e.preventDefault(); togglePlay(); }
+  else if (e.key === ",") { e.preventDefault(); seekFrame(frameNow() - 1); }
+  else if (e.key === ".") { e.preventDefault(); seekFrame(frameNow() + 1); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); goTo(seg + 1); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); goTo(seg - 1); }
+});
+
+try { rater = localStorage.getItem(`${STORAGE_KEY}_last_rater`) || ""; } catch (e) { /* best effort */ }
+$("raterInput").value = rater;
+loadState();
+loadClip(clip);
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
