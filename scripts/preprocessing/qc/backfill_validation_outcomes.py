@@ -50,7 +50,7 @@ def evaluate(left, right, good, bad, min_good, max_bad):
     passes = {}
     for name, vals in (("both", avg), ("left", left), ("right", right)):
         n_good = sum(v < good for v in vals)
-        n_bad = sum(v > bad for v in vals)
+        n_bad = sum(v > bad or np.isnan(v) for v in vals)  # no data counts as bad
         passes[name] = n_good >= min_good and n_bad <= max_bad
     if passes["both"]:
         return "both"

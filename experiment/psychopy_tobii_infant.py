@@ -35,7 +35,7 @@ def evaluate_validation(result, good_threshold, bad_threshold, min_good_points,
                         max_bad_points, n_points=5):
     """Pass/fail for one validation: average of both eyes, else either eye alone.
 
-    Missing points count as bad; NaN (no data) counts as neither good nor bad.
+    Missing points and NaN (no data) count as bad.
     """
     left = [result.get(f"Point_{i}_accuracy_degrees_left", bad_threshold + .01) for i in range(1, n_points + 1)]
     right = [result.get(f"Point_{i}_accuracy_degrees_right", bad_threshold + .01) for i in range(1, n_points + 1)]
@@ -43,7 +43,7 @@ def evaluate_validation(result, good_threshold, bad_threshold, min_good_points,
 
     def counts(vals):
         good = sum(v < good_threshold for v in vals)
-        bad = sum(v > bad_threshold for v in vals)
+        bad = sum(v > bad_threshold or np.isnan(v) for v in vals)
         return good, bad, (good >= min_good_points) and (bad <= max_bad_points)
 
     avg_good, avg_bad, _ = counts(avg)
@@ -58,14 +58,14 @@ def evaluate_validation(result, good_threshold, bad_threshold, min_good_points,
 
 
 def classify_accuracy(deg, good_threshold, bad_threshold):
-    """Label and color for one validation point."""
+    """Label (degrees only, no pass/fail words) and color for one validation point."""
     if np.isnan(deg):
-        return "NO DATA", VALIDATION_COLORS["bad"]
+        return "no data", VALIDATION_COLORS["bad"]
     if deg < good_threshold:
-        return f"GOOD ({deg:.2f})", VALIDATION_COLORS["good"]
+        return f"{deg:.2f}°", VALIDATION_COLORS["good"]
     if deg <= bad_threshold:
-        return f"BORDERLINE ({deg:.2f})", VALIDATION_COLORS["near"]
-    return f"BAD ({deg:.2f})", VALIDATION_COLORS["bad"]
+        return f"{deg:.2f}°", VALIDATION_COLORS["near"]
+    return f"{deg:.2f}°", VALIDATION_COLORS["bad"]
 
 
 class InfantStimuli:
@@ -618,6 +618,34 @@ class TobiiController:
         elif self.datafile is not None:
             self.datafile.close()
 
+    def _wait_for_key(self, key, extra=None):
+        """Blank screen (plus optional stim) until key; escape asks to quit the session."""
+        while True:
+            if extra is not None:
+                extra.draw()
+            self.win.flip()
+            event.clearEvents()
+            if event.waitKeys(keyList=[key, "escape"])[0] == key:
+                event.clearEvents()
+                return
+            self.confirm_quit()
+
+    def confirm_quit(self):
+        """Second escape ends the session cleanly (data saved, window closed); any other key returns."""
+        visual.TextStim(self.win, text="Press ESC again to quit, any other key to keep going", pos=(0, -480),
+                        height=22, color=[-0.3, -0.3, -0.3], units="pix", autoLog=False).draw()
+        self.win.flip()
+        event.clearEvents()
+        if event.waitKeys()[0] != "escape":
+            event.clearEvents()
+            return
+        logging.warning("Experiment terminated by user (escape key, confirmed)")
+        self.record_event("Experiment_Quit_Confirmed")
+        self.stop_recording()
+        self.close()
+        self.win.close()
+        core.quit()
+
     def run_calibration(self,
                         calibration_points,
                         focus_time=0.5,
@@ -710,13 +738,15 @@ class TobiiController:
                 "Accept/Retry: {k}\n"
                 "Select/Deselect all points: 0\n"
                 "Select/Deselect recalibration points: 1-{p} key\n"
-                "Abort: esc".format(k=decision_key, p=cp_num))
+                "Quit session: esc".format(k=decision_key, p=cp_num))
 
             waitkey = True
             self.retry_points = []
             while waitkey:
                 for key in event.getKeys():
-                    if key in [decision_key, "escape"]:
+                    if key == "escape":
+                        self.confirm_quit()
+                    elif key == decision_key:
                         waitkey = False
                     elif key in self.numkey_dict:
                         if self.numkey_dict[key] == -1:
@@ -751,9 +781,6 @@ class TobiiController:
                         x, y = self._get_tobii_pos(
                             self.original_calibration_points[point_index])
                         self.calibration.discard_data(x, y)
-            elif key == "escape":
-                retval = False
-                in_calibration_loop = False
 
         self.calibration.leave_calibration_mode()
 
@@ -767,6 +794,14 @@ class TobiiController:
             f"{prefix}_pixels_left":   round(deg2pix(left, monitor), 4),
             f"{prefix}_pixels_right":  round(deg2pix(right, monitor), 4),
         }
+
+    def _presented_validation_points(self, validation_result):
+        """(tobii point, last result or None) per target in presentation order; None = no data, slot kept."""
+        presented = getattr(self, "validation_points_presented", None)
+        if presented is None:
+            return [(k, v[-1]) for k, v in validation_result.points.items()]
+        return [(tp, validation_result.points[tp][-1] if validation_result.points.get(tp) else None)
+                for tp in (Point2(*self._get_tobii_pos(p)) for p in presented)]
 
     def _process_validation_result(self, validation_result, validation_event):
         """Process validation result"""
@@ -796,26 +831,25 @@ class TobiiController:
         # Per-point metrics
         # -------------------------
         shuffled_indices = getattr(self, 'validation_shuffled_indices', None)
-        for idx, (_, values) in enumerate(validation_result.points.items(), start=1):
-            last = values[-1]
+        for idx, (p, last) in enumerate(self._presented_validation_points(validation_result), start=1):
             presentation_order = idx
             point_index = shuffled_indices[idx - 1] + 1 if shuffled_indices is not None else idx
 
+            left, right = (last.accuracy_left_eye, last.accuracy_right_eye) if last else (np.nan, np.nan)
             point_metrics = self._validation_metrics(
                 prefix=f"Point_{idx}_accuracy",
-                left=last.accuracy_left_eye,
-                right=last.accuracy_right_eye,
+                left=left,
+                right=right,
                 monitor=mon,
             )
             result_buffer.update(point_metrics)
 
             point_mean_metrics = self._validation_metrics(
                 prefix="Mean_accuracy",
-                left=last.accuracy_left_eye,
-                right=last.accuracy_right_eye,
+                left=left,
+                right=right,
                 monitor=mon,
             )
-            p = last.screen_point
             stimulus_positions = self._tobii_to_pixels(
                         p.x, p.y, p.x, p.y)
             self.validation_summary_buffers.append({
@@ -847,15 +881,13 @@ class TobiiController:
             # Draw calibration points if available
             shuffled_indices = getattr(self, 'validation_shuffled_indices', None)
             target_positions = []
-            for enum_idx, (key, value) in enumerate(self.validation_result.points.items(), start=1):
-                this_point = value[-1]
-                p = this_point.screen_point
+            for enum_idx, (p, this_point) in enumerate(self._presented_validation_points(self.validation_result), start=1):
                 pw, ph = self.win.size / getattr(self.win, "contentScaleFactor", 1)
                 target_positions.append(((p.x - 0.5) * pw, (0.5 - p.y) * ph))
                 presentation_order = enum_idx
                 point_index = shuffled_indices[enum_idx - 1] + 1 if shuffled_indices is not None else enum_idx
 
-                for this_sample in this_point.gaze_data:
+                for this_sample in (this_point.gaze_data if this_point else []):
                     lp = this_sample.left_eye.gaze_point.position_on_display_area
                     rp = this_sample.right_eye.gaze_point.position_on_display_area
                     pixel_positions = self._tobii_to_pixels(
@@ -918,16 +950,22 @@ class TobiiController:
             
             # Update image and draw it
             result_img.setImage(img)
-            result_img.draw()
-            choices = self._draw_validation_summary(result_buffer, target_positions, criteria,
-                                                    decision_key, final_attempt)
-            self.win.flip()
+            def redraw():
+                result_img.draw()
+                choices = self._draw_validation_summary(result_buffer, target_positions, criteria,
+                                                        decision_key, final_attempt)
+                self.win.flip()
+                return choices
+            choices = redraw()
 
             event.clearEvents()
             waitkey = True
             while waitkey:
                 for key in event.getKeys():
-                    if key in choices:
+                    if key == "escape":
+                        self.confirm_quit()
+                        redraw()
+                    elif key in choices:
                         self.validation_choice = choices[key]
                         waitkey = False
                         break
@@ -952,53 +990,63 @@ class TobiiController:
                       for i in range(1, n_points + 1)]
             labels = [("NO DATA" if np.isnan(v) else f"{v:.2f}°", "white") for v in values]
         else:
+            # Participant sees only the headline; experimenter details are small at the bottom
             good, bad = criteria["good_threshold"], criteria["bad_threshold"]
             min_good, max_bad = criteria["min_good_points"], criteria["max_bad_points"]
             verdict = evaluate_validation(result_buffer, n_points=n_points, **criteria)
             labels = [classify_accuracy(v, good, bad) for v in verdict["values"]]
             n_nodata = sum(np.isnan(v) for v in verdict["values"])
             eye = {"left eye": "left", "right eye": "right"}.get(verdict["rule"])
+            look_again = (f"Round {self.validation_attempt + 1}: Look again!", "white")
             if verdict["rule"] == "average":
-                text("PASSED", (0, h * 0.3), VALIDATION_COLORS["good"], h * 0.09, bold=True)
+                headline = ("Looking good!", VALIDATION_COLORS["good"])
                 detail = "Passed with both eyes"
             elif eye:
-                text(f"{eye.upper()} EYE ONLY", (0, h * 0.3), VALIDATION_COLORS["near"], h * 0.09, bold=True)
                 if final_attempt:
+                    headline = ("Looking good!", VALIDATION_COLORS["good"])
                     detail = f"Only the {eye} eye passed (values shown are the {eye} eye)"
                     choices = {"r": "retry", "a": "accept"}
                     footer = f"Press R to recalibrate (try for both eyes)   ·   Press A to accept the {eye}-eye calibration"
                 else:
+                    headline = look_again
                     detail = f"Only the {eye} eye passed. Both eyes are needed on this attempt"
                     choices = {decision_key: "retry"}
                     footer = f"Press {decision_key.upper()} to recalibrate"
             else:
-                text("FAILED", (0, h * 0.3), VALIDATION_COLORS["bad"], h * 0.09, bold=True)
                 problems = []
                 if verdict["n_good"] < min_good:
-                    problems.append(f"Only {verdict['n_good']} GOOD (needs {min_good})")
+                    problems.append(f"only {verdict['n_good']} good (needs {min_good})")
                 if verdict["n_bad"] > max_bad:
-                    problems.append(f"{verdict['n_bad']} BAD (allowed {max_bad})")
-                detail = "; ".join(problems)
+                    problems.append(f"{verdict['n_bad']} bad (allowed {max_bad})")
+                detail = "Not passed: " + "; ".join(problems)
                 if final_attempt:
+                    headline = ("Great job!", "white")
                     choices = {decision_key: "proceed"}
                     footer = f"No attempts left. Press {decision_key.upper()} to continue the experiment"
                 else:
+                    headline = look_again
                     choices = {decision_key: "retry"}
                     footer = f"Press {decision_key.upper()} to recalibrate"
+            text(headline[0], (0, h * 0.3), headline[1], h * 0.09, bold=True)
             if n_nodata:
                 detail += f" · {n_nodata} target{'s' if n_nodata > 1 else ''} had no data"
-            text(detail, (0, h * 0.22), "white", h * 0.032)
-            text(f"Pass needs {min_good}+ GOOD (under {good}°) and at most {max_bad} BAD (over {bad}°)",
-                 (0, h * 0.17), "white", h * 0.026)
+            if self.validation_redone:
+                detail += " · redone: " + ", ".join(f"target {i + 1} (kept try {k})" for i, k in self.validation_redone)
+            small = [-0.3, -0.3, -0.3]
+            text(detail, (0, -h * 0.34), small, h * 0.024)
+            text(f"Pass needs {min_good}+ under {good}° and at most {max_bad} over {bad}°",
+                 (0, -h * 0.38), small, h * 0.022)
             if eye:
                 # Summarize the eye not shown
                 other = "right" if eye == "left" else "left"
                 ov = [result_buffer.get(f"Point_{i}_accuracy_degrees_{other}", bad + .01) for i in range(1, n_points + 1)]
-                counts = [(sum(np.isnan(v) for v in ov), "no data"), (sum(v > bad for v in ov), "BAD"),
-                          (sum(good <= v <= bad for v in ov), "BORDERLINE")]
+                counts = [(sum(np.isnan(v) for v in ov), "no data"), (sum(v > bad for v in ov), "bad"),
+                          (sum(good <= v <= bad for v in ov), "borderline")]
                 parts = ", ".join(f"{n} {lab}" for n, lab in counts if n)
                 text(f"{other.capitalize()} eye: {parts or 'did not meet the rule'} · check positioning",
-                     (0, h * 0.11), VALIDATION_COLORS["near"], h * 0.03, bold=True)
+                     (0, -h * 0.30), VALIDATION_COLORS["near"], h * 0.024, bold=True)
+            # Target number in each label, matching the order they were shown
+            labels = [(f"{i}: {lab}", col) for i, (lab, col) in enumerate(labels, start=1)]
 
         for (x, y), (label, color) in zip(target_positions, labels):
             # Label sits toward the screen center so it stays clear of the edge
@@ -1006,7 +1054,7 @@ class TobiiController:
             visual.Rect(self.win, width=w * 0.19, height=h * 0.055, pos=(x, ly), units="pix",
                         fillColor="black", lineColor=None, opacity=0.75, autoLog=False).draw()
             text(label, (x, ly), color, h * 0.035, bold=True)
-        text(footer, (0, -h * 0.46), "white", h * 0.028)
+        text(footer, (0, -h * 0.46), [-0.3, -0.3, -0.3] if criteria else "white", h * 0.024)
         return choices
 
     def mark_validation_outcome(self, validation_event, passed, eyes_used, outcome):
@@ -1319,6 +1367,9 @@ class TobiiInfantController(TobiiController):
         self.Events = []
         self.calibration_disc_size = calibration_disc_size
         self.validation_shuffled_indices = None
+        self.validation_redo_deg = None
+        self.validation_redone = []
+        self.validation_attempt = 1
         if _has_addons:
             self.update_validation = self._update_validation_infant
     
@@ -1591,36 +1642,68 @@ class TobiiInfantController(TobiiController):
                                 validation_points,
                                 _focus_time=0.5,
                                 collect_key="space"):
-        """Semi-automatic validation procedure for infants."""        
-        for idx, current_validation_point in enumerate(validation_points):
-            event.clearEvents()
-            if self._audio is not None:
-                self._audio.play()            
-            deg = 0
-            this_target = self.targets.get_stim(idx)
-            orig_size = self.targets.get_stim_original_size(idx)
-            this_target.setSize(
-                (self.calibration_disc_size,
-                self.calibration_disc_size * (orig_size[0] / orig_size[1])))
-            this_target.setPos(current_validation_point)
-            in_validation = True
-            
-            while in_validation:
-                deg += 0.5
-                this_target.setOri(ceil(deg))
-                this_target.draw()
-                self.win.flip()
+        """Semi-automatic validation: space shows the next point (with chime), space again collects.
 
-                keys = event.getKeys()
-                for key in keys:
-                    if key == collect_key:
-                        # stop audio after each point
-                        if self._audio is not None:
-                            self._audio.stop()
-                        core.wait(_focus_time)
-                        self._collect_validation_data(current_validation_point)
-                        in_validation = False
+        A point whose two-eye average is over self.validation_redo_deg (or has no data) is
+        redone once right away and the try with the lower average is kept; (index, kept try)
+        pairs go in self.validation_redone.
+        """
+        clock = core.Clock()
+        self.validation_redone = []
+        hint = visual.TextStim(self.win, pos=(0, -480), height=22, color=[-0.3, -0.3, -0.3],
+                               units="pix", autoLog=False)
+        for idx, current_validation_point in enumerate(validation_points):
+            this_target = self.targets.get_stim(idx)
+            w, h = self.targets.get_stim_original_size(idx)
+            # longer side = calibration_disc_size, aspect kept
+            full_size = np.array([w, h]) * self.calibration_disc_size / max(w, h)
+            this_target.setPos(current_validation_point)
+            tp = Point2(*self._get_tobii_pos(current_validation_point))
+
+            for redo in (False, True):
+                # Blank screen until the experimenter shows the point
+                hint.setText(f"Target {idx + 1} was off: SPACE to show it again" if redo else "")
+                self._wait_for_key(collect_key, extra=hint)
+                if self._audio is not None:
+                    self._audio.play()
+                clock.reset()
+                in_validation = True
+
+                while in_validation:
+                    t = clock.getTime()
+                    # shrink to 1/4 size over 1.5 s then hold, wiggling +-15 deg at 2 Hz
+                    this_target.setSize(full_size * max(0.25, 1 - 0.5 * t))
+                    this_target.setOri(15 * np.sin(2 * np.pi * 2 * t))
+                    this_target.draw()
+                    self.win.flip()
+
+                    keys = event.getKeys()
+                    for key in keys:
+                        if key == "escape":
+                            self.confirm_quit()
+                        elif key == collect_key:
+                            # stop audio after each point
+                            if self._audio is not None:
+                                self._audio.stop()
+                            core.wait(_focus_time)
+                            self._collect_validation_data(current_validation_point)
+                            in_validation = False
+                            break
+
+                # Two-eye average, same measure as the pass rule; no data is worst
+                acc = self._validation_point_accuracy(tp)
+                avg = np.inf if np.isnan(acc).all() else np.nanmean(acc)
+                if not redo:
+                    if self.validation_redo_deg is None or avg <= self.validation_redo_deg:
                         break
+                    # Would count as bad: set this try aside and redo once
+                    first_avg, first_samples = avg, self.validation.take_point_data(tp)
+                    continue
+                # Keep the try with the lower average
+                keep_first = first_avg < avg
+                if keep_first:
+                    self.validation.put_point_data(tp, first_samples)
+                self.validation_redone.append((idx, 1 if keep_first else 2))
         
         # Stop audio after ALL points are done
         if self._audio is not None:
@@ -1629,35 +1712,41 @@ class TobiiInfantController(TobiiController):
             except Exception:
                 pass
 
+    def _validation_point_accuracy(self, tp):
+        """[left, right] accuracy (deg) of the data collected so far at tobii point tp; NaN if none."""
+        collected = self.validation.compute().points.get(tp)
+        if not collected:
+            return np.array([np.nan, np.nan])
+        return np.array([collected[-1].accuracy_left_eye, collected[-1].accuracy_right_eye], dtype=float)
+
     def _update_calibration_infant_auto(self, _focus_time=0.5, collect_key="space"):
         """Semi-automatic calibration procedure.
-        
-        Shows each calibration point with animation, waits for space bar press
-        to collect data and move to next point.
-        
+
+        Blank screen until space shows the next point (with chime); space again
+        collects data. Points come in the order of self.retry_points.
+
         Args:
             _focus_time: duration allowing the subject to focus in seconds.
                         Default is 0.5.
-            collect_key: key to start collecting samples and move to next point.
+            collect_key: key to show the next point and to collect samples.
                         Default is space.
-        
+
         Returns:
             None
         """
-        # start calibration and play sound once for entire calibration
-        event.clearEvents()
         clock = core.Clock()
-        
-        # Play sound once at the beginning
-        if self._audio is not None:
-            self._audio.play()
-        
+
         for point_idx in self.retry_points:
             # Set position for this calibration point
             this_pos = self.original_calibration_points[point_idx]
             this_target = self.targets.get_stim(point_idx)
             this_target.setPos(this_pos)
-            
+
+            # Blank screen until the experimenter shows the point
+            self._wait_for_key(collect_key)
+            if self._audio is not None:
+                self._audio.play()
+
             # Reset clock for animation
             clock.reset()
             in_calibration = True
@@ -1678,20 +1767,21 @@ class TobiiInfantController(TobiiController):
                 # Check for key press
                 keys = event.getKeys()
                 for key in keys:
-                    if key == collect_key:
+                    if key == "escape":
+                        self.confirm_quit()
+                    elif key == collect_key:
                         # Collect data immediately
                         try:
                             core.wait(_focus_time)
                             self._collect_calibration_data(this_pos)
                         except Exception:
                             pass
-                        # Move to next point immediately
+                        # Stop the chime after each point
+                        if self._audio is not None:
+                            self._audio.stop()
                         in_calibration = False
                         break
-        
-        # Stop audio after all points are done
-        if self._audio is not None:
-            self._audio.stop()
+        self.win.flip()
 
     def run_calibration(self,
                         calibration_points,
@@ -1800,31 +1890,17 @@ class TobiiInfantController(TobiiController):
             self.win.flip()
 
             result_img = self._show_calibration_result()
-            result_msg.setText(
-                "Accept/Retry: {k}\n"
-                "Select/Deselect all points: 0\n"
-                "Select/Deselect recalibration points: 1-{p} key\n"
-                "Abort: esc".format(k=decision_key, p=cp_num))
+            # no per-point recalibration: the only per-target redo is in validation
+            result_msg.setText("Continue: {k}\nQuit session: esc".format(k=decision_key))
 
             waitkey = True
             self.retry_points = []
             while waitkey:
                 for key in event.getKeys():
-                    if key in [decision_key, "escape"]:
+                    if key == "escape":
+                        self.confirm_quit()
+                    elif key == decision_key:
                         waitkey = False
-                    elif key in self.numkey_dict:
-                        if self.numkey_dict[key] == -1:
-                            if len(self.retry_points) == cp_num:
-                                self.retry_points = []
-                            else:
-                                self.retry_points = list(range(cp_num))
-                        else:
-                            key_index = self.numkey_dict[key]
-                            if key_index < cp_num:
-                                if key_index in self.retry_points:
-                                    self.retry_points.remove(key_index)
-                                else:
-                                    self.retry_points.append(key_index)
 
                 result_img.draw()
                 if len(self.retry_points) > 0:
@@ -1845,9 +1921,6 @@ class TobiiInfantController(TobiiController):
                         x, y = self._get_tobii_pos(
                             self.original_calibration_points[point_index])
                         self.calibration.discard_data(x, y)
-            elif key == "escape":
-                retval = False
-                in_calibration_loop = False
 
         self.calibration.leave_calibration_mode()
 
@@ -1869,6 +1942,8 @@ class TobiiInfantController(TobiiController):
                        audio=None,
                        criteria=None,
                        final_attempt=False,
+                       redo_point_deg=None,
+                       attempt=1,
                        *kwargs):
         """Run validation.
         Press space to start collect valdiation samples.
@@ -1900,6 +1975,10 @@ class TobiiInfantController(TobiiController):
             final_attempt: if True, a 1-eye pass offers retry/accept and a
                 failure offers to proceed; the key chosen is stored in
                 self.validation_choice.
+            redo_point_deg: redo a point once if its two-eye average is over this
+                (degrees; the bad threshold) and keep the try with the lower average.
+                None disables redos.
+            attempt: attempt number, for the "Round N" message on the result screen.
             *kwargs: other arguments to pass into psychopy.visual.ImageStim.
                 Has no effects if infant_stims is set to None.
         Returns:
@@ -1911,6 +1990,8 @@ class TobiiInfantController(TobiiController):
         if audio is not None:
             self._audio = audio
         self.validation_choice = None
+        self.validation_redo_deg = redo_point_deg
+        self.validation_attempt = attempt
 
         # setup the procedure
         self.validation = ScreenBasedCalibrationValidation(
@@ -1931,6 +2012,7 @@ class TobiiInfantController(TobiiController):
             np.random.shuffle(shuffled_indices)
         self.validation_shuffled_indices = shuffled_indices
         validation_points = [validation_points[i] for i in shuffled_indices]
+        self.validation_points_presented = validation_points
 
         # clear the display
         self.win.flip()

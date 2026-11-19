@@ -141,6 +141,36 @@ def trial_order(dir, debug=False):
     logger.info(f"Generated trial order with {len(Trials)} trials across {len(block_keys)} blocks")
     return Trials
 
+def block_break_screen(controller, blocks_done, n_blocks, title="Great job!",
+                       hint="C: Recalibrate & check     V: Check calibration only", keys=('c', 'v')):
+    """Title + progress bar + small experimenter hint; returns the key pressed (default 'c' recalibrate / 'v' validate only)."""
+    win = controller.win
+    pct = round(100 * blocks_done / n_blocks)
+    # words instead of percentages, for kids
+    left = n_blocks - blocks_done
+    progress = ("" if left == 0 else "Just one block left!" if left == 1
+                else "You're halfway done!" if 2 * blocks_done == n_blocks else "You finished a block!")
+    bar_w, bar_h = 800, 50
+    stims = [
+        visual.TextStim(win, text=title, pos=(0, 200), height=100, color="black", bold=True, units="pix"),
+        visual.Rect(win, width=bar_w, height=bar_h, pos=(0, 0), lineColor="black", lineWidth=4, fillColor="white", units="pix"),
+        visual.Rect(win, width=bar_w * pct / 100, height=bar_h, pos=(-bar_w / 2 + bar_w * pct / 200, 0),
+                    lineColor=None, fillColor="green", units="pix"),
+        visual.TextStim(win, text=progress, pos=(0, -80), height=45, color="black", units="pix"),
+        visual.TextStim(win, text=hint, pos=(0, -480),
+                        height=22, color=[-0.3, -0.3, -0.3], units="pix"),
+    ]
+    event.clearEvents()
+    while True:
+        for s in stims:
+            s.draw()
+        win.flip()
+        pressed = event.getKeys(keyList=list(keys) + ['escape'])
+        if 'escape' in pressed:
+            controller.confirm_quit()
+        elif pressed:
+            return pressed[0]
+
 def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False, shuffle_points=True, baby_experiment=False):
     global logger, config_data
     import gc
@@ -213,8 +243,13 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
                 audio=validation_sound,
                 shuffle_points=shuffle_points,
                 criteria=criteria,
-                final_attempt=final_attempt
+                final_attempt=final_attempt,
+                redo_point_deg=bad_threshold,
+                attempt=i + 1
             )
+            for p, kept in controller.validation_redone:
+                logger.info(f"Validation iteration {i+1}: redid target {p+1} (over {bad_threshold} deg), kept try {kept}")
+                controller.record_event(f"{calib_event}_{i+1}_Redo_Target{p+1}_KeptTry{kept}")
         except Exception as e:
             log_exception(logger, e, f"validation iteration {i}")
             result = {}
@@ -359,7 +394,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
     CALIPOINTS = [(x * DISPSIZE[0], y * DISPSIZE[1]) for x, y in CALINORMP]
     STIM_DIR = DIR / os.path.join('stimuli')
     CALIB_DIR = STIM_DIR / 'calibration'
-    CALIB_SOUND = os.path.join(CALIB_DIR, 'hothothot3.wav')
+    CALIB_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')  # per-point chime, same as PILL
     VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
     CALISTIMS = [
         f"{CALIB_DIR}/{x}" for x in os.listdir(CALIB_DIR)
@@ -438,9 +473,9 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
 
     try:
         if not mock:
-            controller = TobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
+            controller = TobiiInfantController(win, calibration_disc_size=120, filename=str(filename))
         else:
-            controller = MockTobiiInfantController(win, calibration_disc_size=200, filename=str(filename))
+            controller = MockTobiiInfantController(win, calibration_disc_size=120, filename=str(filename))
         logger.info("Controller initialized successfully")
     except Exception as e:
         log_exception(logger, e, "initializing controller")
@@ -479,6 +514,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
             log_exception(logger, e, "generating trial order")
             raise
     
+    n_blocks = len({t['block_id'] for t in Trials})  # before resume filtering, for the progress bar
     if start_trial_idx > 0:
         Trials = [t for t in Trials if t['total_trial_index'] >= start_trial_idx]
         logger.info(f"Skipping to trial {start_trial_idx}, {len(Trials)} trials remaining")
@@ -491,6 +527,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
         raise
     
     first_trial = True
+    aborted = False
     for trial in Trials:
         t1 = time.time()
         trial_id = trial['total_trial_index']
@@ -507,8 +544,14 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
                 
         if trial['within_block_trial_index'] == 0 and not first_trial and (not baby_experiment or int(trial['block_index']) % 2 != 0):
             logger.info(f"Block validation at trial {trial_id}")
+            validate_only = True
+            if not baby_experiment:
+                choice = block_break_screen(controller, int(trial['block_index']), n_blocks)
+                validate_only = choice == 'v'
+                controller.record_event(f"Block_Break_Trial{trial_id}_{'ValidateOnly' if validate_only else 'Recalibrate'}")
+                logger.info(f"Block break before trial {trial_id}: experimenter chose {'validate only' if validate_only else 'recalibrate'}")
             try:
-                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=True, shuffle_points=shuffle_points, baby_experiment=baby_experiment)
+                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=validate_only, shuffle_points=shuffle_points, baby_experiment=baby_experiment)
                 if mock:
                     controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
             except Exception as e:
@@ -768,15 +811,20 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
         controller.record_event(f"Loop_End_{trial_id}")
         if event_type == "escape":
             logger.warning("Experiment terminated by user (escape key)")
+            aborted = True
             break
         t4 = time.time()
         
         keys = event.getKeys()
         if 'escape' in keys:
             logger.warning("Experiment terminated by user (escape key)")
+            aborted = True
             break
         first_trial = False
     
+    if not aborted:
+        controller.record_event("Session_End_Screen")
+        block_break_screen(controller, n_blocks, n_blocks, title="All done!", hint="SPACE to finish", keys=('space',))
     logger.info("Stopping recording and closing experiment")
     try:
         controller.stop_recording()

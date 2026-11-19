@@ -360,6 +360,20 @@ class ScreenBasedCalibrationValidation(object):
         self.__current_gaze_data = []
         self.__collected_points = defaultdict(list)
 
+    def take_point_data(self, screen_point):
+        '''Removes and returns the samples collected for a point (empty list if none).'''
+        if self.__is_collecting_data:
+            raise RuntimeWarning("Attempted to take data while collecting data")
+        return self.__collected_points.pop(screen_point, [])
+
+    def put_point_data(self, screen_point, samples):
+        '''Stores samples for a point, replacing any already collected; no samples leaves it uncollected.'''
+        if self.__is_collecting_data:
+            raise RuntimeWarning("Attempted to put data while collecting data")
+        self.__collected_points.pop(screen_point, None)
+        if samples:
+            self.__collected_points[screen_point] = samples
+
     def discard_data(self, screen_point):
         '''Removes the collected data for a specific calibration validation point.
 
