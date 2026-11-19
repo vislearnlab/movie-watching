@@ -752,7 +752,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
             else:
                 absent_lt = 0
             total_lt += lt        
-            if event_type == "pause":
+            if event_type in ("pause", "escape"):
                 current_playback_time = time.time()
                 elapsed_playback = current_playback_time - playback_start_time - accumulated_pause_time
                 paused_audio_time = audio.get_current_time()
@@ -766,16 +766,27 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
                 audio.stop()
                 
                 pause_start = time.time()
-                while True:
-                    movie.draw()
-                    win.flip()
-                    keys = event.getKeys(keyList=['space'])
-                    if 'space' in keys:
-                        break
-                    core.wait(0.01)
+                quit_confirmed = False
+                if event_type == "escape":
+                    # Escape pauses the clip and asks to confirm, like everywhere else
+                    quit_confirmed = controller.confirm_quit(exit=False)
+                else:
+                    while True:
+                        movie.draw()
+                        win.flip()
+                        keys = event.getKeys(keyList=['space'])
+                        if 'space' in keys:
+                            break
+                        core.wait(0.01)
                 pause_duration = time.time() - pause_start
                 accumulated_pause_time += pause_duration
-                
+                if quit_confirmed:
+                    # Recording back on so the end-of-trial events are logged and the gaze file flushed
+                    controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
+                    controller.recording = True
+                    break
+                event_type = "play"
+
                 movie.play()
                 resume_time = paused_audio_time
                 audio.play(start_time=resume_time)
@@ -825,7 +836,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
                     
         if event_type != "normal":
             if event_type == "looking_away":
-                controller.display_text("Press 'c' to recalibrate, or press 'p' (or wait 5s) to proceed.")
+                controller.display_text("Press 'c' to recalibrate, or press 'p' (or wait 5s) to proceed.", duration=0)
                 start_wait = time.time()
                 key = None
                 
@@ -857,7 +868,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
         t4 = time.time()
         
         keys = event.getKeys()
-        if 'escape' in keys:
+        if 'escape' in keys and controller.confirm_quit(exit=False):
             logger.warning("Experiment terminated by user (escape key)")
             aborted = True
             break

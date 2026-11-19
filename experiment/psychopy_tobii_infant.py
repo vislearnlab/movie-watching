@@ -630,15 +630,19 @@ class TobiiController:
                 return
             self.confirm_quit()
 
-    def confirm_quit(self):
-        """Second escape ends the session cleanly (data saved, window closed); any other key returns."""
+    def confirm_quit(self, exit=True):
+        """Second escape ends the session cleanly (data saved, window closed); any other key returns False.
+
+        With exit=False a confirmed escape returns True and the caller ends the session."""
         visual.TextStim(self.win, text="Press ESC again to quit, any other key to keep going", pos=(0, -480),
                         height=22, color=[-0.3, -0.3, -0.3], units="pix", autoLog=False).draw()
         self.win.flip()
         event.clearEvents()
         if event.waitKeys()[0] != "escape":
             event.clearEvents()
-            return
+            return False
+        if not exit:
+            return True
         logging.warning("Experiment terminated by user (escape key, confirmed)")
         # Release the tracker if quitting mid-calibration/validation; raises if not in that mode
         for leave in (getattr(self.calibration, "leave_calibration_mode", None),
@@ -995,6 +999,7 @@ class TobiiController:
                             units="pix", wrapWidth=w * 0.85, autoLog=False).draw()
 
         n_points = len(target_positions)
+        redo = "check again" if n_points == 1 else "recalibrate"  # center check never recalibrates
         choices = {decision_key: "continue"}
         footer = f"Press {decision_key.upper()} to continue"
         if criteria is None:
@@ -1020,12 +1025,12 @@ class TobiiController:
                     headline = ("Looking good!", VALIDATION_COLORS["good"])
                     detail = f"Only the {eye} eye passed (values shown are the {eye} eye)"
                     choices = {"r": "retry", "a": "accept"}
-                    footer = f"Press R to recalibrate (try for both eyes)   ·   Press A to accept the {eye}-eye calibration"
+                    footer = f"Press R to {redo} (try for both eyes)   ·   Press A to accept the {eye}-eye calibration"
                 else:
                     headline = look_again
                     detail = f"Only the {eye} eye passed. Both eyes are needed on this attempt"
                     choices = {decision_key: "retry"}
-                    footer = f"Press {decision_key.upper()} to recalibrate"
+                    footer = f"Press {decision_key.upper()} to {redo}"
             else:
                 problems = []
                 if verdict["n_good"] < min_good:
@@ -1040,7 +1045,7 @@ class TobiiController:
                 else:
                     headline = look_again
                     choices = {decision_key: "retry"}
-                    footer = f"Press {decision_key.upper()} to recalibrate"
+                    footer = f"Press {decision_key.upper()} to {redo}"
             text(headline[0], (0, h * 0.3), headline[1], h * 0.09, bold=True)
             if n_nodata:
                 detail += f" · {n_nodata} target{'s' if n_nodata > 1 else ''} had no data"
