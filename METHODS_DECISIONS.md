@@ -1932,3 +1932,42 @@ RA-paced, shrinking targets.
   eyes had data, so a target with one valid eye at 1.2° wasn't redone even though the average rule counts it as
   bad. Trade-off accepted: a child tracked with only one eye gets every target redone (at most 5 extra
   presentations per validation).
+
+## 2026-11-19 — I2MC: each clip uses the most recent calibration (a47a7f9)
+
+Replaces the per-block rule in the 2026-11-03 entry ("each block is judged on the last validation before it
+started"). The eye/exclusion rule from that entry (both eyes ≤ 2°, else the accepted eye ≤ 2°, else excluded) is
+unchanged; it is now applied per clip.
+
+- **Rule (user, general principle):** every clip is judged on the most recent calibration before it.
+  `compute_trial_calibration` in `i2mc_fixations.py` reads where each validation applies from its label (last
+  attempt counts, as before):
+
+  | Validation | Applies from clip |
+  |---|---|
+  | `pre_validation_*` | 0 |
+  | `block_validation_trial{N}_*` | N |
+  | `key_forced_validation_trial{N}_*` ('c' during clip N, which was cut short) | N + 1 |
+  | `lb_forced_validation_{N}_*` (look-away after clip N) | N + 1 |
+
+  Clip N itself keeps the calibration it was recorded under. When two validations apply from the same clip, the
+  later one in the session wins (validation-summary rows are in session order).
+- **Mid-block recalibrations are now followed.** This closes the "Open" item in the 2026-11-03 entry.
+- **Blocks without their own validation inherit the previous one.** Infants validate every other block; before,
+  clips in the other blocks had no calibration value and were never excluded. Now a bad block-0 calibration also
+  excludes block 1.
+- **Restarted sessions:** a `pre_validation` run that comes after later validations (MWK014, restarted after
+  block 2's validation) is ignored, because the summary file doesn't record which clip the session resumed at.
+  A second `pre_validation` run before any block validation does count: MW062's failed no-data start was
+  followed by an accepted 1.03° calibration, which now applies to block 0.
+- **Effect (all 98 participants on the server):** 67 clips in 17 participants get a different calibration
+  value; the eyes analyzed don't change for any clip. Inclusion changes:
+  - now included: MW001 clips 1–3 (6.03° → 0.62°, 'c' recalibration after clip 0), MW062 0–3 (NaN → 1.03°),
+    HMET005 2–3 (9.79° → 1.92°).
+  - now excluded: MW065 4–11 (only failed no-data session-start validations, no block validations), HMET004 11,
+    HMET005 11, HMET007 7–11, HMET013 11, HMET015 4–10, HMET016 7–10, HMET020 7–10, MWB001 7–11.
+- **Re-run:** only MW001 had existing fixation files; 3 new files (clips 1–3) under code `f329476c`, with no
+  `--overwrite`. MW062, MW065, adults MW060 onward and all infants had never been run through I2MC, so they get
+  this rule on their first run. No now-excluded clip had a file, so nothing was deleted.
+- **Block-level QC is unchanged:** `compute_block_calibration` is kept for `participant_block_qc.py`,
+  `summarize_eye_calibration_impact.py` and `isc_analysis.qmd`, which still report one calibration per block.
