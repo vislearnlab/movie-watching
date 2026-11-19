@@ -171,7 +171,28 @@ def block_break_screen(controller, blocks_done, n_blocks, title="Great job!",
         elif pressed:
             return pressed[0]
 
-def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False, shuffle_points=True, baby_experiment=False):
+
+def infant_break_screen(controller, grabber_path, hint, keys):
+    """Looping attention getter + small experimenter hint (infants can't read); returns the key pressed."""
+    win = controller.win
+    grabber = MovieStim(win, grabber_path, size=[600, 600], units='pix', loop=True)
+    hint_stim = visual.TextStim(win, text=hint, pos=(0, -480), height=22, color=[-0.3, -0.3, -0.3], units="pix")
+    grabber.play()
+    event.clearEvents()
+    try:
+        while True:
+            grabber.draw()
+            hint_stim.draw()
+            win.flip()
+            pressed = event.getKeys(keyList=list(keys) + ['escape'])
+            if 'escape' in pressed:
+                controller.confirm_quit()
+            elif pressed:
+                return pressed[0]
+    finally:
+        grabber.stop()
+
+def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event, mode="initial", skip_first_calibration=False, shuffle_points=True, baby_experiment=False, center_only=False):
     global logger, config_data
     import gc
     import sounddevice as sd
@@ -188,10 +209,16 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
     
     criteria = dict(good_threshold=good_threshold, bad_threshold=bad_threshold,
                     min_good_points=min_good_points, max_bad_points=max_bad_points)
+    val_points = CALIPOINTS
+    if center_only:
+        # Center target alone decides pass/fail (same per-target bar); retries re-show it, no recalibration
+        val_points = [(0.0, 0.0)]
+        criteria = dict(good_threshold=bad_threshold, bad_threshold=bad_threshold, min_good_points=1, max_bad_points=0)
 
     logger.info(f"Starting {mode} calibration routine (event: {calib_event})")
     logger.debug(f"Max retries: {max_retries}, Good threshold: {good_threshold}, Bad threshold: {bad_threshold}, Min good points: {min_good_points}, Max bad points: {max_bad_points}")
     
+    controller.last_calibration_passed = False  # read by the infant block schedule
     i = 0
     while True:
         # From the last scheduled attempt on, a 1-eye pass is offered to the experimenter
@@ -204,7 +231,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
             core.wait(0.1)
             event.clearEvents()
         
-        if not skip_first_calibration or i > 0:
+        if not center_only and (not skip_first_calibration or i > 0):
             sd.stop()
             gc.collect()
             core.wait(0.1)
@@ -236,7 +263,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
         try:
             logger.info(f"Running validation iteration {i+1}/{max_retries}" + (" (extra, experimenter chose to retry)" if i >= max_retries else ""))
             result = controller.run_validation(
-                validation_points=CALIPOINTS,
+                validation_points=val_points,
                 infant_stims=CALISTIMS,
                 show_results=True,
                 event=f"{calib_event}_{i+1}",
@@ -266,23 +293,25 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
         # validation checking logic
         val_event = f"{calib_event}_{i+1}"
         choice = getattr(controller, "validation_choice", None)
-        verdict = evaluate_validation(result or {}, **criteria)
-        logger.debug(f"Validation results - Avg good: {verdict['avg_good']}/5, Avg bad: {verdict['avg_bad']}/5")
+        verdict = evaluate_validation(result or {}, n_points=len(val_points), **criteria)
+        logger.debug(f"Validation results - Avg good: {verdict['avg_good']}/{len(val_points)}, Avg bad: {verdict['avg_bad']}/{len(val_points)}")
         eye = {"left eye": "left", "right eye": "right"}.get(verdict["rule"])
 
         if verdict["rule"] == "average":
             logger.info(f"Validation passed on iteration {i+1} (both eyes)")
             controller.mark_validation_outcome(val_event, "both", "both", "accepted")
+            controller.last_calibration_passed = True
             break
         elif eye and final_attempt and choice == "accept":
             logger.info(f"Validation passed on iteration {i+1} ({eye} eye only, accepted by experimenter)")
             controller.mark_validation_outcome(val_event, eye, eye, "accepted")
+            controller.last_calibration_passed = True
             break
         elif eye:
             why = "experimenter chose to retry" if final_attempt else "both eyes required on this attempt"
             logger.warning(f"Validation passed on iteration {i+1} with {eye} eye only; recalibrating ({why})")
             controller.mark_validation_outcome(val_event, eye, None, "retried")
-            msg = f"Only the {eye} eye passed. Recalibrating for both eyes..."
+            msg = f"Only the {eye} eye passed. " + ("Checking again..." if center_only else "Recalibrating for both eyes...")
         elif final_attempt:
             logger.warning(f"Validation failed on iteration {i+1}; no attempts left, proceeding")
             controller.mark_validation_outcome(val_event, "none", "both", "proceeded_failed")
@@ -290,7 +319,7 @@ def calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SO
         else:
             logger.warning(f"Validation failed on iteration {i+1}")
             controller.mark_validation_outcome(val_event, "none", None, "retried")
-            msg = "Validation failed. Recalibrating..."
+            msg = "Validation failed. " + ("Checking again..." if center_only else "Recalibrating...")
 
         i += 1
         controller.display_text(msg, duration=2)
@@ -396,6 +425,7 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
     CALIB_DIR = STIM_DIR / 'calibration'
     CALIB_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')  # per-point chime, same as PILL
     VALID_SOUND = os.path.join(CALIB_DIR, 'upchime.wav')
+    GRABBER = f"{STIM_DIR}/ag/Attentiongrabber.mp4"
     CALISTIMS = [
         f"{CALIB_DIR}/{x}" for x in os.listdir(CALIB_DIR)
         if x.endswith('.png') and not x.startswith('.')
@@ -542,16 +572,27 @@ def run_experiment(Sub, debug=False, mock=False, shuffle_points=True, baby_exper
             except Exception as e:
                 log_exception(logger, e, f"flushing data before trial {trial_id}")
                 
-        if trial['within_block_trial_index'] == 0 and not first_trial and (not baby_experiment or int(trial['block_index']) % 2 != 0):
+        if trial['within_block_trial_index'] == 0 and not first_trial:
             logger.info(f"Block validation at trial {trial_id}")
-            validate_only = True
+            center_only = False
             if not baby_experiment:
                 choice = block_break_screen(controller, int(trial['block_index']), n_blocks)
-                validate_only = choice == 'v'
-                controller.record_event(f"Block_Break_Trial{trial_id}_{'ValidateOnly' if validate_only else 'Recalibrate'}")
-                logger.info(f"Block break before trial {trial_id}: experimenter chose {'validate only' if validate_only else 'recalibrate'}")
+            elif int(trial['block_index']) % 2 == 0:
+                choice = infant_break_screen(controller, GRABBER, "SPACE: Check calibration only     C: Recalibrate & check", ('space', 'c'))
+            elif not getattr(controller, "last_calibration_passed", False):
+                # Center check only if the last calibration passed; otherwise redo calibration + validation
+                infant_break_screen(controller, GRABBER, "Last calibration failed     SPACE: Recalibrate & check", ('space',))
+                choice = 'c'
+            else:
+                # Infants: center-only check before odd blocks; block 0 and even blocks get the full check
+                choice = infant_break_screen(controller, GRABBER, "SPACE: Center check     C: Recalibrate & check", ('space', 'c'))
+                center_only = choice == 'space'
+            validate_only = choice != 'c'
+            what = "CenterCheck" if center_only else "ValidateOnly" if validate_only else "Recalibrate"
+            controller.record_event(f"Block_Break_Trial{trial_id}_{what}")
+            logger.info(f"Block break before trial {trial_id}: experimenter chose {what}")
             try:
-                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=validate_only, shuffle_points=shuffle_points, baby_experiment=baby_experiment)
+                calibration_routine(controller, CALIPOINTS, CALISTIMS, CALIB_SOUND, VALID_SOUND, calib_event=f"block_validation_trial{trial['total_trial_index']}", mode="later", skip_first_calibration=validate_only, shuffle_points=shuffle_points, baby_experiment=baby_experiment, center_only=center_only)
                 if mock:
                     controller.eyetracker.subscribe_to(controller.tr.EYETRACKER_GAZE_DATA, controller._on_gaze_data, as_dictionary=True)
             except Exception as e:

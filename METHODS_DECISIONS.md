@@ -1892,7 +1892,7 @@ where the eyes were coming from.
 ## 2026-11-19 — Calibration/validation procedure overhaul (86c7125)
 
 **Validation accuracy from sessions before vs. after 2026-11-19 is not directly comparable:** targets, pacing,
-the redo rule and the pass rule all changed. Treat the date as a procedure cutover in any QC or accuracy comparison.
+the redo rule and the pass rule all changed.
 
 Why: RAs reported targets appearing without warning, and the PILL lab (Tori) gets better accuracy with
 RA-paced, shrinking targets.
@@ -1905,8 +1905,7 @@ RA-paced, shrinking targets.
   again and the try with the lower average is kept. Logged as `<step>_<n>_Redo_Target<k>_KeptTry<1|2>` events.
 - **No per-point recalibration.** The 1–9 keys for redoing individual calibration points were removed.
 - **Pass rule: no data counts as bad.** A validation target with NaN accuracy now counts toward the bad limit
-  (it counted as neither good nor bad before), live and in `backfill_validation_outcomes.py`. Note the backfill
-  applies this to older sessions too, which were run live under the old rule.
+  (it counted as neither good nor bad before), live and in `backfill_validation_outcomes.py`.
 - **No-data targets keep their slot.** Summary rows and the result screen list every presented target in
   presentation order, with NaN for no data, so `Point_<n>` / `presentation_order` aren't shifted by a dropped target.
 - **Block breaks (kids and adults).** A progress screen ("Great job!" + progress bar) lets the RA choose C
@@ -1925,7 +1924,7 @@ RA-paced, shrinking targets.
   `Experiment_Quit_Confirmed` event is only in the session log in that case, since no gaze file exists yet.
 - **Validations cut short by a quit get `outcome = "quit"`.** Any summary rows with no outcome yet are labeled
   `quit` (`validation_passed` / `eyes_used` stay blank). `backfill_validation_outcomes.py` skips runs that already
-  have an outcome, so it leaves these alone. Treat `quit` validations as not accepted.
+  have an outcome, so it leaves these alone.
 - **The quit also takes the tracker out of calibration/validation mode** before closing.
 - **Per-target redo now uses the pass rule's two-eye average.** A target is redone (once) when (left + right) / 2
   exceeds the bad threshold, and a missing eye counts as bad. Before this fix the redo check averaged whichever
@@ -1971,3 +1970,19 @@ unchanged; it is now applied per clip.
   this rule on their first run. No now-excluded clip had a file, so nothing was deleted.
 - **Block-level QC is unchanged:** `compute_block_calibration` is kept for `participant_block_qc.py`,
   `summarize_eye_calibration_impact.py` and `isc_analysis.qmd`, which still report one calibration per block.
+
+## 2026-11-19 — Infants: center-target check on alternate blocks, attention-getter breaks
+
+A full validation before every block was too much for infants.
+
+- **Schedule:** full 5-point calibration/validation before block 0 (session start) and block 2; a single
+  center-target validation before blocks 1 and 3.
+- **The center check only happens if the preceding calibration passed.** Otherwise (e.g. block 0's failed), the
+  calibration and full validation are redone before the next block instead.
+- **Center check:** logged the same way as the 5-point checks; it is the same process, just less thorough. For
+  these blocks the single point determines pass/fail: pass if it is ≤ the bad threshold (6°). A failed check
+  re-shows the center target (no recalibration); if it fails twice, the next block starts.
+- **Break screen:** no "Great job!" screens (infants can't read). The attention getter
+  (`stimuli/ag/Attentiongrabber.mp4`) plays until the experimenter presses a key, so they can check in before
+  calibration/validation starts.
+- Infant pass criteria for the 5-point check stay separate from kids/adults, as before.

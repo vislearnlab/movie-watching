@@ -1815,19 +1815,11 @@ class TobiiInfantController(TobiiController):
         """Run calibration.
 
             How to use:
-                - Press 1-9 to present calibration stimulus (press 0 to hide
-                  it).
-                - Press space to start collect calibration samples.
-                - Press Enter to finish the calibration and show the
-                  calibration result.
-                - Choose the points to recalibrate with 1-9. If no points are
-                  selected, the calibration result will be accepted and
-                  applied.
-                - Press decision_key (default is space) to accept the
-                  calibration result or recalibrate.
-
-            The experimenter should manually show the stimulus and collect data
-            when the subject is paying attention to the stimulus.
+                - Space shows the next target (with chime); space again
+                  collects samples once the subject is looking at it.
+                - After the last target the result is shown; press
+                  decision_key (default is space) to accept it, or escape
+                  twice to quit the session.
 
         Args:
             calibration_points: list of position of the calibration points.
@@ -1854,13 +1846,6 @@ class TobiiInfantController(TobiiController):
         if not (2 <= len(calibration_points) <= 9):
             raise ValueError("Calibration points must be between 2 and 9")
 
-        else:
-            self.numkey_dict = {
-                k: v
-                for k, v in self.numkey_dict.items()
-                if v < len(calibration_points)
-            }
-
         # prepare calibration stimuli
         self.targets = InfantStimuli(self.win,
                                      infant_stims,
@@ -1868,16 +1853,6 @@ class TobiiInfantController(TobiiController):
                                      *kwargs)
         self._audio = audio
 
-        self.retry_marker = visual.Circle(
-            self.win,
-            radius=self.calibration_dot_size,
-            fillColor=self.calibration_dot_color,
-            lineColor=self.calibration_disc_color,
-            autoLog=False,
-        )
-        if self.win.units == "norm":  # fix oval
-            self.retry_marker.setSize(
-                [float(self.win.size[1]) / self.win.size[0], 1.0])
         result_msg = visual.TextStim(
             self.win,
             pos=(0, -self.win.size[1] / 4),
@@ -1889,61 +1864,38 @@ class TobiiInfantController(TobiiController):
         self.calibration.enter_calibration_mode()
 
         self.original_calibration_points = calibration_points[:]
-        # set all points
-        cp_num = len(self.original_calibration_points)
-        self.retry_points = list(range(cp_num))
+        # presentation order, read by update_calibration and _show_calibration_result
+        self.retry_points = list(range(len(calibration_points)))
         if shuffle_points:
             np.random.shuffle(self.retry_points)
+        self.calibration_points = [
+            self.original_calibration_points[x] for x in self.retry_points
+        ]
 
-        in_calibration_loop = True
+        # clear the display
+        self.win.flip()
+        self.update_calibration(_focus_time=focus_time)
+        self.calibration_result = self.calibration.compute_and_apply()
+        self.win.flip()
+
+        result_img = self._show_calibration_result()
+        # no per-point recalibration: the only per-target redo is in validation
+        result_msg.setText("Continue: {k}\nQuit session: esc".format(k=decision_key))
+
         event.clearEvents()
-        while in_calibration_loop:
-            self.calibration_points = [
-                self.original_calibration_points[x] for x in self.retry_points
-            ]
-
-            # clear the display
+        while True:
+            keys = event.getKeys()
+            if "escape" in keys:
+                self.confirm_quit()
+            elif decision_key in keys:
+                break
+            result_img.draw()
+            result_msg.draw()
             self.win.flip()
-            self.update_calibration(_focus_time=focus_time)
-            self.calibration_result = self.calibration.compute_and_apply()
-            self.win.flip()
-
-            result_img = self._show_calibration_result()
-            # no per-point recalibration: the only per-target redo is in validation
-            result_msg.setText("Continue: {k}\nQuit session: esc".format(k=decision_key))
-
-            waitkey = True
-            self.retry_points = []
-            while waitkey:
-                for key in event.getKeys():
-                    if key == "escape":
-                        self.confirm_quit()
-                    elif key == decision_key:
-                        waitkey = False
-
-                result_img.draw()
-                if len(self.retry_points) > 0:
-                    for retry_p in self.retry_points:
-                        self.retry_marker.setPos(
-                            self.original_calibration_points[retry_p])
-                        self.retry_marker.draw()
-
-                result_msg.draw()
-                self.win.flip()
-
-            if key == decision_key:
-                if len(self.retry_points) == 0:
-                    retval = True
-                    in_calibration_loop = False
-                else:  # retry
-                    for point_index in self.retry_points:
-                        x, y = self._get_tobii_pos(
-                            self.original_calibration_points[point_index])
-                        self.calibration.discard_data(x, y)
 
         self.calibration.leave_calibration_mode()
 
-        return retval
+        return True
 
     def run_validation(self,
                        validation_points=None,
