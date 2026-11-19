@@ -82,9 +82,9 @@ FREQ = 250.0
 # that's mostly missing shouldn't produce a fixation file at all.
 MAX_INVALID_FRAC = 0.8
 
-# Trials in a block whose calibration accuracy (mean error in degrees,
-# averaged over left/right eye and the 5 validation points, from the last
-# validation attempt before that block started -- see compute_block_calibration)
+# Trials whose calibration accuracy (mean error in degrees, averaged over
+# left/right eye and the validation points, from the most recent calibration
+# before that trial -- see compute_trial_calibration)
 # exceeds this are excluded before I2MC runs, regardless of how good the gaze
 # data itself looks. Tightened from 6.0 (later_validation.bad_threshold in
 # experiment/config.yaml, i.e. the accuracy the live experiment treats as a
@@ -212,6 +212,58 @@ def read_csv_multi_encoding(path: str) -> pd.DataFrame | None:
 # ── block calibration (mirrors scripts/preprocessing/qc/dataQC_check.py's ──
 # parse_validation_summary + map_blocks_to_validations)
 
+def attempt_calibration(row, max_deg: float = MAX_CALIBRATION_DEG) -> tuple:
+    """(degrees, eyes) for one validation attempt's mean row: both-eye average, or the
+    accepted eye alone only when that average fails (METHODS_DECISIONS.md, 2026-11-03)."""
+    eyes = row.get("eyes_used")
+    deg = (row["Mean_accuracy_degrees_left"] + row["Mean_accuracy_degrees_right"]) / 2
+    if eyes in ("left", "right") and not round(deg, 2) <= max_deg:
+        return row[f"Mean_accuracy_degrees_{eyes}"], eyes
+    return deg, "both"
+
+
+def compute_trial_calibration(trial_order_df: pd.DataFrame, validation_summary_df: pd.DataFrame,
+                              max_deg: float = MAX_CALIBRATION_DEG) -> dict:
+    """total_trial_index -> (degrees, eyes) from the most recent calibration before that clip.
+
+    Each validation routine (last attempt counts) applies from the clip its label names:
+    pre_validation from clip 0, block_validation_trial{N} from N, and the mid-block
+    key_forced_validation_trial{N} / lb_forced_validation_{N} from N+1 (clip N was
+    recorded before them). A clip uses the latest such routine, in session order, that
+    applies to it, so blocks without their own validation (infants) inherit the previous
+    one. pre_validation runs after the first (restarted sessions) are ignored. Clips
+    before any validation get (None, "both").
+    """
+    mean_rows = validation_summary_df[validation_summary_df["point"] == "mean"]
+    last = {}  # routine -> (session position of its last attempt, applies-from clip, (deg, eyes))
+    seen_later = False
+    for pos, (_, row) in enumerate(mean_rows.iterrows()):
+        step = str(row["validation_step"])
+        if re.fullmatch(r"pre_validation_\d+", step):
+            if seen_later:
+                print(f"    note: {step} after later validations (restarted session?) — ignored")
+                continue
+            start = 0
+        elif m := re.fullmatch(r"block_validation_trial(\d+)_\d+", step):
+            start = int(m.group(1))
+        elif m := re.fullmatch(r"(?:key_forced_validation_trial|lb_forced_validation_)(\d+)_\d+", step):
+            start = int(m.group(1)) + 1
+        else:
+            continue
+        seen_later = seen_later or not step.startswith("pre_validation")
+        last[step.rsplit("_", 1)[0]] = (pos, start, attempt_calibration(row, max_deg))
+
+    routines = sorted(last.values())
+    trial_calibration = {}
+    for t in trial_order_df["total_trial_index"]:
+        cal = (None, "both")
+        for _, start, c in routines:
+            if start <= t:
+                cal = c
+        trial_calibration[t] = cal
+    return trial_calibration
+
+
 def compute_block_calibration(trial_order_df: pd.DataFrame, validation_summary_df: pd.DataFrame,
                               max_deg: float = MAX_CALIBRATION_DEG) -> dict:
     """Calibration accuracy and eyes to analyze for each block_index, from
@@ -224,22 +276,13 @@ def compute_block_calibration(trial_order_df: pd.DataFrame, validation_summary_d
     experiment accepted one eye (eyes_used = left/right) is that eye's
     accuracy used instead. Summaries without eyes_used are treated as both.
 
-    Single validation per block, same as dataQC_check.py -- does not yet
-    handle mid-block recalibration (see that file's TODO). Returns
+    Single validation per block, for block-level QC; I2MC itself uses
+    compute_trial_calibration, which follows mid-block recalibrations. Returns
     block_index -> (degrees, eyes), or (None, "both") for a block with no
     matching validation.
     """
     mean_rows = validation_summary_df[validation_summary_df["point"] == "mean"]
-    val_cal = {}
-    for _, row in mean_rows.iterrows():
-        eyes = row.get("eyes_used")
-        deg = (row["Mean_accuracy_degrees_left"] + row["Mean_accuracy_degrees_right"]) / 2
-        # 1-eye fallback only when the binocular average fails (METHODS_DECISIONS.md, 2026-11-03)
-        if eyes in ("left", "right") and not round(deg, 2) <= max_deg:
-            deg = row[f"Mean_accuracy_degrees_{eyes}"]
-        else:
-            eyes = "both"
-        val_cal[row["validation_step"]] = (deg, eyes)
+    val_cal = {row["validation_step"]: attempt_calibration(row, max_deg) for _, row in mean_rows.iterrows()}
 
     def attempt_num(step):
         return int(step.rsplit("_", 1)[1])
@@ -421,12 +464,12 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
         # (see the per-block NaN case below for that). Both mean "we can't
         # verify this participant meets max_calibration_deg" and are treated
         # the same way: excluded, not silently let through.
-        block_calibration = {}
+        trial_calibration = {}
         calibration_unknown = True
         if files["validation_summary"] is not None:
             val_summary_df = read_csv_multi_encoding(files["validation_summary"])
             if val_summary_df is not None and "point" in val_summary_df.columns:
-                block_calibration = compute_block_calibration(trial_order, val_summary_df, max_calibration_deg)
+                trial_calibration = compute_trial_calibration(trial_order, val_summary_df, max_calibration_deg)
                 calibration_unknown = False
 
         # Skip trials whose output file already exists, without paying to
@@ -441,7 +484,7 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
             if video_filter is not None:
                 video_matches += 1
 
-            cal_deg, _ = block_calibration.get(row["block_index"], (None, "both"))
+            cal_deg, cal_eyes = trial_calibration.get(row["total_trial_index"], (None, "both"))
             # Round to 2 decimal places before comparing against
             # max_calibration_deg, so a value like 2.00135 (which prints/reads
             # as "2.00°") is judged by what it displays as, not by
@@ -464,10 +507,10 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
                     print(f"  [{group_label}] {pid}/{vname}: no validation_summary available — "
                           f"calibration unknown, excluded, no file written")
                 elif pd.isna(cal_deg):
-                    print(f"  [{group_label}] {pid}/{vname}: block {row['block_index']} calibration "
+                    print(f"  [{group_label}] {pid}/{vname}: clip {row['total_trial_index']} calibration "
                           f"unknown (validation reading missing/NaN) — excluded, no file written")
                 else:
-                    print(f"  [{group_label}] {pid}/{vname}: block {row['block_index']} calibration "
+                    print(f"  [{group_label}] {pid}/{vname}: clip {row['total_trial_index']} calibration "
                           f"{cal_deg:.2f}° (> {max_calibration_deg:.2f}° threshold) — excluded, no file written")
                 exclusions.append((pid, vname, "calibration_deg", cal_deg if cal_deg is not None else float("nan")))
                 continue
@@ -475,7 +518,7 @@ def process_group(group_dir: str, group_label: str, group_output_dir: str, code:
             out_path = os.path.join(group_output_dir, f"{pid}_{vname}_{code}.csv")
             if os.path.exists(out_path) and not overwrite:
                 continue
-            pending.append((row, out_path, block_calibration.get(row["block_index"], (None, "both"))[1]))
+            pending.append((row, out_path, cal_eyes))
 
         if not pending:
             n_considered = len(trial_order) if video_filter is None else (trial_order["video_name"] == video_filter).sum()
