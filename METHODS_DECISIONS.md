@@ -1888,3 +1888,47 @@ Face is not re-smoothed in `load_features.py`.
 2026-03, which didn't log it. `plot_participant_qc.R` labels each target "#order · error°" and draws a dotted white
 path through the targets in presentation order. Purpose: tell slow responses apart from predictive looks, by showing
 where the eyes were coming from.
+
+## 2026-11-19 — Calibration/validation procedure overhaul (86c7125)
+
+**Validation accuracy from sessions before vs. after 2026-11-19 is not directly comparable:** targets, pacing,
+the redo rule and the pass rule all changed. Treat the date as a procedure cutover in any QC or accuracy comparison.
+
+Why: RAs reported targets appearing without warning, and the PILL lab (Tori) gets better accuracy with
+RA-paced, shrinking targets.
+
+- **RA pacing.** For calibration and validation, space shows the next target (with a chime, `upchime.wav`, same as
+  PILL; was `hothothot3.wav`), and space again collects data.
+- **Targets.** Calibration disc 200 → 120 px. Validation targets shrink from 120 to 30 px (1/4 size) over 1.5 s,
+  then hold, wiggling ±15° at 2 Hz.
+- **Per-target redo, once.** If a validation target's two-eye average is over the bad threshold, it is shown
+  again and the try with the lower average is kept. Logged as `<step>_<n>_Redo_Target<k>_KeptTry<1|2>` events.
+- **No per-point recalibration.** The 1–9 keys for redoing individual calibration points were removed.
+- **Pass rule: no data counts as bad.** A validation target with NaN accuracy now counts toward the bad limit
+  (it counted as neither good nor bad before), live and in `backfill_validation_outcomes.py`. Note the backfill
+  applies this to older sessions too, which were run live under the old rule.
+- **No-data targets keep their slot.** Summary rows and the result screen list every presented target in
+  presentation order, with NaN for no data, so `Point_<n>` / `presentation_order` aren't shifted by a dropped target.
+- **Block breaks (kids and adults).** A progress screen ("Great job!" + progress bar) lets the RA choose C
+  (recalibrate, then validate) or V (validate only); logged as `Block_Break_Trial<id>_Recalibrate|ValidateOnly`.
+  Before, block-break checks were always validate-only. Infants keep validate-only and get no break screen.
+- **Screens.** Result screens show the participant a headline only, with degree values instead of
+  GOOD/BAD words; experimenter details are in small text at the bottom. Sessions that aren't aborted end on an
+  "All done!" screen (`Session_End_Screen` event).
+- **Quitting** needs escape twice (escape, then escape again to confirm).
+
+## 2026-11-19 — Fixes to the calibration/validation overhaul (86c7125): quit saving, redo rule
+
+- **Quitting during the first calibration/validation now saves it.** That routine runs before gaze recording starts,
+  so a confirmed escape there used to write nothing. `confirm_quit` now writes the buffered validation samples and
+  summary rows directly. `study_time` is NaN for those rows (no recording start to measure from). The
+  `Experiment_Quit_Confirmed` event is only in the session log in that case, since no gaze file exists yet.
+- **Validations cut short by a quit get `outcome = "quit"`.** Any summary rows with no outcome yet are labeled
+  `quit` (`validation_passed` / `eyes_used` stay blank). `backfill_validation_outcomes.py` skips runs that already
+  have an outcome, so it leaves these alone. Treat `quit` validations as not accepted.
+- **The quit also takes the tracker out of calibration/validation mode** before closing.
+- **Per-target redo now uses the pass rule's two-eye average.** A target is redone (once) when (left + right) / 2
+  exceeds the bad threshold, and a missing eye counts as bad. Before this fix the redo check averaged whichever
+  eyes had data, so a target with one valid eye at 1.2° wasn't redone even though the average rule counts it as
+  bad. Trade-off accepted: a child tracked with only one eye gets every target redone (at most 5 extra
+  presentations per validation).

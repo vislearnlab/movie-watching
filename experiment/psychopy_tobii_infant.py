@@ -640,8 +640,22 @@ class TobiiController:
             event.clearEvents()
             return
         logging.warning("Experiment terminated by user (escape key, confirmed)")
-        self.record_event("Experiment_Quit_Confirmed")
-        self.stop_recording()
+        # Release the tracker if quitting mid-calibration/validation; raises if not in that mode
+        for leave in (getattr(self.calibration, "leave_calibration_mode", None),
+                      getattr(getattr(self, "validation", None), "leave_validation_mode", None)):
+            try:
+                if leave is not None:
+                    leave()
+            except Exception:
+                pass
+        for r in self.validation_summary_buffers or []:
+            if pd.isna(r.get("outcome")):
+                r["outcome"] = "quit"
+        if self.recording:
+            self.record_event("Experiment_Quit_Confirmed")
+            self.stop_recording()
+        elif hasattr(self, "_flush_validation_csv"):
+            self._flush_validation_csv()  # quit before recording started (initial calibration)
         self.close()
         self.win.close()
         core.quit()
@@ -1468,6 +1482,10 @@ class TobiiInfantController(TobiiController):
         self.gaze_data = []
         self.event_data = []
         core.wait(0.1)
+        self._flush_validation_csv()
+
+    def _flush_validation_csv(self):
+        """Write buffered validation samples and summary rows; works before recording starts."""
         # ---------------------------
         # Validation Results
         # ---------------------------
@@ -1485,7 +1503,8 @@ class TobiiInfantController(TobiiController):
             for val_buffer in self.validation_result_buffers:
                 if val_buffer['validation_step'] != prev_validation_step:
                     validation_start_time = val_buffer['system_time_stamp']
-                val_buffer['study_time'] = round((val_buffer['system_time_stamp'] - self.t0) / 1000.0, 2)
+                t0 = getattr(self, "t0", None)  # unset if quitting before recording starts
+                val_buffer['study_time'] = np.nan if t0 is None else round((val_buffer['system_time_stamp'] - t0) / 1000.0, 2)
                 val_buffer['validation_time'] = round((val_buffer['system_time_stamp'] - validation_start_time) / 1000.0, 2)
                 val_records.append(val_buffer)
                 prev_validation_step = val_buffer['validation_step']
@@ -1690,9 +1709,9 @@ class TobiiInfantController(TobiiController):
                             in_validation = False
                             break
 
-                # Two-eye average, same measure as the pass rule; no data is worst
-                acc = self._validation_point_accuracy(tp)
-                avg = np.inf if np.isnan(acc).all() else np.nanmean(acc)
+                # Two-eye average as in the pass rule: a missing eye makes it bad (inf)
+                avg = self._validation_point_accuracy(tp).mean()
+                avg = np.inf if np.isnan(avg) else avg
                 if not redo:
                     if self.validation_redo_deg is None or avg <= self.validation_redo_deg:
                         break
