@@ -1736,10 +1736,10 @@ class TobiiInfantController(TobiiController):
 
     def _validation_point_accuracy(self, tp):
         """[left, right] accuracy (deg) of the data collected so far at tobii point tp; NaN if none."""
-        collected = self.validation.compute().points.get(tp)
-        if not collected:
+        point = self.validation.compute_point(tp)
+        if point is None:
             return np.array([np.nan, np.nan])
-        return np.array([collected[-1].accuracy_left_eye, collected[-1].accuracy_right_eye], dtype=float)
+        return np.array([point.accuracy_left_eye, point.accuracy_right_eye], dtype=float)
 
     def _update_calibration_infant_auto(self, _focus_time=0.5, collect_key="space"):
         """Semi-automatic calibration procedure.

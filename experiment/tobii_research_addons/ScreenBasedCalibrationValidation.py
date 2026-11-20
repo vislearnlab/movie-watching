@@ -245,6 +245,7 @@ class ScreenBasedCalibrationValidation(object):
         self.__current_point = None
         self.__current_gaze_data = []
         self.__collected_points = defaultdict(list)
+        self.__display_area = None
 
         self.__is_collecting_data = False
         self.__validation_mode = False
@@ -391,6 +392,97 @@ class ScreenBasedCalibrationValidation(object):
             raise RuntimeWarning("Attempt to discard non-collected point")
         del self.__collected_points[screen_point]
 
+    def _display_area(self):
+        '''Display area from the tracker, fetched once per validation object (it doesn't change mid-session).'''
+        if self.__display_area is None:
+            self.__display_area = self.__eyetracker.get_display_area()
+        return self.__display_area
+
+    def _compute_point(self, screen_point, samples):
+        '''Accuracy and precision for one point's samples; NaN results if there are too few.'''
+        if len(samples) < self.__sample_count:
+            # Timeout before collecting enough valid samples, no calculations to be done
+            return CalibrationValidationPoint(
+                screen_point, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, True, samples)
+
+        stimuli_point = vectormath.calculate_normalized_point2_to_point3(
+            self._display_area(), screen_point)
+
+        # Prepare data from samples
+        gaze_origin_left_all = []
+        gaze_origin_right_all = []
+        gaze_point_left_all = []
+        gaze_point_right_all = []
+        direction_gaze_point_left_all = []
+        direction_gaze_point_left_mean_all = []
+        direction_gaze_point_right_all = []
+        direction_gaze_point_right_mean_all = []
+
+        for sample in samples:
+            gaze_origin_left_all.append(
+                vectormath.Point3.from_list(sample.left_eye.gaze_origin.position_in_user_coordinates))
+            gaze_origin_right_all.append(
+                vectormath.Point3.from_list(sample.right_eye.gaze_origin.position_in_user_coordinates))
+            gaze_point_left_all.append(
+                vectormath.Point3.from_list(sample.left_eye.gaze_point.position_in_user_coordinates))
+            gaze_point_right_all.append(
+                vectormath.Point3.from_list(sample.right_eye.gaze_point.position_in_user_coordinates))
+
+        gaze_origin_left_mean = vectormath.calculate_mean_point(gaze_origin_left_all)
+        gaze_origin_right_mean = vectormath.calculate_mean_point(gaze_origin_right_all)
+        gaze_point_left_mean = vectormath.calculate_mean_point(gaze_point_left_all)
+        gaze_point_right_mean = vectormath.calculate_mean_point(gaze_point_right_all)
+
+        for sample in samples:
+            gaze_origin_left = vectormath.Point3.from_list(
+                sample.left_eye.gaze_origin.position_in_user_coordinates)
+            gaze_origin_right = vectormath.Point3.from_list(
+                sample.right_eye.gaze_origin.position_in_user_coordinates)
+            gaze_point_left = vectormath.Point3.from_list(
+                sample.left_eye.gaze_point.position_in_user_coordinates)
+            gaze_point_right = vectormath.Point3.from_list(
+                sample.right_eye.gaze_point.position_in_user_coordinates)
+            direction_gaze_point_left_all.append(
+                vectormath.Vector3.from_points(gaze_origin_left, gaze_point_left).normalize())
+            direction_gaze_point_left_mean_all.append(
+                vectormath.Vector3.from_points(gaze_origin_left, gaze_point_left_mean).normalize())
+            direction_gaze_point_right_all.append(
+                vectormath.Vector3.from_points(gaze_origin_right, gaze_point_right).normalize())
+            direction_gaze_point_right_mean_all.append(
+                vectormath.Vector3.from_points(gaze_origin_right, gaze_point_right_mean).normalize())
+
+        # Accuracy calculations
+        accuracy_left_eye = _calculate_eye_accuracy(gaze_origin_left_mean, gaze_point_left_mean, stimuli_point)
+        accuracy_right_eye = _calculate_eye_accuracy(gaze_origin_right_mean, gaze_point_right_mean, stimuli_point)
+
+        # Precision calculations
+        precision_left_eye = _calculate_eye_precision(
+            direction_gaze_point_left_all, direction_gaze_point_left_mean_all)
+        precision_right_eye = _calculate_eye_precision(
+            direction_gaze_point_right_all, direction_gaze_point_right_mean_all)
+
+        # RMS precision calculations
+        precision_rms_left_eye = _calculate_eye_precision_rms(direction_gaze_point_left_all)
+        precision_rms_right_eye = _calculate_eye_precision_rms(direction_gaze_point_right_all)
+
+        return CalibrationValidationPoint(
+            accuracy_left_eye,
+            accuracy_right_eye,
+            precision_left_eye,
+            precision_right_eye,
+            precision_rms_left_eye,
+            precision_rms_right_eye,
+            False,  # no timeout
+            screen_point,
+            samples)
+
+    def compute_point(self, screen_point):
+        '''Computes only this point (None if it has no data), so a per-target check doesn't redo every point.'''
+        if self.__is_collecting_data:
+            raise RuntimeWarning("Still collecting data")
+        samples = self.__collected_points.get(screen_point)
+        return self._compute_point(screen_point, samples) if samples else None
+
     def compute(self):
         '''Uses the collected data and tries to compute accuracy and precision values for all points.
         If the calculation is successful, the result is returned, and stored in the Result property
@@ -414,83 +506,13 @@ class ScreenBasedCalibrationValidation(object):
         precision_rms_right_eye_all = []
 
         for screen_point, samples in self.__collected_points.items():
-            if len(samples) < self.__sample_count:
-                # Timeout before collecting enough valid samples, no calculations to be done
-                points[screen_point] += [CalibrationValidationPoint(
-                    screen_point, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, True, samples)]
+            point = self._compute_point(screen_point, samples)
+            points[screen_point] += [point]
+            if point.timed_out:
                 continue
-
-            stimuli_point = vectormath.calculate_normalized_point2_to_point3(
-                self.__eyetracker.get_display_area(), screen_point)
-
-            # Prepare data from samples
-            gaze_origin_left_all = []
-            gaze_origin_right_all = []
-            gaze_point_left_all = []
-            gaze_point_right_all = []
-            direction_gaze_point_left_all = []
-            direction_gaze_point_left_mean_all = []
-            direction_gaze_point_right_all = []
-            direction_gaze_point_right_mean_all = []
-
-            for sample in samples:
-                gaze_origin_left_all.append(
-                    vectormath.Point3.from_list(sample.left_eye.gaze_origin.position_in_user_coordinates))
-                gaze_origin_right_all.append(
-                    vectormath.Point3.from_list(sample.right_eye.gaze_origin.position_in_user_coordinates))
-                gaze_point_left_all.append(
-                    vectormath.Point3.from_list(sample.left_eye.gaze_point.position_in_user_coordinates))
-                gaze_point_right_all.append(
-                    vectormath.Point3.from_list(sample.right_eye.gaze_point.position_in_user_coordinates))
-
-            gaze_origin_left_mean = vectormath.calculate_mean_point(gaze_origin_left_all)
-            gaze_origin_right_mean = vectormath.calculate_mean_point(gaze_origin_right_all)
-            gaze_point_left_mean = vectormath.calculate_mean_point(gaze_point_left_all)
-            gaze_point_right_mean = vectormath.calculate_mean_point(gaze_point_right_all)
-
-            for sample in samples:
-                gaze_origin_left = vectormath.Point3.from_list(
-                    sample.left_eye.gaze_origin.position_in_user_coordinates)
-                gaze_origin_right = vectormath.Point3.from_list(
-                    sample.right_eye.gaze_origin.position_in_user_coordinates)
-                gaze_point_left = vectormath.Point3.from_list(
-                    sample.left_eye.gaze_point.position_in_user_coordinates)
-                gaze_point_right = vectormath.Point3.from_list(
-                    sample.right_eye.gaze_point.position_in_user_coordinates)
-                direction_gaze_point_left_all.append(
-                    vectormath.Vector3.from_points(gaze_origin_left, gaze_point_left).normalize())
-                direction_gaze_point_left_mean_all.append(
-                    vectormath.Vector3.from_points(gaze_origin_left, gaze_point_left_mean).normalize())
-                direction_gaze_point_right_all.append(
-                    vectormath.Vector3.from_points(gaze_origin_right, gaze_point_right).normalize())
-                direction_gaze_point_right_mean_all.append(
-                    vectormath.Vector3.from_points(gaze_origin_right, gaze_point_right_mean).normalize())
-
-            # Accuracy calculations
-            accuracy_left_eye = _calculate_eye_accuracy(gaze_origin_left_mean, gaze_point_left_mean, stimuli_point)
-            accuracy_right_eye = _calculate_eye_accuracy(gaze_origin_right_mean, gaze_point_right_mean, stimuli_point)
-
-            # Precision calculations
-            precision_left_eye = _calculate_eye_precision(
-                direction_gaze_point_left_all, direction_gaze_point_left_mean_all)
-            precision_right_eye = _calculate_eye_precision(
-                direction_gaze_point_right_all, direction_gaze_point_right_mean_all)
-
-            # RMS precision calculations
-            precision_rms_left_eye = _calculate_eye_precision_rms(direction_gaze_point_left_all)
-            precision_rms_right_eye = _calculate_eye_precision_rms(direction_gaze_point_right_all)
-
-            # Add a calibration validation point
-            points[screen_point] += [CalibrationValidationPoint(
-                accuracy_left_eye,
-                accuracy_right_eye,
-                precision_left_eye,
-                precision_right_eye,
-                precision_rms_left_eye,
-                precision_rms_right_eye,
-                False,  # no timeout
-                screen_point,
-                samples)]
+            accuracy_left_eye, accuracy_right_eye = point.accuracy_left_eye, point.accuracy_right_eye
+            precision_left_eye, precision_right_eye = point.precision_left_eye, point.precision_right_eye
+            precision_rms_left_eye, precision_rms_right_eye = point.precision_rms_left_eye, point.precision_rms_right_eye
 
             # Cache all calculations
             accuracy_left_eye_all.append(accuracy_left_eye)
