@@ -1666,7 +1666,7 @@ class TobiiInfantController(TobiiController):
                                 validation_points,
                                 _focus_time=0.5,
                                 collect_key="space"):
-        """Semi-automatic validation: space shows the next point (with chime), space again collects.
+        """Semi-automatic validation: space shows the first point, then each space collects and shows the next.
 
         A point whose two-eye average is over self.validation_redo_deg (or has no data) is
         redone once right away and the try with the lower average is kept; (index, kept try)
@@ -1674,8 +1674,8 @@ class TobiiInfantController(TobiiController):
         """
         clock = core.Clock()
         self.validation_redone = []
-        hint = visual.TextStim(self.win, pos=(0, -480), height=22, color=[-0.3, -0.3, -0.3],
-                               units="pix", autoLog=False)
+        # Blank screen until the experimenter starts
+        self._wait_for_key(collect_key)
         for idx, current_validation_point in enumerate(validation_points):
             this_target = self.targets.get_stim(idx)
             w, h = self.targets.get_stim_original_size(idx)
@@ -1685,9 +1685,7 @@ class TobiiInfantController(TobiiController):
             tp = Point2(*self._get_tobii_pos(current_validation_point))
 
             for redo in (False, True):
-                # Blank screen until the experimenter shows the point
-                hint.setText(f"Target {idx + 1} was off: SPACE to show it again" if redo else "")
-                self._wait_for_key(collect_key, extra=hint)
+                event.clearEvents()
                 if self._audio is not None:
                     self._audio.play()
                 clock.reset()
@@ -1746,8 +1744,9 @@ class TobiiInfantController(TobiiController):
     def _update_calibration_infant_auto(self, _focus_time=0.5, collect_key="space"):
         """Semi-automatic calibration procedure.
 
-        Blank screen until space shows the next point (with chime); space again
-        collects data. Points come in the order of self.retry_points.
+        Blank screen until space shows the first point (with chime); after that each
+        space collects data and shows the next point. Points come in the order of
+        self.retry_points.
 
         Args:
             _focus_time: duration allowing the subject to focus in seconds.
@@ -1759,6 +1758,8 @@ class TobiiInfantController(TobiiController):
             None
         """
         clock = core.Clock()
+        # Blank screen until the experimenter starts
+        self._wait_for_key(collect_key)
 
         for point_idx in self.retry_points:
             # Set position for this calibration point
@@ -1766,8 +1767,7 @@ class TobiiInfantController(TobiiController):
             this_target = self.targets.get_stim(point_idx)
             this_target.setPos(this_pos)
 
-            # Blank screen until the experimenter shows the point
-            self._wait_for_key(collect_key)
+            event.clearEvents()
             if self._audio is not None:
                 self._audio.play()
 
@@ -1820,8 +1820,8 @@ class TobiiInfantController(TobiiController):
         """Run calibration.
 
             How to use:
-                - Space shows the next target (with chime); space again
-                  collects samples once the subject is looking at it.
+                - Space shows the first target (with chime); after that, space
+                  collects samples once the subject is looking and shows the next target.
                 - After the last target the result is shown; press
                   decision_key (default is space) to accept it, or escape
                   twice to quit the session.

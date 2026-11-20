@@ -1897,8 +1897,10 @@ the redo rule and the pass rule all changed.
 Why: RAs reported targets appearing without warning, and the PILL lab (Tori) gets better accuracy with
 RA-paced, shrinking targets.
 
-- **RA pacing.** For calibration and validation, space shows the next target (with a chime, `upchime.wav`, same as
-  PILL; was `hothothot3.wav`), and space again collects data.
+- **RA pacing.** For calibration and validation, space shows the first target (with a chime, `upchime.wav`, same as
+  PILL; was `hothothot3.wav`); after that, each space collects data and the next target appears right away.
+  (2026-11-20: changed from space-to-show before every target, which needed two presses per target; the testing
+  lead reported it slowed sessions. A redone validation target also appears right away.)
 - **Targets.** Calibration disc 200 → 120 px. Validation targets shrink from 120 to 30 px (1/4 size) over 1.5 s,
   then hold, wiggling ±15° at 2 Hz.
 - **Per-target redo, once.** If a validation target's two-eye average is over the bad threshold, it is shown
